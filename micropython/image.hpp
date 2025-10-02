@@ -126,6 +126,40 @@ extern "C" {
         }
       } break;
 
+      case PNG_PIXEL_GRAYSCALE: {
+        while(c--) {
+          uint8_t src = *psrc;
+          // do something with index here
+
+          switch(pDraw->iBpp) {
+            case 8: {
+              *pdst = _make_col(src, src, src);
+              pdst++;
+            } break;
+
+            case 4: {
+              int src1 = (src & 0xf0) | ((src & 0xf0) >> 4);
+              int src2 = (src & 0x0f) | ((src & 0x0f) << 4);
+              *pdst = _make_col(src1, src1, src1);
+              pdst++;
+              *pdst = _make_col(src2, src2, src2);
+              pdst++;
+            } break;
+
+            case 1: {
+              for(int i = 0; i < 8; i++) {
+                int v = src & 0b10000000 ? 255 : 0;
+                *pdst = _make_col(v, v, v);
+                pdst++;
+                src <<= 1;
+              }              
+            } break;
+          }
+
+          psrc++;          
+        }
+      } break;
+
       default: {
         // TODO: raise file not supported error
       } break;
@@ -236,6 +270,19 @@ extern "C" {
     return MP_OBJ_FROM_PTR(result);
   }
 
+  mp_obj_t image_window(size_t n_args, const mp_obj_t *pos_args) {
+    const image_obj_t *self = (image_obj_t *)MP_OBJ_TO_PTR(pos_args[0]);
+    int x = mp_obj_get_int(pos_args[1]);
+    int y = mp_obj_get_int(pos_args[2]);
+    int w = mp_obj_get_int(pos_args[3]);
+    int h = mp_obj_get_int(pos_args[4]);
+    image_obj_t *result = mp_obj_malloc_with_finaliser(image_obj_t, &type_Image);
+    rect i = self->image->bounds.intersection(rect(x, y, w, h));
+    result->image = new(m_malloc(sizeof(image))) image(self->image->ptr(i.x, i.y), i.w, i.h);
+    result->image->_rowstride = self->image->_rowstride;
+    return MP_OBJ_FROM_PTR(result);
+  }
+
   mp_obj_t image_draw(size_t n_args, const mp_obj_t *pos_args) {
     const image_obj_t *self = (image_obj_t *)MP_OBJ_TO_PTR(pos_args[0]);
     const shape_obj_t *shape = (shape_obj_t *)MP_OBJ_TO_PTR(pos_args[1]);
@@ -246,8 +293,8 @@ extern "C" {
   mp_obj_t image_blit(size_t n_args, const mp_obj_t *pos_args) {
     const image_obj_t *self = (image_obj_t *)MP_OBJ_TO_PTR(pos_args[0]);
     const image_obj_t *src = (image_obj_t *)MP_OBJ_TO_PTR(pos_args[1]);
-    float x = mp_obj_get_float(pos_args[2]);    
-    float y = mp_obj_get_float(pos_args[3]);    
+    int x = mp_obj_get_float(pos_args[2]);    
+    int y = mp_obj_get_float(pos_args[3]); 
 
     src->image->blit(self->image, point(x, y));
     return mp_const_none;
@@ -290,6 +337,7 @@ extern "C" {
   static MP_DEFINE_CONST_FUN_OBJ_1(image__del___obj, image__del__);
   
   static MP_DEFINE_CONST_FUN_OBJ_VAR(image_draw_obj, 2, image_draw);
+  static MP_DEFINE_CONST_FUN_OBJ_VAR(image_window_obj, 5, image_window);
   
   static MP_DEFINE_CONST_FUN_OBJ_1(image_clear_obj, image_clear);  
 
@@ -302,6 +350,7 @@ extern "C" {
   static const mp_rom_map_elem_t image_locals_dict_table[] = {
       { MP_ROM_QSTR(MP_QSTR___del__), MP_ROM_PTR(&image__del___obj) },
       { MP_ROM_QSTR(MP_QSTR_draw), MP_ROM_PTR(&image_draw_obj) },
+      { MP_ROM_QSTR(MP_QSTR_window), MP_ROM_PTR(&image_window_obj) },
       { MP_ROM_QSTR(MP_QSTR_clear), MP_ROM_PTR(&image_clear_obj) },
       { MP_ROM_QSTR(MP_QSTR_brush), MP_ROM_PTR(&image_brush_obj) },
       { MP_ROM_QSTR(MP_QSTR_blit), MP_ROM_PTR(&image_blit_obj) },

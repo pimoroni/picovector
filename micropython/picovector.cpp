@@ -33,7 +33,7 @@ extern "C" {
 
   mp_obj_t modpicovector_init(size_t n_args, const mp_obj_t *pos_args) {
 
-    mp_image = mp_obj_malloc_with_finaliser(image_obj_t, &type_Image);
+    mp_image = mp_obj_malloc(image_obj_t, &type_Image);
     mp_image->image = &screen;
 
     mp_obj_dict_t *globals = mp_globals_get();

@@ -19,62 +19,42 @@ namespace picovector {
     return regular_polygon(x, y, sides, radius);
   }
 
-  shape* rectangle(float x1, float y1, float x2, float y2) {
+  shape* rectangle(float x, float y, float w, float h) {
     shape *result = new(PV_MALLOC(sizeof(shape))) shape(1);
     path poly(4);
-    poly.add_point(x1, y2);
-    poly.add_point(x2, y2);
-    poly.add_point(x2, y1);
-    poly.add_point(x1, y1);
+    poly.add_point(x, y);
+    poly.add_point(x + w, y);
+    poly.add_point(x + w, y + h);
+    poly.add_point(x, y + h);
     result->add_path(poly);
     return result;
   }
 
-  // void _ppp_rrect_corner(pp_path_t *path, PP_COORD_TYPE cx, PP_COORD_TYPE cy, PP_COORD_TYPE r, int q) {
-  //   float quality = 5; // higher the number, lower the quality - selected by experiment
-  //   int steps = ceil(r / quality) + 2; // + 2 to include start and end
-  //   float delta = -(M_PI / 2) / steps;
-  //   float theta = (M_PI / 2) * q; // select start theta for this quadrant
-  //   for(int i = 0; i <= steps; i++) {
-  //     PP_COORD_TYPE xo = sin(theta) * r, yo = cos(theta) * r;
-  //     pp_path_add_point(path, (pp_point_t){cx + xo, cy + yo});
-  //     theta += delta;
-  //   }
-  // }
+  void _build_rounded_rectangle_corner(path *path, float x, float y, float r, int q) {
+    float quality = 5; // higher the number, lower the quality - selected by experiment
+    int steps = ceil(r / quality) + 1;
+    float delta = -(M_PI / 2) / float(steps);
+    float theta = (M_PI / 2) * q; // select start theta for this quadrant
+    for(int i = 0; i <= steps; i++) {
+      float xo = sin(theta) * r, yo = cos(theta) * r;
+      path->add_point((point){x + xo, y + yo});
+      theta += delta;      
+    }
+  }
 
-  // void _ppp_rrect_path(pp_path_t *path, ppp_rect_def d) {
-  //   d.r1 == 0 ? pp_path_add_point(path, (pp_point_t){d.x, d.y})             : _ppp_rrect_corner(path, d.x + d.r1, d.y + d.r1, d.r1, 3);
-  //   d.r2 == 0 ? pp_path_add_point(path, (pp_point_t){d.x + d.w, d.y})       : _ppp_rrect_corner(path, d.x + d.w - d.r2, d.y + d.r2, d.r2, 2);
-  //   d.r3 == 0 ? pp_path_add_point(path, (pp_point_t){d.x + d.w, d.y + d.h}) : _ppp_rrect_corner(path, d.x + d.w - d.r3, d.y + d.h - d.r3, d.r3, 1);
-  //   d.r4 == 0 ? pp_path_add_point(path, (pp_point_t){d.x, d.y + d.h})       : _ppp_rrect_corner(path, d.x + d.r4, d.y + d.h - d.r4, d.r4, 0);
-  // }
-
-  // pp_poly_t* ppp_rect(ppp_rect_def d) {
-  //   pp_poly_t *shape = pp_poly_new();
-  //   pp_path_t *path = pp_poly_add_path(shape);
-  //   if(d.r1 == 0.0f && d.r2 ==  0.0f && d.r3 ==  0.0f && d.r4 == 0.0f) { // non rounded rect
-  //     pp_point_t points[] = {{d.x, d.y}, {d.x + d.w, d.y}, {d.x + d.w, d.y + d.h}, {d.x, d.y + d.h}};
-  //     pp_path_add_points(path, points, 4);
-  //     if(d.s != 0) { // stroked, not filled
-  //       d.x += d.s; d.y += d.s; d.w -= 2 * d.s; d.h -= 2 * d.s;
-  //       pp_path_t *inner = pp_poly_add_path(shape);
-  //         pp_point_t points[] = {{d.x, d.y}, {d.x + d.w, d.y}, {d.x + d.w, d.y + d.h}, {d.x, d.y + d.h}};
-  //       pp_path_add_points(inner, points, 4);
-  //     }
-  //   }else{ // rounded rect
-  //     _ppp_rrect_path(path, d);
-  //     if(d.s != 0) { // stroked, not filled
-  //       d.x += d.s; d.y += d.s; d.w -= 2 * d.s; d.h -= 2 * d.s;
-  //       d.r1 = _pp_max(0, d.r1 - d.s);
-  //       d.r2 = _pp_max(0, d.r2 - d.s);
-  //       d.r3 = _pp_max(0, d.r3 - d.s);
-  //       d.r4 = _pp_max(0, d.r4 - d.s);
-  //       pp_path_t *inner = pp_poly_add_path(shape);
-  //       _ppp_rrect_path(inner, d);
-  //     }
-  //   }
-  //   return shape;
-  // }
+  shape* rounded_rectangle(float x, float y, float w, float h, float r1, float r2, float r3, float r4) {
+    shape *result = new(PV_MALLOC(sizeof(shape))) shape(1);
+    path poly(4);
+    
+    // render corners (either hard if radius == 0 or calculate rounded corner points)
+    r1 == 0 ? poly.add_point((point){x    , y    }) : _build_rounded_rectangle_corner(&poly, x + 0 + r1, y + 0 + r1, r1, 3);
+    r2 == 0 ? poly.add_point((point){x + w, y    }) : _build_rounded_rectangle_corner(&poly, x + w - r2, y + 0 + r2, r2, 2);
+    r3 == 0 ? poly.add_point((point){x + w, y + h}) : _build_rounded_rectangle_corner(&poly, x + w - r3, y + h - r3, r3, 1);
+    r4 == 0 ? poly.add_point((point){x    , y + h}) : _build_rounded_rectangle_corner(&poly, x + 0 + r4, y + h - r4, r4, 0);
+    
+    result->add_path(poly);
+    return result;
+  }
 
 
     // static shape rounded_rectangle(float x1, float y1, float x2, float y2, float r1, float r2, float r3, float r4, float stroke=0.0f) {
@@ -165,12 +145,21 @@ namespace picovector {
     return result;
   }
 
-  shape* line(float x1, float y1, float x2, float y2) {
+  shape* line(float x1, float y1, float x2, float y2, float w) {
     shape *result = new(PV_MALLOC(sizeof(shape))) shape(1);
-    path poly(2);
+    path poly(4);
 
-    poly.add_point(x1, y1);
-    poly.add_point(x2, y2);
+    float dx = x2 - x1;
+    float dy = y2 - y1;
+    float m = sqrt(dx * dx + dy * dy);
+    dx /= m;
+    dy /= m;
+    float hw = w / 2.0f;
+
+    poly.add_point(x1 + (dy * hw), y1 - (dx * hw));
+    poly.add_point(x2 + (dy * hw), y2 - (dx * hw));
+    poly.add_point(x2 - (dy * hw), y2 + (dx * hw));
+    poly.add_point(x1 - (dy * hw), y1 + (dx * hw));
     result->add_path(poly);
 
     return result;

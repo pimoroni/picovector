@@ -31,7 +31,9 @@ extern "C" {
 
   mp_obj_t image__del__(mp_obj_t self_in) {
     self(self_in, image_obj_t);
-    m_del_class(image, self->image);
+    if(self->image) {
+      m_del_class(image, self->image);
+    }
     return mp_const_none;
   }
 
@@ -265,8 +267,11 @@ extern "C" {
     int status = png->open(mp_obj_str_get_str(path), pngdec_open_callback, pngdec_close_callback, pngdec_read_callback, pngdec_seek_callback, pngdec_decode_callback);
     result->image = new(m_malloc(sizeof(image))) image(png->getWidth(), png->getHeight());
     png->decode((void *)result->image, 0);
+#if PICO
     m_free(png);
-
+#else
+    m_free(png, sizeof(png));
+#endif
     return MP_OBJ_FROM_PTR(result);
   }
 
@@ -283,6 +288,7 @@ extern "C" {
     return MP_OBJ_FROM_PTR(result);
   }
 
+
   mp_obj_t image_draw(size_t n_args, const mp_obj_t *pos_args) {
     const image_obj_t *self = (image_obj_t *)MP_OBJ_TO_PTR(pos_args[0]);
     const shape_obj_t *shape = (shape_obj_t *)MP_OBJ_TO_PTR(pos_args[1]);
@@ -294,9 +300,21 @@ extern "C" {
     const image_obj_t *self = (image_obj_t *)MP_OBJ_TO_PTR(pos_args[0]);
     const image_obj_t *src = (image_obj_t *)MP_OBJ_TO_PTR(pos_args[1]);
     int x = mp_obj_get_float(pos_args[2]);    
-    int y = mp_obj_get_float(pos_args[3]); 
+    int y = mp_obj_get_float(pos_args[3]);    
 
     src->image->blit(self->image, point(x, y));
+    return mp_const_none;
+  }
+
+  mp_obj_t image_scale_blit(size_t n_args, const mp_obj_t *pos_args) {
+    const image_obj_t *self = (image_obj_t *)MP_OBJ_TO_PTR(pos_args[0]);
+    const image_obj_t *src = (image_obj_t *)MP_OBJ_TO_PTR(pos_args[1]);
+    int x = mp_obj_get_float(pos_args[2]);    
+    int y = mp_obj_get_float(pos_args[3]);    
+    int w = mp_obj_get_float(pos_args[4]);    
+    int h = mp_obj_get_float(pos_args[5]);    
+
+    src->image->blit(self->image, rect(x, y, w, h));
     return mp_const_none;
   }
 
@@ -313,6 +331,22 @@ extern "C" {
     self->image->brush = brush->brush;
     return mp_const_none;
   }
+
+
+  mp_obj_t image_alpha(size_t n_args, const mp_obj_t *pos_args) {    
+    const image_obj_t *self = (image_obj_t *)MP_OBJ_TO_PTR(pos_args[0]);    
+    int a = mp_obj_get_int(pos_args[1]);    
+    self->image->alpha = a;
+    return mp_const_none;
+  }
+
+  mp_obj_t image_antialias(size_t n_args, const mp_obj_t *pos_args) {    
+    const image_obj_t *self = (image_obj_t *)MP_OBJ_TO_PTR(pos_args[0]);    
+    int aa = mp_obj_get_int(pos_args[1]);    
+    self->image->antialias = static_cast<antialiasing>(aa);
+    return mp_const_none;
+  }
+
 
   static void image_attr(mp_obj_t self_in, qstr attr, mp_obj_t *dest) {
     self(self_in, image_obj_t);
@@ -342,7 +376,10 @@ extern "C" {
   static MP_DEFINE_CONST_FUN_OBJ_1(image_clear_obj, image_clear);  
 
   static MP_DEFINE_CONST_FUN_OBJ_VAR(image_brush_obj, 2, image_brush);
+  static MP_DEFINE_CONST_FUN_OBJ_VAR(image_alpha_obj, 2, image_alpha);
+  static MP_DEFINE_CONST_FUN_OBJ_VAR(image_antialias_obj, 2, image_antialias);
   static MP_DEFINE_CONST_FUN_OBJ_VAR(image_blit_obj, 4, image_blit);
+  static MP_DEFINE_CONST_FUN_OBJ_VAR(image_scale_blit_obj, 4, image_scale_blit);
 
   static MP_DEFINE_CONST_FUN_OBJ_1(image_load_obj, image_load);
   static MP_DEFINE_CONST_STATICMETHOD_OBJ(image_load_static_obj, MP_ROM_PTR(&image_load_obj));
@@ -353,7 +390,10 @@ extern "C" {
       { MP_ROM_QSTR(MP_QSTR_window), MP_ROM_PTR(&image_window_obj) },
       { MP_ROM_QSTR(MP_QSTR_clear), MP_ROM_PTR(&image_clear_obj) },
       { MP_ROM_QSTR(MP_QSTR_brush), MP_ROM_PTR(&image_brush_obj) },
+      { MP_ROM_QSTR(MP_QSTR_alpha), MP_ROM_PTR(&image_alpha_obj) },
+      { MP_ROM_QSTR(MP_QSTR_antialias), MP_ROM_PTR(&image_antialias_obj) },
       { MP_ROM_QSTR(MP_QSTR_blit), MP_ROM_PTR(&image_blit_obj) },
+      { MP_ROM_QSTR(MP_QSTR_scale_blit), MP_ROM_PTR(&image_scale_blit_obj) },
       { MP_ROM_QSTR(MP_QSTR_load), MP_ROM_PTR(&image_load_static_obj) },
       
   };

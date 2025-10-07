@@ -35,8 +35,8 @@ extern "C" {
   mp_obj_t brushes_color_brush(size_t n_args, const mp_obj_t *pos_args) {
     int r = mp_obj_get_float(pos_args[0]);    
     int g = mp_obj_get_float(pos_args[1]);    
-    int b = mp_obj_get_float(pos_args[2]);    
-    int a = mp_obj_get_float(pos_args[3]);    
+    int b = mp_obj_get_float(pos_args[2]);        
+    int a = n_args == 4 ? mp_obj_get_float(pos_args[3]) : 255;    
     brush_obj_t *brush = mp_obj_malloc(brush_obj_t, &type_Brush);    
     brush->brush = m_new_class(color_brush, r, g, b, a);
     return MP_OBJ_FROM_PTR(brush);
@@ -84,7 +84,7 @@ extern "C" {
       locals_dict, &brush_locals_dict
   );
 
-  static MP_DEFINE_CONST_FUN_OBJ_VAR(brushes_color_obj, 4, brushes_color_brush);
+  static MP_DEFINE_CONST_FUN_OBJ_VAR(brushes_color_obj, 3, brushes_color_brush);
   static MP_DEFINE_CONST_STATICMETHOD_OBJ(brushes_color_static_obj, MP_ROM_PTR(&brushes_color_obj));
 
   static MP_DEFINE_CONST_FUN_OBJ_VAR(brushes_xor_obj, 3, brushes_xor_brush);

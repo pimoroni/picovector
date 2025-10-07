@@ -13,15 +13,27 @@ namespace picovector {
     }
   }
 
+  void brush::render_spans(image *target, _rspan *spans, int count) {
+    while(count--) {  
+      this->render_span(target, spans->x, spans->y, spans->w);
+      spans++;
+    }
+  }
+
   color_brush::color_brush(int r, int g, int b, int a) {
     this->color = _make_col(r, g, b, a);
   }
 
   void color_brush::render_span(image *target, int x, int y, int w) {
     uint32_t *dst = target->ptr(x, y);
-    span_argb8(dst, w, color);
+    span_argb8(dst, w, color);    
   }
-  
+
+  void color_brush::render_span_buffer(image *target, int x, int y, int w, uint8_t *sb) {
+    uint32_t *dst = target->ptr(x, y);
+    span_argb8(dst, w, color, sb);
+  }
+
   blur_brush::blur_brush(int passes) {
     this->passes = passes;    
   }
@@ -29,40 +41,40 @@ namespace picovector {
 
   // a grotty blur function, must do better...
   void blur_brush::render_span(image *target, int x, int y, int w) {
-    // uint32_t *dst = target->ptr(x, y);
+    uint32_t *dst = target->ptr(x, y);
 
-    // // prime the colour queues
-    // uint32_t l = target->pixel_clamped(x - 1, y); // first pixel (left)
-    // uint32_t m = target->pixel_clamped(x, y); // first pixel (middle)
-    // uint32_t r = target->pixel_clamped(x + 1, y); // first pixel (right)
-    // uint32_t rq = _r(l) << 16 | _r(m) << 8 | _r(r);
-    // uint32_t gq = _g(l) << 16 | _g(m) << 8 | _g(r);
-    // uint32_t bq = _b(l) << 16 | _b(m) << 8 | _b(r);
-    // uint32_t aq = _a(l) << 16 | _a(m) << 8 | _a(r);
+    // prime the colour queues
+    uint32_t l = target->pixel_clamped(x - 1, y); // first pixel (left)
+    uint32_t m = target->pixel_clamped(x, y); // first pixel (middle)
+    uint32_t r = target->pixel_clamped(x + 1, y); // first pixel (right)
+    uint32_t rq = _r(l) << 16 | _r(m) << 8 | _r(r);
+    uint32_t gq = _g(l) << 16 | _g(m) << 8 | _g(r);
+    uint32_t bq = _b(l) << 16 | _b(m) << 8 | _b(r);
+    uint32_t aq = _a(l) << 16 | _a(m) << 8 | _a(r);
 
-    // // horizontal pass    
-    // while(w--) {
-    //   // average the three pixels in the queue...
-    //   uint8_t r = (((rq >> 16) & 0xff) + ((rq >> 8) & 0xff) + ((rq >> 8) & 0xff) + ((rq >> 0) & 0xff)) >> 2;
-    //   uint8_t g = (((gq >> 16) & 0xff) + ((gq >> 8) & 0xff) + ((gq >> 8) & 0xff) + ((gq >> 0) & 0xff)) >> 2;
-    //   uint8_t b = (((bq >> 16) & 0xff) + ((bq >> 8) & 0xff) + ((bq >> 8) & 0xff) + ((bq >> 0) & 0xff)) >> 2;
-    //   uint8_t a = (((aq >> 16) & 0xff) + ((aq >> 8) & 0xff) + ((aq >> 8) & 0xff) + ((aq >> 0) & 0xff)) >> 2;
+    // horizontal pass    
+    while(w--) {
+      // average the three pixels in the queue...
+      uint8_t r = (((rq >> 16) & 0xff) + ((rq >> 8) & 0xff) + ((rq >> 8) & 0xff) + ((rq >> 0) & 0xff)) >> 2;
+      uint8_t g = (((gq >> 16) & 0xff) + ((gq >> 8) & 0xff) + ((gq >> 8) & 0xff) + ((gq >> 0) & 0xff)) >> 2;
+      uint8_t b = (((bq >> 16) & 0xff) + ((bq >> 8) & 0xff) + ((bq >> 8) & 0xff) + ((bq >> 0) & 0xff)) >> 2;
+      uint8_t a = (((aq >> 16) & 0xff) + ((aq >> 8) & 0xff) + ((aq >> 8) & 0xff) + ((aq >> 0) & 0xff)) >> 2;
      
-    //   *dst = _make_col(r, g, b, a);
-    //   dst++;
+      *dst = _make_col(r, g, b, a);
+      dst++;
 
-    //   // add the next pixel into the queue
-    //   rq <<= 8;
-    //   gq <<= 8;
-    //   bq <<= 8;
-    //   aq <<= 8;
-    //   uint32_t n = target->pixel_clamped(x + 1, y); // new pixel (right)
-    //   rq |= _r(n);
-    //   gq |= _g(n);
-    //   bq |= _b(n);
-    //   aq |= _a(n);
-    //   x++;
-    // }
+      // add the next pixel into the queue
+      rq <<= 8;
+      gq <<= 8;
+      bq <<= 8;
+      aq <<= 8;
+      uint32_t n = target->pixel_clamped(x + 1, y); // new pixel (right)
+      rq |= _r(n);
+      gq |= _g(n);
+      bq |= _b(n);
+      aq |= _a(n);
+      x++;
+    }
 
   }
 

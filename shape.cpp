@@ -77,11 +77,11 @@ namespace picovector {
   //   }
   // }
 
-  // void shape::stroke(float thickness) {
-  //   for(int i = 0; i < this->paths.size(); i++) {
-  //     this->paths[i]->stroke(thickness);
-  //   }
-  // }
+  void shape::stroke(float thickness) {
+    for(int i = 0; i < (int)this->paths.size(); i++) {
+      this->paths[i].stroke(thickness);
+    }
+  }
 
 
 

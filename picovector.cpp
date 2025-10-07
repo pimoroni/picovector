@@ -51,11 +51,15 @@ namespace picovector {
     }
 
     _edgeinterp(point p1, point p2) {
-      if(p1.y < p2.y) { s = p1; e = p2; }else{ s = p2; e = p1; }
+      if(p1.y < p2.y) { 
+        s = p1; e = p2; 
+      } else { 
+        s = p2; e = p1; 
+      }
       step = (e.x - s.x) / (e.y - s.y);
     }
 
-    void next(int y, float *nodes, int &node_count) {
+    void next(float y, float *nodes, int &node_count) {
       if(y < s.y || y >= e.y) return;
       nodes[node_count++] = s.x + ((y - s.y) * step);
     }
@@ -66,6 +70,9 @@ namespace picovector {
     
     // determine the intersection between transformed polygon and target image
     rect b = shape->bounds();
+
+    // clip the shape bounds to the target bounds
+    rect cb = b.intersection(target->bounds);
 
     //debug_printf("rendering shape %p with %d paths\n", (void*)shape, int(shape->paths.size()));
     //debug_printf("setup interpolators\n");
@@ -85,98 +92,90 @@ namespace picovector {
       }
     }
 
-
-    // clear target mask
-    for(int y = 0; y < target->bounds.h; y++) {
-      uint8_t *pdst = (uint8_t*)target->ptr(0, y);
-      for(int x = 0; x < target->bounds.w; x++) {
-        pdst[3] = 0;
-        pdst += 4;
-      }
-    }
-    
-    //debug_printf("get nodes\n");
     // for each scanline we step the interpolators and build the list of
     // intersecting nodes for that scaline
     static float nodes[128]; // up to 128 nodes (64 spans) per scanline
-    // const size_t SPAN_BUFFER_SIZE = 256;
-    // static _rspan spans[SPAN_BUFFER_SIZE];
+    const size_t SPAN_BUFFER_SIZE = 256;
+    static _rspan spans[SPAN_BUFFER_SIZE];
 
-    int sy = max(b.y, 0.0f);
-    int ey = min(floor(b.y) + ceil(b.h), target->bounds.h);
-    for(int y = sy; y <= ey; y++) {
-      int node_count = 0;
-      for(int i = 0; i < edge_interpolator_count; i++) {
-        edge_interpolators[i].next(y, nodes, node_count);
-      }
+    static uint8_t sb[SPAN_BUFFER_SIZE];    
 
-      // sort the nodes so that neighouring pairs represent render spans
-      sort(nodes, nodes + node_count);
+    int aa = target->antialias;    
+    
+    int sy = cb.y;
+    int ey = cb.y + cb.h;
 
+    // TODO: we can special case a faster version for no AA here
 
-      // render into target mask channel
-      float *current_node = nodes;
-      while(node_count > 0) {
-        int x1 = min(max(0.0f, current_node[0]), target->bounds.w - 1);
-        int x2 = min(max(0.0f, current_node[1]), target->bounds.w - 1);
+    int span_count = 0;
+    for(float y = sy; y < ey; y++) {
+      // clear the span buffer
+      memset(sb, 0, sizeof(sb));
 
-        current_node += 2;
-        node_count -= 2;
+      // loop over y sub samples
+      for(int yss = 0; yss < aa; yss++) {
+        float ysso = (1.0f / float(aa + 1)) * float(yss + 1);
+      
+        int node_count = 0;
 
-        uint8_t *pdst = (uint8_t*)target->ptr(x1, y);
+        for(int i = 0; i < edge_interpolator_count; i++) {
+          edge_interpolators[i].next(y + ysso, nodes, node_count);
+        }
 
-        for(int i = 0; i < x2 - x1; i++) {
-          pdst[3] = 255;
-          pdst += 4;
+        // sort the nodes so that neighouring pairs represent render spans
+        sort(nodes, nodes + node_count);
+               
+        for(int i = 0; i < node_count; i += 2) {
+          int x1 = round((nodes[i + 0] - cb.x) * aa);
+          int x2 = round((nodes[i + 1] - cb.x) * aa);
+
+          x1 = min(max(0, x1), int(cb.w * aa));
+          x2 = min(max(0, x2), int(cb.w * aa));       
+          uint8_t *psb = sb;
+          for(int j = x1; j < x2; j++) {
+            psb[j >> (aa >> 1)]++;
+          }        
         }
       }
 
-      
+      // todo: this could be more efficient if we buffer multiple scanlines at once
+      //debug_printf("render_span_buffer\n");
+      static uint8_t aa_none[2] = {0, 255};
+      static uint8_t aa_x2[5] = {0, 64, 128, 192, 255};
+      static uint8_t aa_x4[17] = {0, 16, 32, 48, 64, 80, 96, 112, 128, 144, 160, 176, 192, 208, 224, 240, 255};
 
-      // float *current_node = nodes;
-      // int span_idx = 0;
-      // while(node_count > 0) {
-      //   int x1 = min(max(0.0f, current_node[0]), target->bounds.w);
-      //   int x2 = min(max(0.0f, current_node[1]), target->bounds.w);
+      uint8_t *aa_lut = aa_none;
+      aa_lut = aa == 2 ? aa_x2 : aa_lut;
+      aa_lut = aa == 4 ? aa_x4 : aa_lut;      
 
-      //   spans[span_idx].x = x1;
-      //   spans[span_idx].y = y;
-      //   spans[span_idx].w = x2 - x1;
-      //   spans[span_idx].o = 255;
-      //   span_idx++;
-      //   current_node += 2;
-      //   node_count -= 2;
-
-      //   if(span_idx == SPAN_BUFFER_SIZE || node_count == 0) {
-      //     //debug_printf("render spans %d\n", span_idx);
-      //     brush->render_spans(target, spans, span_idx);
-      //     span_idx = 0;
-      //   }
-      // }
-    }
-
-    brush->render_mask(target);
-
-    for(int y = 0; y < target->bounds.h; y++) {
-      uint8_t *pdst = (uint8_t*)target->ptr(0, y);
-      for(int x = 0; x < target->bounds.w; x++) {
-        pdst[3] = 255;
-        pdst += 4;
+      // scale span buffer alpha values
+      int c = SPAN_BUFFER_SIZE;
+      uint8_t *psb = sb;
+      while(c--) {
+        *psb = aa_lut[*psb];
+        psb++;
       }
+
+      brush->render_span_buffer(target, cb.x, y, cb.w, sb);
     }
 
-    //debug_printf("render done\n");
+    bool _debug_points = false;
+    if(_debug_points) {
+      color_brush white(255, 255, 255, 50);
+      for(path &path : shape->paths) {
+        point last = path.points.back(); // start with last point to close loop
+        last = last.transform(transform);
+        //debug_printf("- adding path with %d points\n", int(path.points.size()));
+        for(point next : path.points) {
+          // _rspan span = {.x = next.x .y = next.y, w = 1, o = 255};
+          if(next.x >= 0 && next.x < 160 && next.y >= 0 && next.y < 120) {
+            white.render_span(target, next.x, next.y, 1);
+          }
+        }
+      }
+    }    
   }
 
   
-  /* ==========================================================================
-
-  PRIMITIVES
-
-  helper functions for making primitive shapes
-
-  ========================================================================== */
-
-
 
 }

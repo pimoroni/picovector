@@ -40,20 +40,44 @@ namespace picovector {
     }
 
     bool empty() {
-      return w <= 0 || h <= 0;
+      return w == 0 || h == 0;
     }
 
     bool contains(const point &p) {
       return p.x >= x && p.x <= x + w && p.y >= y && p.y <= y + h;
     }
 
-    rect intersection(const rect &r) {
-      return rect(
-        std::max(x, r.x),
-        std::max(y, r.y),
-        std::min(x + w, r.x + r.w) - std::max(x, r.x),
-        std::min(y + h, r.y + r.h) - std::max(y, r.y)
-      );
+    rect normalise() {
+      rect n = *this;
+
+      if(n.w < 0) {
+        n.x += n.w;
+        n.w = -n.w;
+      }
+
+      if(n.h < 0) {
+        n.y += n.h;
+        n.h = -n.h;
+      }
+
+      return n;
+    }
+
+    rect intersection(rect r) {
+      rect rn = r.normalise();
+      rect tn = this->normalise();
+
+      // Compute the edges of the intersection
+      float x1 = std::max(tn.x, rn.x);
+      float y1 = std::max(tn.y, rn.y);
+      float x2 = std::min(tn.x + tn.w, rn.x + rn.w);
+      float y2 = std::min(tn.y + tn.h, rn.y + rn.h);
+
+      if (x1 < x2 && y1 < y2) {
+        return rect(x1, y1, x2 - x1, y2 - y1);
+      }
+
+      return rect(0, 0, 0, 0);
     }
 
     bool intersects(const rect &r) {

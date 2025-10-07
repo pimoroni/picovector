@@ -32,8 +32,8 @@ namespace picovector {
     }
     void add_path(path path);
     rect bounds();
-    /*void draw(image &img); // methods should be on image perhaps? with style/brush and transform passed in?
-    void stroke(float thickness);*/
+    /*void draw(image &img); // methods should be on image perhaps? with style/brush and transform passed in?*/
+    void stroke(float thickness);
   };
 
 }

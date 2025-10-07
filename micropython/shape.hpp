@@ -49,14 +49,30 @@ extern "C" {
   }
 
   mp_obj_t shapes_rectangle(size_t n_args, const mp_obj_t *pos_args) {
-    float x1 = mp_obj_get_float(pos_args[0]);    
-    float y1 = mp_obj_get_float(pos_args[1]);    
-    float x2 = mp_obj_get_float(pos_args[2]);    
-    float y2 = mp_obj_get_float(pos_args[3]);    
+    float x = mp_obj_get_float(pos_args[0]);    
+    float y = mp_obj_get_float(pos_args[1]);    
+    float w = mp_obj_get_float(pos_args[2]);    
+    float h = mp_obj_get_float(pos_args[3]);    
     shape_obj_t *shape = mp_obj_malloc_with_finaliser(shape_obj_t, &type_Shape);
-    shape->shape = rectangle(x1, y1, x2, y2);
+    shape->shape = rectangle(x, y, w, h);
     return MP_OBJ_FROM_PTR(shape);
   }
+
+  mp_obj_t shapes_rounded_rectangle(size_t n_args, const mp_obj_t *pos_args) {
+    float x = mp_obj_get_float(pos_args[0]);    
+    float y = mp_obj_get_float(pos_args[1]);    
+    float w = mp_obj_get_float(pos_args[2]);    
+    float h = mp_obj_get_float(pos_args[3]);    
+    float r1 = mp_obj_get_float(pos_args[4]);    
+    float r2 = r1, r3 = r1, r4 = r1;
+    if(n_args >= 6) { r2 = mp_obj_get_float(pos_args[5]); }
+    if(n_args >= 7) { r3 = mp_obj_get_float(pos_args[6]); }
+    if(n_args >= 8) { r4 = mp_obj_get_float(pos_args[7]); }
+     
+    shape_obj_t *shape = mp_obj_malloc_with_finaliser(shape_obj_t, &type_Shape);
+    shape->shape = rounded_rectangle(x, y, w, h, r1, r2, r3, r4);
+    return MP_OBJ_FROM_PTR(shape);
+  }  
 
   mp_obj_t shapes_squircle(size_t n_args, const mp_obj_t *pos_args) {
     float x = mp_obj_get_float(pos_args[0]);    
@@ -106,18 +122,29 @@ extern "C" {
     float y1 = mp_obj_get_float(pos_args[1]);    
     float x2 = mp_obj_get_float(pos_args[2]);    
     float y2 = mp_obj_get_float(pos_args[3]);    
+    float w = mp_obj_get_float(pos_args[4]);    
     shape_obj_t *shape = mp_obj_malloc_with_finaliser(shape_obj_t, &type_Shape);
-    shape->shape = line(x1, y1, x2, y2);
+    shape->shape = line(x1, y1, x2, y2, w);
     return MP_OBJ_FROM_PTR(shape);
   }
+
+  mp_obj_t shapes_stroke(size_t n_args, const mp_obj_t *pos_args) {
+    const shape_obj_t *self = (shape_obj_t *)MP_OBJ_TO_PTR(pos_args[0]);        
+    float width = mp_obj_get_float(pos_args[1]);    
+    self->shape->stroke(width);
+    return MP_OBJ_FROM_PTR(self);
+  }
+
 
   /*
     micropython bindings
   */
   static MP_DEFINE_CONST_FUN_OBJ_1(shape__del___obj, shape__del__);
+  static MP_DEFINE_CONST_FUN_OBJ_VAR(shapes_stroke_obj, 1, shapes_stroke);
 
   static const mp_rom_map_elem_t shape_locals_dict_table[] = {
       { MP_ROM_QSTR(MP_QSTR___del__), MP_ROM_PTR(&shape__del___obj) },
+      { MP_ROM_QSTR(MP_QSTR_stroke), MP_ROM_PTR(&shapes_stroke_obj) },
   };
   static MP_DEFINE_CONST_DICT(shape_locals_dict, shape_locals_dict_table);
 
@@ -134,10 +161,13 @@ extern "C" {
   static MP_DEFINE_CONST_FUN_OBJ_VAR(shapes_rectangle_obj, 4, shapes_rectangle);
   static MP_DEFINE_CONST_STATICMETHOD_OBJ(shapes_rectangle_static_obj, MP_ROM_PTR(&shapes_rectangle_obj));
 
+  static MP_DEFINE_CONST_FUN_OBJ_VAR(shapes_rounded_rectangle_obj, 5, shapes_rounded_rectangle);
+  static MP_DEFINE_CONST_STATICMETHOD_OBJ(shapes_rounded_rectangle_static_obj, MP_ROM_PTR(&shapes_rounded_rectangle_obj));
+
   static MP_DEFINE_CONST_FUN_OBJ_VAR(shapes_squircle_obj, 4, shapes_squircle);
   static MP_DEFINE_CONST_STATICMETHOD_OBJ(shapes_squircle_static_obj, MP_ROM_PTR(&shapes_squircle_obj));
 
-  static MP_DEFINE_CONST_FUN_OBJ_VAR(shapes_circle_obj, 4, shapes_circle);
+  static MP_DEFINE_CONST_FUN_OBJ_VAR(shapes_circle_obj, 3, shapes_circle);
   static MP_DEFINE_CONST_STATICMETHOD_OBJ(shapes_circle_static_obj, MP_ROM_PTR(&shapes_circle_obj));
 
   static MP_DEFINE_CONST_FUN_OBJ_VAR(shapes_arc_obj, 4, shapes_arc);
@@ -149,18 +179,20 @@ extern "C" {
   static MP_DEFINE_CONST_FUN_OBJ_VAR(shapes_star_obj, 4, shapes_star);
   static MP_DEFINE_CONST_STATICMETHOD_OBJ(shapes_star_static_obj, MP_ROM_PTR(&shapes_star_obj));
 
-  static MP_DEFINE_CONST_FUN_OBJ_VAR(shapes_line_obj, 4, shapes_line);
+  static MP_DEFINE_CONST_FUN_OBJ_VAR(shapes_line_obj, 5, shapes_line);
   static MP_DEFINE_CONST_STATICMETHOD_OBJ(shapes_line_static_obj, MP_ROM_PTR(&shapes_line_obj));
+
 
   static const mp_rom_map_elem_t shapes_locals_dict_table[] = {
     { MP_ROM_QSTR(MP_QSTR_regular_polygon), MP_ROM_PTR(&shapes_regular_polygon_static_obj) },
     { MP_ROM_QSTR(MP_QSTR_squircle), MP_ROM_PTR(&shapes_squircle_static_obj) },
     { MP_ROM_QSTR(MP_QSTR_circle), MP_ROM_PTR(&shapes_circle_static_obj) },
     { MP_ROM_QSTR(MP_QSTR_rectangle), MP_ROM_PTR(&shapes_rectangle_static_obj) },
+    { MP_ROM_QSTR(MP_QSTR_rounded_rectangle), MP_ROM_PTR(&shapes_rounded_rectangle_static_obj) },
     { MP_ROM_QSTR(MP_QSTR_arc), MP_ROM_PTR(&shapes_arc_static_obj) },
     { MP_ROM_QSTR(MP_QSTR_pie), MP_ROM_PTR(&shapes_pie_static_obj) },
     { MP_ROM_QSTR(MP_QSTR_pie), MP_ROM_PTR(&shapes_star_static_obj) },
-    { MP_ROM_QSTR(MP_QSTR_line), MP_ROM_PTR(&shapes_line_static_obj) },
+    { MP_ROM_QSTR(MP_QSTR_line), MP_ROM_PTR(&shapes_line_static_obj) },    
 
   };
   static MP_DEFINE_CONST_DICT(shapes_locals_dict, shapes_locals_dict_table);

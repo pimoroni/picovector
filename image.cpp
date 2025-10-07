@@ -59,29 +59,34 @@ namespace picovector {
     for(int i = 0; i < tr.h; i++) {
       uint32_t *src = this->ptr(sxo, syo + i);
       uint32_t *dst = t->ptr(tr.x, tr.y + i);
-      span_blit_argb8(src, dst, tr.w);
+      span_blit_argb8(src, dst, tr.w, this->alpha);
     }
   }
 
-  void image::blit(image *t, rect r) {
-    // rect cr = r.intersection(t.bounds); // get clipped target rect
-    // if(cr.empty()) {return;}
+  void image::blit(image *target, rect tr) {
+    // clip the target rect to the target bounds
+    rect ctr = tr.intersection(target->bounds);
+    if(ctr.empty()) {return;}
 
-    // // determine source bounds for clipped area in fp16:16 coordinates
-    // int fprw = (bounds.w << 16) / r.w;
-    // int fprh = (bounds.h << 16) / r.h;
-    // rect sr(
-    //   -min(r.x, 0.0f) * fprw,
-    //   -min(r.y, 0.0f) * fprh,
-    //   cr.w * fprw,
-    //   cr.h * fprh
-    // );
+    // calculate the source step
+    float srcstepx = this->bounds.w / tr.w;
+    float srcstepy = this->bounds.h / tr.h;
 
-    // for(int i = 0; i < cr.h; i++) {
-    //   int so = (sr.y + (i * fprh)) >> 16;
-    //   uint32_t *dst = t.ptr(cr.x, cr.y + i);
-    //   span_blit_scale(this->ptr(0, so), dst, sr.x, sr.w, cr.w, alpha);
-    // }
+    // calculate the source offset
+    float srcx = ctr.w < 0 ? this->bounds.w : 0;
+    float srcy = ctr.h < 0 ? this->bounds.h : 0;
+    srcx += (ctr.x - tr.x) * srcstepx;
+    srcy += (ctr.y - tr.y) * srcstepy;
+
+    int sy = min(ctr.y, ctr.y + ctr.h);
+    int ey = max(ctr.y, ctr.y + ctr.h);
+
+
+    for(int y = sy; y != ey; y++) {
+      uint32_t *dst = target->ptr(ctr.x, y);
+      span_blit_scale(this->ptr(0, int(srcy)), dst, int(srcx * 65536.0f), int(srcstepx * 65536.0f), abs(ctr.w), this->alpha);
+      srcy += srcstepy;
+    }
   }
 
   uint32_t* image::ptr(int x, int y) {

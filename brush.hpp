@@ -52,7 +52,7 @@ namespace picovector {
     xor_brush(int r, int g, int b);
     
     void render_span(image *target, int x, int y, int w);
-    void render_span_buffer(image *target, int x, int y, int w, uint8_t *sb) {};
+    void render_span_buffer(image *target, int x, int y, int w, uint8_t *sb);
     //void render_mask(image *target);
   };
 

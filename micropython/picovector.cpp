@@ -6,8 +6,8 @@
 
 #include "brush.hpp"
 #include "shape.hpp"
-#include "image.hpp"
 #include "font.hpp"
+#include "image.hpp"
 #include "input.hpp"
 
 #define self(self_in, T) T *self = (T *)MP_OBJ_TO_PTR(self_in)
@@ -34,6 +34,7 @@ extern "C" {
   extern const mp_rom_map_elem_t modpicovector_globals_table;
 
   void modpicovector_deinit() {
+    debug_printf("modpicovector_deinit: Cleaning up...\n");
     mp_image = nullptr;
     mp_input = nullptr;
   }
@@ -42,6 +43,8 @@ extern "C" {
     if (dest[0] == MP_OBJ_NULL) {
       if (attr == MP_QSTR_screen) {
         if(!mp_image) {
+          // Don't use mp_obj_malloc_with_finalizer here, since the __del__
+          // method will try to delete our `screen` and explode.
           mp_image = mp_obj_malloc(image_obj_t, &type_Image);
           mp_image->image = &screen;
         }

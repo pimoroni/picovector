@@ -1,3 +1,5 @@
+#pragma once
+
 #include <stdint.h>
 #ifdef PICO
 #include "hardware/interp.h"

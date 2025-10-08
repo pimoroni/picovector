@@ -6,6 +6,7 @@
 #include "brush.hpp"
 #include "shape.hpp"
 #include "rect.hpp"
+#include "font.hpp"
 #include "matrix.hpp"
 
 namespace picovector {
@@ -18,6 +19,8 @@ namespace picovector {
     X4 = 4
   };
 
+  class font;
+
   class image {
     public:
       uint32_t *p = nullptr;
@@ -25,6 +28,7 @@ namespace picovector {
 
       rect bounds;
       picovector::brush *brush;
+      picovector::font *font;
       int alpha = 255;
       enum antialiasing antialias = OFF;
       

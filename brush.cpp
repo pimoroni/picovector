@@ -185,6 +185,21 @@ namespace picovector {
   }  
 
 
+  void xor_brush::render_span_buffer(image *target, int x, int y, int w, uint8_t *sb) {
+    uint8_t *dst = (uint8_t*)target->ptr(x, y);
+    uint8_t *src = (uint8_t*)&color;
+    while(w--) {
+      uint32_t xored = _make_col(dst[0] ^ src[0], dst[1] ^ src[1], dst[2] ^ src[2], *sb);
+      _rgba_blend_to((uint32_t *)dst, &xored);
+      dst += 4;
+      sb++;
+    }
+
+    //uint32_t *dst = target->ptr(x, y);
+    //span_argb8(dst, w, color, sb);
+  }
+
+
   // void xor::render_spans(image *target, shape *shape, render_span *spans, int count) {
   //   while(count--) {
   //     debug_printf("%d, %d (%d)\n", spans->x, spans->y, spans->w);

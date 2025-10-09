@@ -71,9 +71,26 @@ extern "C" {
       return;
     }
 
-    if((attr == MP_QSTR_pressed || attr == MP_QSTR_changed) && dest[0] == MP_OBJ_NULL) {
+    if((attr == MP_QSTR_held || attr == MP_QSTR_pressed || attr == MP_QSTR_released || attr == MP_QSTR_changed) && dest[0] == MP_OBJ_NULL) {
       mp_obj_t t_items[6];
-      uint8_t buttons = attr == MP_QSTR_pressed ? picovector_buttons : picovector_changed_buttons;
+      uint8_t buttons = 0;
+
+      switch(attr) {
+        case MP_QSTR_held:
+          buttons = picovector_buttons;
+          break;
+        case MP_QSTR_pressed:
+          buttons = picovector_buttons & picovector_changed_buttons;
+          break;
+        case MP_QSTR_released:
+          buttons = ~picovector_buttons & picovector_changed_buttons;
+          break;
+        case MP_QSTR_changed:
+          buttons = picovector_changed_buttons;
+          break;
+        default:
+          break;
+      }
       int n = 0;
       if(buttons & BUTTON::HOME) {
         t_items[n] = mp_obj_new_int(BUTTON::HOME);

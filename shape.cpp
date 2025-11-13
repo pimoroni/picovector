@@ -1,12 +1,12 @@
 #include <float.h>
 #include "shape.hpp"
 
-using namespace std;
+using std::vector;
 
 namespace picovector {
 
 
-  void offset_line_segment(point &s, point &e, float offset) {
+  void offset_line_segment(point_t &s, point_t &e, float offset) {
     // calculate normal of edge
     float nx = -(e.y - s.y);
     float ny = e.x - s.x;
@@ -25,7 +25,7 @@ namespace picovector {
     e.y += oy;
   }
 
-  bool intersection(point p1, point p2, point p3, point p4, point &i) {
+  bool intersection(point_t p1, point_t p2, point_t p3, point_t p4, point_t &i) {
     float a1 = p2.y - p1.y;
     float b1 = p1.x - p2.x;
     float c1 = a1 * p1.x + b1 * p1.y;
@@ -47,19 +47,19 @@ namespace picovector {
 
 
 
-  shape::shape(int path_count) {
+  shape_t::shape_t(int path_count) {
     //debug_printf("shape constructed\n");
     paths.reserve(path_count);
   }
 
-  void shape::add_path(path path) {
+  void shape_t::add_path(path_t path) {
     paths.push_back(path);
   }
 
-  rect shape::bounds() {
+  rect_t shape_t::bounds() {
     float minx = FLT_MAX, miny = FLT_MAX, maxx = -FLT_MAX, maxy = -FLT_MAX;
-    for(const path &path : paths) {
-      for(point point : path.points) {
+    for(const path_t &path : paths) {
+      for(point_t point : path.points) {
         point = point.transform(&transform);
         minx = min(minx, point.x);
         miny = min(miny, point.y);
@@ -67,7 +67,7 @@ namespace picovector {
         maxy = max(maxy, point.y);
       }
     }
-    return rect(minx, miny, ceil(maxx) - minx, ceil(maxy) - miny);
+    return rect_t(minx, miny, ceil(maxx) - minx, ceil(maxy) - miny);
   }
 
   // these should be methods on image maybe?
@@ -77,7 +77,7 @@ namespace picovector {
   //   }
   // }
 
-  void shape::stroke(float thickness) {
+  void shape_t::stroke(float thickness) {
     for(int i = 0; i < (int)this->paths.size(); i++) {
       this->paths[i].stroke(thickness);
     }
@@ -85,46 +85,46 @@ namespace picovector {
 
 
 
-  path::path(int point_count) {
+  path_t::path_t(int point_count) {
     points.reserve(point_count);
   }
 
-  void path::add_point(const point &point) {
+  void path_t::add_point(const point_t &point) {
     points.push_back(point);
   }
 
-  void path::add_point(float x, float y) {
-    points.push_back(point(x, y));
+  void path_t::add_point(float x, float y) {
+    points.push_back(point_t(x, y));
   }
 
-  void path::edge_points(int edge, point &s, point &e) {
+  void path_t::edge_points(int edge, point_t &s, point_t &e) {
     // return the two points that make up an edge
     s = edge == -1 ? points.back() : points[edge];
     e = edge == (int)points.size() - 1 ? points.front() : points[edge + 1];
   }
 
-  void path::stroke(float offset) {
+  void path_t::stroke(float offset) {
     int c = points.size();
-    vector<point, PV_STD_ALLOCATOR<point>> new_points(c);
+    vector<point_t, PV_STD_ALLOCATOR<point_t>> new_points(c);
 
     if(c == 2) {
-        point p1, p2; // edge 1 start and end
+        point_t p1, p2; // edge 1 start and end
         edge_points(0, p1, p2);
         offset_line_segment(p1, p2, offset);
         points.push_back(p2);
         points.push_back(p1);
     }else{
       for(int i = 0; i < c; i++) {
-        point p1, p2; // edge 1 start and end
+        point_t p1, p2; // edge 1 start and end
         edge_points(i - 1, p1, p2);
         offset_line_segment(p1, p2, offset);
 
-        point p3, p4; // edge 2 start and end
+        point_t p3, p4; // edge 2 start and end
         edge_points(i, p3, p4);
         offset_line_segment(p3, p4, offset);
 
         // find intersection of the edges
-        point pi;
+        point_t pi;
         bool ok = intersection(p1, p2, p3, p4, pi);
         new_points[i] = pi;
       }
@@ -135,21 +135,21 @@ namespace picovector {
     }
   }
 
-  void path::inflate(float offset) {
-    vector<point, PV_STD_ALLOCATOR<point>> new_points(points.size());
+  void path_t::inflate(float offset) {
+    vector<point_t, PV_STD_ALLOCATOR<point_t>> new_points(points.size());
 
     int edge_count = points.size();
     for(int i = 0; i < edge_count; i++) {
-      point p1, p2; // edge 1 start and end
+      point_t p1, p2; // edge 1 start and end
       edge_points(i, p1, p2);
       offset_line_segment(p1, p2, offset);
 
-      point p3, p4; // edge 2 start and end
+      point_t p3, p4; // edge 2 start and end
       edge_points(i + 1, p3, p4);
       offset_line_segment(p3, p4, offset);
 
       // find intersection of the edges
-      point pi;
+      point_t pi;
       bool ok = intersection(p1, p2, p3, p4, pi);
       new_points[i] = pi;
     }

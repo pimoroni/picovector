@@ -1,11 +1,8 @@
 #include "mp_tracked_allocator.hpp"
-#include "../picovector.hpp"
 #include "../font.hpp"
 #include "../span.hpp"
 
-#define self(self_in, T) T *self = (T *)MP_OBJ_TO_PTR(self_in)
-#define m_new_class(cls, ...) new(m_new(cls, 1)) cls(__VA_ARGS__)
-#define m_del_class(cls, ptr) ptr->~cls(); m_del(cls, ptr, 1)
+#include "mp_helpers.hpp"
 
 using namespace picovector;
 
@@ -20,7 +17,7 @@ extern "C" {
 
   typedef struct _font_obj_t {
     mp_obj_base_t base;
-    font font;
+    font_t font;
     uint8_t *buffer;
     uint32_t buffer_size;
   } font_obj_t;
@@ -35,30 +32,8 @@ extern "C" {
     return mp_const_none;
   }
 
-  // file reading helpers
-  uint16_t ru16(mp_obj_t file) {
-    int error;
-    uint16_t result;
-    mp_stream_read_exactly(file, &result, 2, &error);
-    return __builtin_bswap16(result);
-  }
-
-  uint8_t ru8(mp_obj_t file) {
-    int error;
-    uint8_t result;
-    mp_stream_read_exactly(file, &result, 1, &error);
-    return result;
-  }
-
-  int8_t rs8(mp_obj_t file) {
-    int error;
-    int8_t result;
-    mp_stream_read_exactly(file, &result, 1, &error);
-    return result;
-  }
-
   mp_obj_t font_load(mp_obj_t path) {
-    //const char *s = mp_obj_str_get_str(path);    
+    //const char *s = mp_obj_str_get_str(path);
     font_obj_t *result = mp_obj_malloc_with_finaliser(font_obj_t, &type_Font);
 
     // PNG *png = new(m_malloc(sizeof(PNG))) PNG();
@@ -76,42 +51,42 @@ extern "C" {
     // open the file for binary reading
     mp_obj_t args[2] = {path, MP_ROM_QSTR(MP_QSTR_r)};
     mp_obj_t file = mp_vfs_open(MP_ARRAY_SIZE(args), args, (mp_map_t *)&mp_const_empty_map);
-    
+
     int error;
 
     char marker[4];
     mp_stream_read_exactly(file, &marker, sizeof(marker), &error);
 
-    if(memcmp(marker, "af!?", 4) != 0) {   
+    if(memcmp(marker, "af!?", 4) != 0) {
       mp_raise_msg_varg(&mp_type_OSError, MP_ERROR_TEXT("failed to load font, missing AF header"));
     }
-    
+
     uint16_t flags       = ru16(file);
     uint16_t glyph_count = ru16(file);
     uint16_t path_count  = ru16(file);
     uint16_t point_count = ru16(file);
 
-    size_t glyph_buffer_size = sizeof(glyph) * glyph_count;
-    size_t path_buffer_size = sizeof(glyph_path) * path_count;
-    size_t point_buffer_size = sizeof(glyph_path_point) * point_count;
+    size_t glyph_buffer_size = sizeof(glyph_t) * glyph_count;
+    size_t path_buffer_size = sizeof(glyph_path_t) * path_count;
+    size_t point_buffer_size = sizeof(glyph_path_point_t) * point_count;
 
     // allocate buffer to store font glyph, path, and point data
     result->buffer_size = glyph_buffer_size + path_buffer_size + point_buffer_size;
-    result->buffer = (uint8_t *)m_malloc(result->buffer_size);
+    result->buffer = (uint8_t*)m_malloc(result->buffer_size);
 
     if(!result->buffer) {
       mp_raise_msg_varg(&mp_type_OSError, MP_ERROR_TEXT("couldn't allocate buffer for font data"));
-    }    
+    }
 
-    glyph *glyphs = (glyph *)result->buffer;
-    glyph_path *paths = (glyph_path *)(result->buffer + glyph_buffer_size);
-    glyph_path_point *points = (glyph_path_point *)(result->buffer + glyph_buffer_size + path_buffer_size);
+    glyph_t *glyphs = (glyph_t*)result->buffer;
+    glyph_path_t *paths = (glyph_path_t*)(result->buffer + glyph_buffer_size);
+    glyph_path_point_t *points = (glyph_path_point_t*)(result->buffer + glyph_buffer_size + path_buffer_size);
 
     // load glyph dictionary
     result->font.glyph_count = glyph_count;
     result->font.glyphs      = glyphs;
     for(int i = 0; i < glyph_count; i++) {
-      glyph *glyph = &result->font.glyphs[i];
+      glyph_t *glyph = &result->font.glyphs[i];
       glyph->codepoint  = ru16(file);
       glyph->x          =  rs8(file);
       glyph->y          =  rs8(file);
@@ -125,10 +100,10 @@ extern "C" {
 
     // load the glyph paths
     for(int i = 0; i < glyph_count; i++) {
-      glyph *glyph = &result->font.glyphs[i];
+      glyph_t *glyph = &result->font.glyphs[i];
       for(int j = 0; j < glyph->path_count; j++) {
-        glyph_path *path = &glyph->paths[j];
-        path->point_count = flags & 0b1 ? ru16(file) : ru8(file);                
+        glyph_path_t *path = &glyph->paths[j];
+        path->point_count = flags & 0b1 ? ru16(file) : ru8(file);
         path->points = points;
         points += path->point_count;
       }
@@ -136,17 +111,17 @@ extern "C" {
 
     // load the glyph points
     for(int i = 0; i < glyph_count; i++) {
-      glyph *glyph = &result->font.glyphs[i];
+      glyph_t *glyph = &result->font.glyphs[i];
       for(int j = 0; j < glyph->path_count; j++) {
-        glyph_path *path = &glyph->paths[j];
+        glyph_path_t *path = &glyph->paths[j];
         for(int k = 0; k < path->point_count; k++) {
-          glyph_path_point *point = &path->points[k];
+          glyph_path_point_t *point = &path->points[k];
           point->x = ru8(file);
           point->y = ru8(file);
         }
       }
     }
-    
+
     mp_stream_close(file);
 
     return MP_OBJ_FROM_PTR(result);
@@ -160,7 +135,7 @@ extern "C" {
   static const mp_rom_map_elem_t font_locals_dict_table[] = {
       { MP_ROM_QSTR(MP_QSTR___del__), MP_ROM_PTR(&font__del___obj) },
       { MP_ROM_QSTR(MP_QSTR_load), MP_ROM_PTR(&font_load_static_obj) },
-      
+
   };
   static MP_DEFINE_CONST_DICT(font_locals_dict, font_locals_dict_table);
 

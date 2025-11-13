@@ -5,27 +5,30 @@
 
 #include "point.hpp"
 
+using std::max;
+using std::min;
+
 namespace picovector {
 
-  class rect {
+  class rect_t {
   public:
     float x;
     float y;
     float w;
     float h;
     
-    rect() {}
+    rect_t() {}
     
-    rect(float x, float y, float w, float h) : x(x), y(y), w(w), h(h) {}
+    rect_t(float x, float y, float w, float h) : x(x), y(y), w(w), h(h) {}
 
-    rect(const point &p1, const point &p2) {
+    rect_t(const point_t &p1, const point_t &p2) {
       x = p1.x; y = p1. y; w = p2.x - p1.x; h = p2.y - p1.y;
     }
 
-    point tl() {return point(x, y);}
-    point br() {return point(x + w, y + h);}
+    point_t tl() {return point_t(x, y);}
+    point_t br() {return point_t(x + w, y + h);}
 
-    void offset(point p) {
+    void offset(point_t p) {
       x += p.x;
       y += p.y;
     }
@@ -35,7 +38,7 @@ namespace picovector {
       y += oy;
     }
 
-    bool operator==(const rect &rhs) const {
+    bool operator==(const rect_t &rhs) const {
       return x == rhs.x && y == rhs.y && w == rhs.w && h == rhs.h;
     }
 
@@ -43,12 +46,12 @@ namespace picovector {
       return w == 0 || h == 0;
     }
 
-    bool contains(const point &p) {
+    bool contains(const point_t &p) {
       return p.x >= x && p.x <= x + w && p.y >= y && p.y <= y + h;
     }
 
-    rect normalise() {
-      rect n = *this;
+    rect_t normalise() {
+      rect_t n = *this;
 
       if(n.w < 0) {
         n.x += n.w;
@@ -63,25 +66,25 @@ namespace picovector {
       return n;
     }
 
-    rect intersection(rect r) {
-      rect rn = r.normalise();
-      rect tn = this->normalise();
+    rect_t intersection(rect_t r) {
+      rect_t rn = r.normalise();
+      rect_t tn = this->normalise();
 
       // Compute the edges of the intersection
-      float x1 = std::max(tn.x, rn.x);
-      float y1 = std::max(tn.y, rn.y);
-      float x2 = std::min(tn.x + tn.w, rn.x + rn.w);
-      float y2 = std::min(tn.y + tn.h, rn.y + rn.h);
+      float x1 = max(tn.x, rn.x);
+      float y1 = max(tn.y, rn.y);
+      float x2 = min(tn.x + tn.w, rn.x + rn.w);
+      float y2 = min(tn.y + tn.h, rn.y + rn.h);
 
       if (x1 < x2 && y1 < y2) {
-        return rect(x1, y1, x2 - x1, y2 - y1);
+        return rect_t(x1, y1, x2 - x1, y2 - y1);
       }
 
-      return rect(0, 0, 0, 0);
+      return rect_t(0, 0, 0, 0);
     }
 
-    bool intersects(const rect &r) {
-      rect i = this->intersection(r);
+    bool intersects(const rect_t &r) {
+      rect_t i = this->intersection(r);
       return !i.empty();
     }
 

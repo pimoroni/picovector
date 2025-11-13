@@ -32,10 +32,10 @@ namespace picovector {
   
   #define debug_printf(fmt, ...) fprintf(stdout, fmt, ##__VA_ARGS__)
 
-  struct brush;
-  class image;
-  class shape;
-  class mat3;
+  class brush_t;
+  class image_t;
+  class shape_t;
+  class mat3_t;
 
   struct _rspan {
     int x; // span start x
@@ -47,6 +47,6 @@ namespace picovector {
     _rspan(int x, int y, int w, int o = 255) : x(x), y(y), w(w), o(o) {}
   };
 
-  void render(shape *shape, image *target, mat3 *transform, brush *brush);
+  void render(shape_t *shape, image_t *target, mat3_t *transform, brush_t *brush);
 
 }

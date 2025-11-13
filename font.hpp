@@ -11,39 +11,39 @@
 
 namespace picovector {
 
-  class image;
+  class image_t;
 
-  class glyph_path_point {
+  class glyph_path_point_t {
   public:
     int8_t x, y;
     
-    point transform(mat3 *transform);
+    point_t transform(mat3_t *transform);
   };
 
-  class glyph_path {
+  class glyph_path_t {
   public:
     uint16_t point_count;
-    glyph_path_point *points;
+    glyph_path_point_t *points;
   };
 
-  class glyph {
+  class glyph_t {
   public:
     uint16_t codepoint;
     int8_t x, y, w, h;
     int8_t advance;
     uint8_t path_count;
-    glyph_path *paths;   
+    glyph_path_t *paths;   
     
-    rect bounds(mat3 *transform);
+    rect_t bounds(mat3_t *transform);
   };
 
-  class font {
+  class font_t {
   public:
     int glyph_count;
-    glyph *glyphs;
+    glyph_t *glyphs;
 
-    void draw(image *target, const char *text, float x, float y, float size);
-    rect measure(image *target, const char *text, float size);
+    void draw(image_t *target, const char *text, float x, float y, float size);
+    rect_t measure(image_t *target, const char *text, float size);
   };
 
 }

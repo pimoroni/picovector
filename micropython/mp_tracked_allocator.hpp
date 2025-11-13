@@ -6,7 +6,9 @@
 #ifndef MPTALLOCATOR_H
 #define MPTALLOCATOR_H
 
+
 extern "C" {
+#include "py/runtime.h"
     extern void *m_tracked_calloc(size_t nmemb, size_t size);
     extern void m_tracked_free(void *ptr_in);
 }
@@ -27,11 +29,13 @@ struct MPAllocator
         //    throw std::bad_array_new_length();
  
         //if (auto p = static_cast<T*>(std::malloc(n * sizeof(T))))
-        if (auto p = static_cast<T*>(m_tracked_calloc(n, sizeof(T))))
+        //if (auto p = static_cast<T*>(m_tracked_calloc(n, sizeof(T))))
+        if (auto p = static_cast<T*>(m_malloc(n * sizeof(T))))
         {
             report(p, n);
             return p;
-        }
+        } 
+        mp_raise_msg_varg(&mp_type_RuntimeError, MP_ERROR_TEXT("Failed to allocate %lu bytes!"), n);
         return NULL;
  
         //throw std::bad_alloc();
@@ -41,7 +45,8 @@ struct MPAllocator
     {
         report(p, n, 0);
         //std::free(p);
-        m_tracked_free(p);
+        //m_tracked_free(p);
+        m_free(p);
     }
 
 private:

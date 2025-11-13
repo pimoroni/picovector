@@ -1,111 +1,285 @@
-#include "image.hpp"
-
-#include "span.hpp"
-#include "brush.hpp"
-
 #include <string.h>
 #include <math.h>
 #include <algorithm>
+#include <vector>
 
-using namespace std;
+#include "image.hpp"
+#include "span.hpp"
+#include "brush.hpp"
+#include "shape.hpp"
 
-
+using std::vector;
 
 namespace picovector {
 
   color_brush _default_image_brush(255, 255, 255, 255);
 
-  image::image(int w, int h) : managed_buffer(true), brush(&_default_image_brush) {
-    bounds = rect(0, 0, w, h);
-    p = (uint32_t *)PV_MALLOC(sizeof(uint32_t) * w * h);
-    _rowstride = w * sizeof(uint32_t);
+  image_t::image_t() {
   }
 
-  image::image(uint32_t *p, int w, int h) : p(p), managed_buffer(false), brush(&_default_image_brush) {
-    bounds = rect(0, 0, w, h);    
-    _rowstride = w * sizeof(uint32_t);
+  image_t::image_t(image_t *source, rect_t r) {
+    rect_t i = source->_bounds.intersection(r);
+    *this = *source;
+    this->_bounds = rect_t(0, 0, i.w, i.h);
+    this->_buffer = source->ptr(i.x, i.y);
+    this->_managed_buffer = false;
   }
 
-  image::~image() {
-    if(managed_buffer) {
-      //PV_FREE(p);
+  image_t::image_t(int w, int h, pixel_format_t pixel_format, bool has_palette) {
+    _bounds = rect_t(0, 0, w, h);
+    _brush = &_default_image_brush;
+    _pixel_format = pixel_format;
+    _has_palette = has_palette;
+    _managed_buffer = true;
+    _bytes_per_pixel = this->_has_palette ? sizeof(uint8_t) : sizeof(uint32_t);
+    _row_stride = w * _bytes_per_pixel;
+    _buffer = PV_MALLOC(this->buffer_size());
+    if(_has_palette) {
+      _palette.resize(256);
     }
   }
 
-  image image::window(rect r) {
-    rect i = bounds.intersection(r);
-    image window = image(ptr(r.x, r.y), i.w, i.h);
+  image_t::image_t(void *buffer, int w, int h, pixel_format_t pixel_format, bool has_palette) {
+    _bounds = rect_t(0, 0, w, h);
+    _brush = &_default_image_brush;
+    _pixel_format = pixel_format;
+    _has_palette = has_palette;
+    _buffer = buffer;
+    _managed_buffer = false;
+    _bytes_per_pixel = this->_has_palette ? sizeof(uint8_t) : sizeof(uint32_t);
+    _row_stride = w * _bytes_per_pixel;
+    if(_has_palette) {
+      _palette.resize(256);
+    }
+  }
 
-    // window.bounds = rect(0, 0, i.w, i.h);
-    // window.p = ptr(r.x, r.y);
-    window._rowstride = _rowstride;
+  image_t::~image_t() {
+    if(this->_managed_buffer) {
+#ifdef PICO
+      PV_FREE(this->_buffer);
+#else
+      PV_FREE(this->_buffer, this->buffer_size());
+#endif
+    }
+  }
+
+  size_t image_t::buffer_size() {
+    return this->_bytes_per_pixel * this->_bounds.w * this->_bounds.h;
+  }
+
+  size_t image_t::bytes_per_pixel() {
+    return this->_bytes_per_pixel;
+  }
+
+  bool image_t::compatible_buffer(image_t *other) {
+    return this->_palette == other->_palette && this->_pixel_format == other->_pixel_format;
+  }
+
+  uint32_t image_t::row_stride() {
+    return this->_row_stride;
+  }
+
+  rect_t image_t::bounds() {
+    return this->_bounds;
+  }
+
+  bool image_t::has_palette() {
+    return this->_has_palette;
+  }
+
+  void image_t::delete_palette() {
+    if(this->has_palette()) {
+      this->_palette.clear();
+    }
+  }
+
+  void image_t::palette(uint8_t i, uint32_t c) {
+    this->_palette[i] = c;
+  }
+
+  uint32_t image_t::palette(uint8_t i) {
+    return this->_palette[i];
+  }
+
+  uint8_t image_t::alpha() {
+    return this->_alpha;
+  }
+
+  void image_t::alpha(uint8_t alpha) {
+    // TODO: check if pixel format and palette mode supports alpha
+    this->_alpha = alpha;
+  }
+
+  antialias_t image_t::antialias() {
+    return this->_antialias;
+  }
+
+  void image_t::antialias(antialias_t antialias) {
+    // TODO: check if pixel format and palette mode supports alpha
+    this->_antialias = antialias;
+  }
+
+  pixel_format_t image_t::pixel_format() {
+    return this->_pixel_format;
+  }
+
+  void image_t::pixel_format(pixel_format_t pixel_format) {
+    this->_pixel_format = pixel_format;
+  }
+
+  brush_t* image_t::brush() {
+    return this->_brush;
+  }
+
+  void image_t::brush(brush_t *brush) {
+    this->_brush = brush;
+  }
+
+  font_t* image_t::font() {
+    return this->_font;
+  }
+
+  void image_t::font(font_t *font) {
+    this->_font = font;
+  }
+
+  pixel_font_t* image_t::pixel_font() {
+    return this->_pixel_font;
+  }
+
+  void image_t::pixel_font(pixel_font_t *pixel_font) {
+    this->_pixel_font = pixel_font;
+  }
+
+  image_t image_t::window(rect_t r) {
+    rect_t i = _bounds.intersection(r);
+    image_t window = image_t(this, rect_t(i.x, i.y, i.w, i.h));
     return window;
   }
 
-
-  void image::clear() {
-    rectangle(bounds);
+  void image_t::clear() {
+    rectangle(_bounds);
   }
 
-  void image::blit(image *t, const point p) {
-    rect tr(p.x, p.y, bounds.w, bounds.h); // target rect
-    tr = tr.intersection(t->bounds); // clip to target image bounds
+  void image_t::blit(image_t *t, const point_t p) {
+    rect_t tr(p.x, p.y, _bounds.w, _bounds.h); // target rect
+    tr = tr.intersection(t->_bounds); // clip to target image bounds
 
     if(tr.empty()) {return;}
 
     int sxo = p.x < 0 ? -p.x : 0;
-    int syo = p.y < 0 ? -p.y : 0;    
+    int syo = p.y < 0 ? -p.y : 0;
 
     for(int i = 0; i < tr.h; i++) {
-      uint32_t *src = this->ptr(sxo, syo + i);
-      uint32_t *dst = t->ptr(tr.x, tr.y + i);
-      span_blit_argb8(src, dst, tr.w, this->alpha);
+
+      uint32_t *dst = (uint32_t *)t->ptr(tr.x, tr.y + i);
+
+      if(this->_has_palette) {
+        uint8_t *src = (uint8_t *)this->ptr(sxo, syo + i);
+        span_blit_argb8_palette(src, dst, &this->_palette[0], tr.w, this->alpha());
+      }else{
+        uint32_t *src = (uint32_t *)this->ptr(sxo, syo + i);
+        span_blit_argb8(src, dst, tr.w, this->alpha());
+      }
     }
   }
 
-  void image::blit(image *target, rect tr) {
+  /*
+    renders a vertical span onto the target image using this image as a
+    texture.
+
+    - p: the starting point of the span on the target
+    - c: the count of pixels to render
+    - uvs: the start coordinate of the texture
+    - uve: the end coordinate of the texture
+  */
+  void image_t::vspan_tex(image_t *target, point_t p, uint c, point_t uvs, point_t uve) {
+    rect_t b = target->bounds();
+    if(p.x < b.x || p.x > b.x + b.w) {
+      return;
+    }
+
+    float ustep = (uve.x - uvs.x) / float(c);
+    float vstep = (uve.y - uvs.y) / float(c);
+    float u = uvs.x;
+    float v = uvs.y;
+
+    for(int y = p.y; y < p.y + c; y++) {
+      if(y >= b.y && y < b.y + b.h) {
+        uint32_t *dst = (uint32_t *)target->ptr(p.x, y);
+        u += ustep;
+        v += vstep;
+
+        int tx = round(u);
+        int ty = round(v);
+
+        uint32_t col;
+        if(this->_has_palette) {
+          uint8_t *src = (uint8_t *)this->ptr(tx, ty);
+          col = this->_palette[*src];
+        } else {
+          uint32_t *src = (uint32_t *)this->ptr(tx, ty);
+          col = *src;
+        }
+        *dst = col;
+      }
+    }
+  }
+
+  void image_t::blit(image_t *target, rect_t tr) {
+    bool invert_x = tr.w < 0.0f;
+    bool invert_y = tr.h < 0.0f;
+
+    tr.w = abs(tr.w);
+    tr.h = abs(tr.h);
+
     // clip the target rect to the target bounds
-    rect ctr = tr.intersection(target->bounds);
+    rect_t ctr = tr.intersection(target->bounds());
     if(ctr.empty()) {return;}
 
     // calculate the source step
-    float srcstepx = this->bounds.w / tr.w;
-    float srcstepy = this->bounds.h / tr.h;
+    float srcstepx = (invert_x ? -1 : 1) * this->_bounds.w / tr.w;
+    float srcstepy = (invert_y ? -1 : 1) * this->_bounds.h / tr.h;
 
     // calculate the source offset
-    float srcx = ctr.w < 0 ? this->bounds.w : 0;
-    float srcy = ctr.h < 0 ? this->bounds.h : 0;
+    float srcx = invert_x ? this->_bounds.w - 1 : 0;
+    float srcy = invert_y ? this->_bounds.h - 1 : 0;
     srcx += (ctr.x - tr.x) * srcstepx;
     srcy += (ctr.y - tr.y) * srcstepy;
 
-    int sy = min(ctr.y, ctr.y + ctr.h);
-    int ey = max(ctr.y, ctr.y + ctr.h);
+    int sy = ctr.y;// min(ctr.y, ctr.y + ctr.h);
+    int ey = ctr.y + ctr.h;//max(ctr.y, ctr.y + ctr.h);
 
+    for(int y = sy; y < ey; y++) {
+      void *dst = target->ptr(ctr.x, y);
 
-    for(int y = sy; y != ey; y++) {
-      uint32_t *dst = target->ptr(ctr.x, y);
-      span_blit_scale(this->ptr(0, int(srcy)), dst, int(srcx * 65536.0f), int(srcstepx * 65536.0f), abs(ctr.w), this->alpha);
+      if(this->_has_palette) {
+        span_blit_scale_palette((uint32_t *)this->ptr(0, int(srcy)), (uint32_t *)dst, &this->_palette[0], int(srcx * 65536.0f), int(srcstepx * 65536.0f), abs(ctr.w), this->alpha());
+      }else{
+        span_blit_scale((uint32_t *)this->ptr(0, int(srcy)), (uint32_t *)dst, int(srcx * 65536.0f), int(srcstepx * 65536.0f), abs(ctr.w), this->alpha());
+      }
+
       srcy += srcstepy;
     }
   }
 
-  uint32_t* image::ptr(int x, int y) {
-    return this->p + x + (y * (this->_rowstride / sizeof(uint32_t)));
+  void* image_t::ptr(int x, int y) {
+    //debug_printf("get ptr at %d, %d (bpp = %d, rs = %d)\n", x, y, (int)this->_bytes_per_pixel, (int)this->_row_stride);
+    return (uint8_t *)(this->_buffer) + (x * this->_bytes_per_pixel) + (y * this->_row_stride);
   }
 
-  void image::draw(shape *shape) {
-    mat3 m;
-    render(shape, this, &m, brush);
+  void image_t::draw(shape_t *shape) {
+    render(shape, this, &shape->transform, _brush);
   }
 
-  void image::rectangle(const rect &r) {
+  void image_t::rectangle(const rect_t &r) {
     for(int y = 0; y < r.h; y++) {
-      this->brush->render_span(this, r.x, y, r.w);
+      this->_brush->render_span(this, r.x, y, r.w);
     }
   }
 
 
-  void image::circle(const point &p, const int &r) {
+  void image_t::circle(const point_t &p, const int &r) {
     // int sy = max(p.y - r, 0);
     // int ey = min(p.y + r, bounds.h);
     // for(int y = sy; y < ey; y++) {
@@ -122,14 +296,14 @@ namespace picovector {
   }
 
 
-  uint32_t image::pixel(int x, int y) {
-    return *ptr(x, y);    
+  uint32_t image_t::pixel_unsafe(int x, int y) {
+    return *((uint32_t *)ptr(x, y));
   }
 
-  uint32_t image::pixel_clamped(int x, int y) {
-    x = max(int(bounds.x), min(x, int(bounds.x + bounds.w - 1)));
-    y = max(int(bounds.y), min(y, int(bounds.y + bounds.h - 1)));
-    return *ptr(x, y);    
+  uint32_t image_t::pixel(int x, int y) {
+    x = max(int(_bounds.x), min(x, int(_bounds.x + _bounds.w - 1)));
+    y = max(int(_bounds.y), min(y, int(_bounds.y + _bounds.h - 1)));
+    return *((uint32_t *)ptr(x, y));
   }
 
 }

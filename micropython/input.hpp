@@ -5,7 +5,7 @@
 #include "pico/stdlib.h"
 #endif
 
-#define self(self_in, T) T *self = (T *)MP_OBJ_TO_PTR(self_in)
+#include "mp_helpers.hpp"
 
 using namespace picovector;
 
@@ -18,25 +18,14 @@ extern "C" {
 
   extern const mp_obj_type_t type_Input;
 
-  enum BUTTON : uint8_t {
-    HOME = 0b100000,
-    A    = 0b010000,
-    B    = 0b001000,
-    C    = 0b000100,
-    UP   = 0b000010,
-    DOWN = 0b000001
-  };
+#define BUTTON_HOME 0b100000
+#define BUTTON_A    0b010000
+#define BUTTON_B    0b001000
+#define BUTTON_C    0b000100
+#define BUTTON_UP   0b000010
+#define BUTTON_DOWN 0b000001
 
 #ifdef PICO
-  uint8_t get_buttons() {
-    uint8_t buttons = gpio_get(BW_SWITCH_A) ? 0 : BUTTON::A;
-      buttons |= gpio_get(BW_SWITCH_B) ? 0 : BUTTON::B;
-      buttons |= gpio_get(BW_SWITCH_C) ? 0 : BUTTON::C;
-      buttons |= gpio_get(BW_SWITCH_UP) ? 0 : BUTTON::UP;
-      buttons |= gpio_get(BW_SWITCH_DOWN) ? 0 : BUTTON::DOWN;
-      buttons |= gpio_get(BW_SWITCH_HOME) ? 0 : BUTTON::HOME;
-    return buttons;
-  }
   uint8_t picovector_buttons;
   uint8_t picovector_changed_buttons;
   mp_uint_t picovector_ticks;
@@ -48,18 +37,8 @@ extern "C" {
   extern double picovector_last_ticks;
 #endif
 
-  typedef struct _Input_obj_t {
-    mp_obj_base_t base;
-  } input_obj_t;
-
-  static mp_obj_t input_new(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *args) {
-    input_obj_t *self = m_new_obj(input_obj_t);
-    self->base.type = type;
-    return MP_OBJ_FROM_PTR(self);
-  }
-
-  static void input_attr(mp_obj_t self_in, qstr attr, mp_obj_t *dest) {
-    self(self_in, input_obj_t);
+  void modinput_attr(mp_obj_t self_in, qstr attr, mp_obj_t *dest) {
+    (void)self_in;
 
     if(attr == MP_QSTR_ticks && dest[0] == MP_OBJ_NULL) {
       dest[0] = mp_obj_new_int_from_ll(picovector_ticks);
@@ -92,28 +71,28 @@ extern "C" {
           break;
       }
       int n = 0;
-      if(buttons & BUTTON::HOME) {
-        t_items[n] = mp_obj_new_int(BUTTON::HOME);
+      if(buttons & BUTTON_HOME) {
+        t_items[n] = MP_ROM_INT(BUTTON_HOME);
         n++;
       }
-      if(buttons & BUTTON::A) {
-        t_items[n] = mp_obj_new_int(BUTTON::A);
+      if(buttons & BUTTON_A) {
+        t_items[n] = MP_ROM_INT(BUTTON_A);
         n++;
       }
-      if(buttons & BUTTON::B) {
-        t_items[n] = mp_obj_new_int(BUTTON::B);
+      if(buttons & BUTTON_B) {
+        t_items[n] = MP_ROM_INT(BUTTON_B);
         n++;
       }
-      if(buttons & BUTTON::C) {
-        t_items[n] = mp_obj_new_int(BUTTON::C);
+      if(buttons & BUTTON_C) {
+        t_items[n] = MP_ROM_INT(BUTTON_C);
         n++;
       }
-      if(buttons & BUTTON::UP) {
-        t_items[n] = mp_obj_new_int(BUTTON::UP);
+      if(buttons & BUTTON_UP) {
+        t_items[n] = MP_ROM_INT(BUTTON_UP);
         n++;
       }
-      if(buttons & BUTTON::DOWN) {
-        t_items[n] = mp_obj_new_int(BUTTON::DOWN);
+      if(buttons & BUTTON_DOWN) {
+        t_items[n] = MP_ROM_INT(BUTTON_DOWN);
         n++;
       }
       dest[0] = mp_obj_new_tuple(n, t_items);
@@ -123,43 +102,24 @@ extern "C" {
     dest[1] = MP_OBJ_SENTINEL;
   }
 
-#ifdef PICO
   // Call io.poll() to set up frame stable input and tick values
-  mp_obj_t input_poll(mp_obj_t self_in) {
-    self(self_in, input_obj_t);
-    uint8_t buttons = get_buttons();
+  mp_obj_t modinput_poll() {
+#ifdef PICO
+    uint8_t buttons = 0;
+    buttons |= gpio_get(BW_SWITCH_A)    ? 0 : BUTTON_A;
+    buttons |= gpio_get(BW_SWITCH_B)    ? 0 : BUTTON_B;
+    buttons |= gpio_get(BW_SWITCH_C)    ? 0 : BUTTON_C;
+    buttons |= gpio_get(BW_SWITCH_UP)   ? 0 : BUTTON_UP;
+    buttons |= gpio_get(BW_SWITCH_DOWN) ? 0 : BUTTON_DOWN;
+    buttons |= gpio_get(BW_SWITCH_HOME) ? 0 : BUTTON_HOME;
+
     picovector_changed_buttons = buttons ^ picovector_buttons;
     picovector_buttons = buttons;
     picovector_last_ticks = picovector_ticks;
     picovector_ticks = mp_hal_ticks_ms();
+#endif
     return mp_const_none;
   }
-  static MP_DEFINE_CONST_FUN_OBJ_1(input_poll_obj, input_poll);
-#endif
-
-  static const mp_rom_map_elem_t input_locals_dict_table[] = {
-      // TODO ... v How does it know!?!? v
-      //{ MP_ROM_QSTR(MP_QSTR_pressed),     MP_ROM_PTR(&input_pressed_obj) },
-      //{ MP_ROM_QSTR(MP_QSTR_ticks),       MP_OBJ_SENTINEL },
-      { MP_ROM_QSTR(MP_QSTR_BUTTON_HOME), MP_ROM_INT(BUTTON::HOME) },
-      { MP_ROM_QSTR(MP_QSTR_BUTTON_A),    MP_ROM_INT(BUTTON::A) },
-      { MP_ROM_QSTR(MP_QSTR_BUTTON_B),    MP_ROM_INT(BUTTON::B) },
-      { MP_ROM_QSTR(MP_QSTR_BUTTON_C),    MP_ROM_INT(BUTTON::C) },
-      { MP_ROM_QSTR(MP_QSTR_BUTTON_UP),   MP_ROM_INT(BUTTON::UP) },
-      { MP_ROM_QSTR(MP_QSTR_BUTTON_DOWN), MP_ROM_INT(BUTTON::DOWN) },
-#ifdef PICO
-      { MP_ROM_QSTR(MP_QSTR_poll), MP_ROM_PTR(&input_poll_obj) },
-#endif
-  };
-  static MP_DEFINE_CONST_DICT(input_locals_dict, input_locals_dict_table);
-
-  MP_DEFINE_CONST_OBJ_TYPE(
-      type_Input,
-      MP_QSTR_Input,
-      MP_TYPE_FLAG_NONE,
-      make_new, (const void *)input_new,
-      attr, (const void *)input_attr,
-      locals_dict, &input_locals_dict
-  );
 
 }
+

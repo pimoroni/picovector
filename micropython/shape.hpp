@@ -4,10 +4,9 @@
 #include "../primitive.hpp"
 #include "../shape.hpp"
 #include "../image.hpp"
+#include "matrix.hpp"
 
-#define self(self_in, T) T *self = (T *)MP_OBJ_TO_PTR(self_in)
-#define m_new_class(cls, ...) new(m_new(cls, 1)) cls(__VA_ARGS__)
-#define m_del_class(cls, ptr) ptr->~cls(); m_del(cls, ptr, 1)
+#include "mp_helpers.hpp"
 
 using namespace picovector;
 
@@ -20,121 +19,145 @@ extern "C" {
 
   typedef struct _shape_obj_t {
     mp_obj_base_t base;
-    shape *shape;
+    shape_t *shape;
   } shape_obj_t;
 
   mp_obj_t shape__del__(mp_obj_t self_in) {
     self(self_in, shape_obj_t);
-    m_del_class(shape, self->shape);
+    m_del_class(shape_t, self->shape);
     return mp_const_none;
   }
 
   mp_obj_t shapes_regular_polygon(size_t n_args, const mp_obj_t *pos_args) {
-    float x = mp_obj_get_float(pos_args[0]);    
-    float y = mp_obj_get_float(pos_args[1]);    
-    float r = mp_obj_get_float(pos_args[2]);    
-    int s = mp_obj_get_float(pos_args[3]);    
+    float x = mp_obj_get_float(pos_args[0]);
+    float y = mp_obj_get_float(pos_args[1]);
+    float r = mp_obj_get_float(pos_args[2]);
+    int s = mp_obj_get_float(pos_args[3]);
     shape_obj_t *shape = mp_obj_malloc_with_finaliser(shape_obj_t, &type_Shape);
     shape->shape = regular_polygon(x, y, s, r);
     return MP_OBJ_FROM_PTR(shape);
   }
 
   mp_obj_t shapes_circle(size_t n_args, const mp_obj_t *pos_args) {
-    float x = mp_obj_get_float(pos_args[0]);    
-    float y = mp_obj_get_float(pos_args[1]);    
-    float r = mp_obj_get_float(pos_args[2]);    
+    float x = mp_obj_get_float(pos_args[0]);
+    float y = mp_obj_get_float(pos_args[1]);
+    float r = mp_obj_get_float(pos_args[2]);
     shape_obj_t *shape = mp_obj_malloc_with_finaliser(shape_obj_t, &type_Shape);
     shape->shape = circle(x, y, r);
     return MP_OBJ_FROM_PTR(shape);
   }
 
   mp_obj_t shapes_rectangle(size_t n_args, const mp_obj_t *pos_args) {
-    float x = mp_obj_get_float(pos_args[0]);    
-    float y = mp_obj_get_float(pos_args[1]);    
-    float w = mp_obj_get_float(pos_args[2]);    
-    float h = mp_obj_get_float(pos_args[3]);    
+    float x = mp_obj_get_float(pos_args[0]);
+    float y = mp_obj_get_float(pos_args[1]);
+    float w = mp_obj_get_float(pos_args[2]);
+    float h = mp_obj_get_float(pos_args[3]);
     shape_obj_t *shape = mp_obj_malloc_with_finaliser(shape_obj_t, &type_Shape);
     shape->shape = rectangle(x, y, w, h);
     return MP_OBJ_FROM_PTR(shape);
   }
 
   mp_obj_t shapes_rounded_rectangle(size_t n_args, const mp_obj_t *pos_args) {
-    float x = mp_obj_get_float(pos_args[0]);    
-    float y = mp_obj_get_float(pos_args[1]);    
-    float w = mp_obj_get_float(pos_args[2]);    
-    float h = mp_obj_get_float(pos_args[3]);    
-    float r1 = mp_obj_get_float(pos_args[4]);    
+    float x = mp_obj_get_float(pos_args[0]);
+    float y = mp_obj_get_float(pos_args[1]);
+    float w = mp_obj_get_float(pos_args[2]);
+    float h = mp_obj_get_float(pos_args[3]);
+    float r1 = mp_obj_get_float(pos_args[4]);
     float r2 = r1, r3 = r1, r4 = r1;
     if(n_args >= 6) { r2 = mp_obj_get_float(pos_args[5]); }
     if(n_args >= 7) { r3 = mp_obj_get_float(pos_args[6]); }
     if(n_args >= 8) { r4 = mp_obj_get_float(pos_args[7]); }
-     
+
     shape_obj_t *shape = mp_obj_malloc_with_finaliser(shape_obj_t, &type_Shape);
     shape->shape = rounded_rectangle(x, y, w, h, r1, r2, r3, r4);
     return MP_OBJ_FROM_PTR(shape);
-  }  
+  }
 
   mp_obj_t shapes_squircle(size_t n_args, const mp_obj_t *pos_args) {
-    float x = mp_obj_get_float(pos_args[0]);    
-    float y = mp_obj_get_float(pos_args[1]);    
-    float s = mp_obj_get_float(pos_args[2]);    
-    float n = mp_obj_get_float(pos_args[3]);    
+    float x = mp_obj_get_float(pos_args[0]);
+    float y = mp_obj_get_float(pos_args[1]);
+    float s = mp_obj_get_float(pos_args[2]);
+    float n = mp_obj_get_float(pos_args[3]);
     shape_obj_t *shape = mp_obj_malloc_with_finaliser(shape_obj_t, &type_Shape);
     shape->shape = squircle(x, y, s, n);
     return MP_OBJ_FROM_PTR(shape);
   }
 
   mp_obj_t shapes_arc(size_t n_args, const mp_obj_t *pos_args) {
-    float x = mp_obj_get_float(pos_args[0]);    
-    float y = mp_obj_get_float(pos_args[1]);    
-    float r = mp_obj_get_float(pos_args[2]);    
-    float f = mp_obj_get_float(pos_args[3]);    
-    float t = mp_obj_get_float(pos_args[4]);    
+    float x = mp_obj_get_float(pos_args[0]);
+    float y = mp_obj_get_float(pos_args[1]);
+    float r = mp_obj_get_float(pos_args[2]);
+    float f = mp_obj_get_float(pos_args[3]);
+    float t = mp_obj_get_float(pos_args[4]);
     shape_obj_t *shape = mp_obj_malloc_with_finaliser(shape_obj_t, &type_Shape);
     shape->shape = arc(x, y, f, t, r);
     return MP_OBJ_FROM_PTR(shape);
   }
 
   mp_obj_t shapes_pie(size_t n_args, const mp_obj_t *pos_args) {
-    float x = mp_obj_get_float(pos_args[0]);    
-    float y = mp_obj_get_float(pos_args[1]);    
-    float r = mp_obj_get_float(pos_args[2]);    
-    float f = mp_obj_get_float(pos_args[3]);    
-    float t = mp_obj_get_float(pos_args[4]);    
+    float x = mp_obj_get_float(pos_args[0]);
+    float y = mp_obj_get_float(pos_args[1]);
+    float r = mp_obj_get_float(pos_args[2]);
+    float f = mp_obj_get_float(pos_args[3]);
+    float t = mp_obj_get_float(pos_args[4]);
     shape_obj_t *shape = mp_obj_malloc_with_finaliser(shape_obj_t, &type_Shape);
     shape->shape = pie(x, y, f, t, r);
     return MP_OBJ_FROM_PTR(shape);
   }
 
   mp_obj_t shapes_star(size_t n_args, const mp_obj_t *pos_args) {
-    float x = mp_obj_get_float(pos_args[0]);    
-    float y = mp_obj_get_float(pos_args[1]);    
-    int s = mp_obj_get_float(pos_args[2]);    
-    float ro = mp_obj_get_float(pos_args[3]);    
-    float ri = mp_obj_get_float(pos_args[4]);    
+    float x = mp_obj_get_float(pos_args[0]);
+    float y = mp_obj_get_float(pos_args[1]);
+    int s = mp_obj_get_float(pos_args[2]);
+    float ro = mp_obj_get_float(pos_args[3]);
+    float ri = mp_obj_get_float(pos_args[4]);
     shape_obj_t *shape = mp_obj_malloc_with_finaliser(shape_obj_t, &type_Shape);
     shape->shape = star(x, y, s, ro, ri);
     return MP_OBJ_FROM_PTR(shape);
   }
 
   mp_obj_t shapes_line(size_t n_args, const mp_obj_t *pos_args) {
-    float x1 = mp_obj_get_float(pos_args[0]);    
-    float y1 = mp_obj_get_float(pos_args[1]);    
-    float x2 = mp_obj_get_float(pos_args[2]);    
-    float y2 = mp_obj_get_float(pos_args[3]);    
-    float w = mp_obj_get_float(pos_args[4]);    
+    float x1 = mp_obj_get_float(pos_args[0]);
+    float y1 = mp_obj_get_float(pos_args[1]);
+    float x2 = mp_obj_get_float(pos_args[2]);
+    float y2 = mp_obj_get_float(pos_args[3]);
+    float w = mp_obj_get_float(pos_args[4]);
     shape_obj_t *shape = mp_obj_malloc_with_finaliser(shape_obj_t, &type_Shape);
     shape->shape = line(x1, y1, x2, y2, w);
     return MP_OBJ_FROM_PTR(shape);
   }
 
   mp_obj_t shapes_stroke(size_t n_args, const mp_obj_t *pos_args) {
-    const shape_obj_t *self = (shape_obj_t *)MP_OBJ_TO_PTR(pos_args[0]);        
-    float width = mp_obj_get_float(pos_args[1]);    
+    const shape_obj_t *self = (shape_obj_t *)MP_OBJ_TO_PTR(pos_args[0]);
+    float width = mp_obj_get_float(pos_args[1]);
     self->shape->stroke(width);
     return MP_OBJ_FROM_PTR(self);
   }
 
+  static void shape_attr(mp_obj_t self_in, qstr attr, mp_obj_t *dest) {
+    self(self_in, shape_obj_t);
+
+    if(attr == MP_QSTR_transform) { // get
+      if(dest[0] == MP_OBJ_NULL) {
+        matrix_obj_t *out = mp_obj_malloc_with_finaliser(matrix_obj_t, &type_Matrix);
+        out->m = self->shape->transform;
+        dest[0] = MP_OBJ_FROM_PTR(out);
+        return;
+      }
+
+      if(dest[1] != MP_OBJ_NULL && dest[0] != MP_OBJ_NULL) { // set
+        if(!mp_obj_is_type(dest[1], &type_Matrix)) {
+          mp_raise_TypeError(MP_ERROR_TEXT("expected Matrix"));
+        }
+        matrix_obj_t *in = (matrix_obj_t *)MP_OBJ_TO_PTR(dest[1]);
+        self->shape->transform = in->m;
+        dest[0] = MP_OBJ_NULL;
+        return;
+      }
+    }
+
+    dest[1] = MP_OBJ_SENTINEL;
+  }
 
   /*
     micropython bindings
@@ -152,6 +175,7 @@ extern "C" {
       type_Shape,
       MP_QSTR_Shape,
       MP_TYPE_FLAG_NONE,
+      attr, (const void *)shape_attr,
       locals_dict, &shape_locals_dict
   );
 
@@ -191,8 +215,8 @@ extern "C" {
     { MP_ROM_QSTR(MP_QSTR_rounded_rectangle), MP_ROM_PTR(&shapes_rounded_rectangle_static_obj) },
     { MP_ROM_QSTR(MP_QSTR_arc), MP_ROM_PTR(&shapes_arc_static_obj) },
     { MP_ROM_QSTR(MP_QSTR_pie), MP_ROM_PTR(&shapes_pie_static_obj) },
-    { MP_ROM_QSTR(MP_QSTR_pie), MP_ROM_PTR(&shapes_star_static_obj) },
-    { MP_ROM_QSTR(MP_QSTR_line), MP_ROM_PTR(&shapes_line_static_obj) },    
+    { MP_ROM_QSTR(MP_QSTR_star), MP_ROM_PTR(&shapes_star_static_obj) },
+    { MP_ROM_QSTR(MP_QSTR_line), MP_ROM_PTR(&shapes_line_static_obj) },
 
   };
   static MP_DEFINE_CONST_DICT(shapes_locals_dict, shapes_locals_dict_table);

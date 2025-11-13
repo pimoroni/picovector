@@ -2,9 +2,18 @@
 
 #include "picovector.hpp"
 #include "brush.hpp"
+#include "image.hpp"
+#include "shape.hpp"
+#include "point.hpp"
 #include "matrix.hpp"
 
-using namespace std;
+using std::sort;
+
+// Common memory pool for font/span rendering buffers and PNGDEC
+// This is sized to *just* fit the PNGDEC state which is 48156k
+// It *must* be 32bit aligned (I found out the hard way.)
+//int PicoVector_working_buffer[48156 / 4]; // On device
+int PicoVector_working_buffer[48240 / 4]; // macOS (emulator)
 
 // This will completely break imgui or sokol or something
 //because these will be called before the MicroPython heap is initialised.
@@ -35,22 +44,22 @@ void operator delete(void * p)// throw()
 }
 */
 
-using namespace std;
+//using namespace std;
 
 //#define debug_printf(fmt, ...)
 //#define debug_printf(fmt, ...) fprintf(stdout, fmt, ##__VA_ARGS__)
 
 namespace picovector {
   struct _edgeinterp {
-    point s;
-    point e;
+    point_t s;
+    point_t e;
     float step;
 
     _edgeinterp() {
 
     }
 
-    _edgeinterp(point p1, point p2) {
+    _edgeinterp(point_t p1, point_t p2) {
       if(p1.y < p2.y) { 
         s = p1; e = p2; 
       } else { 
@@ -65,25 +74,26 @@ namespace picovector {
     }
   };
 
-  void render(shape *shape, image *target, mat3 *transform, brush *brush) {    
+  void render(shape_t *shape, image_t *target, mat3_t *transform, brush_t *brush) {    
     if(!shape->paths.size()) {return;};
     
     // determine the intersection between transformed polygon and target image
-    rect b = shape->bounds();
+    rect_t b = shape->bounds();
 
     // clip the shape bounds to the target bounds
-    rect cb = b.intersection(target->bounds);
+    rect_t cb = b.intersection(target->bounds());
 
     //debug_printf("rendering shape %p with %d paths\n", (void*)shape, int(shape->paths.size()));
     //debug_printf("setup interpolators\n");
     // setup interpolators for each edge of the polygon
-    static _edgeinterp edge_interpolators[256];
+    //static _edgeinterp edge_interpolators[256];
+    auto edge_interpolators = new(PicoVector_working_buffer) _edgeinterp[256];
     int edge_interpolator_count = 0;
-    for(path &path : shape->paths) {
-      point last = path.points.back(); // start with last point to close loop
+    for(path_t &path : shape->paths) {
+      point_t last = path.points.back(); // start with last point to close loop
       last = last.transform(transform);
       //debug_printf("- adding path with %d points\n", int(path.points.size()));
-      for(point next : path.points) {
+      for(point_t next : path.points) {
         next = next.transform(transform);
         // add new edge interpolator
         edge_interpolators[edge_interpolator_count] = _edgeinterp(last, next);
@@ -96,11 +106,13 @@ namespace picovector {
     // intersecting nodes for that scaline
     static float nodes[128]; // up to 128 nodes (64 spans) per scanline
     const size_t SPAN_BUFFER_SIZE = 256;
-    static _rspan spans[SPAN_BUFFER_SIZE];
+    //static _rspan spans[SPAN_BUFFER_SIZE];
+    static auto spans = new((uint8_t *)PicoVector_working_buffer + (sizeof(_edgeinterp) * 256)) _rspan[SPAN_BUFFER_SIZE];
 
-    static uint8_t sb[SPAN_BUFFER_SIZE];    
+    //static uint8_t sb[SPAN_BUFFER_SIZE];
+    static auto sb = new((uint8_t *)PicoVector_working_buffer + (sizeof(_edgeinterp) * 256) + (sizeof(_edgeinterp) * SPAN_BUFFER_SIZE)) uint8_t[SPAN_BUFFER_SIZE];
 
-    int aa = target->antialias;    
+    int aa = target->antialias();    
     
     int sy = cb.y;
     int ey = cb.y + cb.h;
@@ -110,7 +122,7 @@ namespace picovector {
     int span_count = 0;
     for(float y = sy; y < ey; y++) {
       // clear the span buffer
-      memset(sb, 0, sizeof(sb));
+      memset(sb, 0, SPAN_BUFFER_SIZE);
 
       // loop over y sub samples
       for(int yss = 0; yss < aa; yss++) {
@@ -162,11 +174,11 @@ namespace picovector {
     bool _debug_points = false;
     if(_debug_points) {
       color_brush white(255, 255, 255, 50);
-      for(path &path : shape->paths) {
-        point last = path.points.back(); // start with last point to close loop
+      for(path_t &path : shape->paths) {
+        point_t last = path.points.back(); // start with last point to close loop
         last = last.transform(transform);
         //debug_printf("- adding path with %d points\n", int(path.points.size()));
-        for(point next : path.points) {
+        for(point_t next : path.points) {
           // _rspan span = {.x = next.x .y = next.y, w = 1, o = 255};
           if(next.x >= 0 && next.x < 160 && next.y >= 0 && next.y < 120) {
             white.render_span(target, next.x, next.y, 1);

@@ -58,7 +58,7 @@ extern "C" {
     uint32_t glyph_count  = ru32(file);
     uint16_t glyph_width  = ru16(file);
     uint16_t glyph_height = ru16(file);
-    debug_printf("- glyph width = %u, height = %u, count = %lu\n", glyph_width, glyph_height, glyph_count);
+    debug_printf("- glyph width = %d, height = %d, count = %lu\n", glyph_width, glyph_height, glyph_count);
 
     char name[32];
     mp_stream_read_exactly(file, name, sizeof(name), &error);

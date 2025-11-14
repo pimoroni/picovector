@@ -28,6 +28,12 @@
 
 // TODO: bring back AA support
 
+#ifdef PICO
+extern char PicoVector_working_buffer[48156]; // On device
+#else
+extern char PicoVector_working_buffer[48240]; // macOS (emulator)
+#endif
+
 namespace picovector {
   
   #define debug_printf(fmt, ...) fprintf(stdout, fmt, ##__VA_ARGS__)

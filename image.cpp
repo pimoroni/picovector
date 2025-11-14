@@ -205,10 +205,11 @@ namespace picovector {
     float v = uvs.y;
 
     for(int y = p.y; y < p.y + c; y++) {
+      u += ustep;
+      v += vstep;
+
       if(y >= b.y && y < b.y + b.h) {
         uint32_t *dst = (uint32_t *)target->ptr(p.x, y);
-        u += ustep;
-        v += vstep;
 
         int tx = round(u);
         int ty = round(v);

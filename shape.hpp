@@ -6,7 +6,7 @@
 #include "rect.hpp"
 #include "point.hpp"
 
-namespace picovector {  
+namespace picovector {
 
   class path_t {
   public:
@@ -15,7 +15,7 @@ namespace picovector {
     path_t(int point_count = 0);
     void add_point(const point_t &point);
     void add_point(float x, float y);
-    void edge_points(int edge, point_t &s, point_t &e); 
+    void edge_points(int edge, point_t &s, point_t &e);
     void offset_edge(point_t &s, point_t &e, float offset);
     void stroke(float offset);
     void inflate(float offset);
@@ -27,7 +27,7 @@ namespace picovector {
     mat3_t transform;
 
     shape_t(int path_count = 0);
-    ~shape_t() {      
+    ~shape_t() {
       //debug_printf("shape destructed\n");
     }
     void add_path(path_t path);

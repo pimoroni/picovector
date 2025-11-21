@@ -11,7 +11,7 @@ using std::sort;
 
 // Common memory pool for font/span rendering buffers and PNGDEC
 // This is sized to *just* fit the PNGDEC state which is 48156 bytes on
-// Pico and 48156 on macOS. 
+// Pico and 48156 on macOS.
 // On Pico it *must* be 32bit aligned (I found out the hard way.)
 #ifdef PICO
 char __attribute__((aligned(4))) PicoVector_working_buffer[48156]; // On device
@@ -64,10 +64,10 @@ namespace picovector {
     }
 
     _edgeinterp(point_t p1, point_t p2) {
-      if(p1.y < p2.y) { 
-        s = p1; e = p2; 
-      } else { 
-        s = p2; e = p1; 
+      if(p1.y < p2.y) {
+        s = p1; e = p2;
+      } else {
+        s = p2; e = p1;
       }
       step = (e.x - s.x) / (e.y - s.y);
     }
@@ -78,9 +78,9 @@ namespace picovector {
     }
   };
 
-  void render(shape_t *shape, image_t *target, mat3_t *transform, brush_t *brush) {    
+  void render(shape_t *shape, image_t *target, mat3_t *transform, brush_t *brush) {
     if(!shape->paths.size()) {return;};
-    
+
     // determine the intersection between transformed polygon and target image
     rect_t b = shape->bounds();
 
@@ -109,15 +109,15 @@ namespace picovector {
     // for each scanline we step the interpolators and build the list of
     // intersecting nodes for that scaline
     static float nodes[128]; // up to 128 nodes (64 spans) per scanline
-    const size_t SPAN_BUFFER_SIZE = 256;
+    const size_t SPAN_BUFFER_SIZE = 512;
     //static _rspan spans[SPAN_BUFFER_SIZE];
     static auto spans = new((uint8_t *)PicoVector_working_buffer + (sizeof(_edgeinterp) * 256)) _rspan[SPAN_BUFFER_SIZE];
 
     //static uint8_t sb[SPAN_BUFFER_SIZE];
     static auto sb = new((uint8_t *)PicoVector_working_buffer + (sizeof(_edgeinterp) * 256) + (sizeof(_edgeinterp) * SPAN_BUFFER_SIZE)) uint8_t[SPAN_BUFFER_SIZE];
 
-    int aa = target->antialias();    
-    
+    int aa = target->antialias();
+
     int sy = cb.y;
     int ey = cb.y + cb.h;
 
@@ -126,12 +126,12 @@ namespace picovector {
     int span_count = 0;
     for(float y = sy; y < ey; y++) {
       // clear the span buffer
-      memset(sb, 0, SPAN_BUFFER_SIZE);
+      memset(sb, 0, cb.w);
 
       // loop over y sub samples
       for(int yss = 0; yss < aa; yss++) {
         float ysso = (1.0f / float(aa + 1)) * float(yss + 1);
-      
+
         int node_count = 0;
 
         for(int i = 0; i < edge_interpolator_count; i++) {
@@ -140,17 +140,17 @@ namespace picovector {
 
         // sort the nodes so that neighouring pairs represent render spans
         sort(nodes, nodes + node_count);
-               
+
         for(int i = 0; i < node_count; i += 2) {
           int x1 = round((nodes[i + 0] - cb.x) * aa);
           int x2 = round((nodes[i + 1] - cb.x) * aa);
 
           x1 = min(max(0, x1), int(cb.w * aa));
-          x2 = min(max(0, x2), int(cb.w * aa));       
+          x2 = min(max(0, x2), int(cb.w * aa));
           uint8_t *psb = sb;
           for(int j = x1; j < x2; j++) {
             psb[j >> (aa >> 1)]++;
-          }        
+          }
         }
       }
 
@@ -162,10 +162,10 @@ namespace picovector {
 
       uint8_t *aa_lut = aa_none;
       aa_lut = aa == 2 ? aa_x2 : aa_lut;
-      aa_lut = aa == 4 ? aa_x4 : aa_lut;      
+      aa_lut = aa == 4 ? aa_x4 : aa_lut;
 
       // scale span buffer alpha values
-      int c = SPAN_BUFFER_SIZE;
+      int c = cb.w;
       uint8_t *psb = sb;
       while(c--) {
         *psb = aa_lut[*psb];
@@ -189,9 +189,9 @@ namespace picovector {
           }
         }
       }
-    }    
+    }
   }
 
-  
+
 
 }

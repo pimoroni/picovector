@@ -97,6 +97,9 @@ namespace picovector {
       void draw(shape_t *shape);
       void blit(image_t *t, const point_t p);
       void blit(image_t *t, rect_t tr);
+      void blit(image_t *t, rect_t sr, rect_t tr);
+
+
 
       void vspan_tex(image_t *target, point_t p, uint c, point_t uvs, point_t uve);
   };

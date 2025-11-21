@@ -43,11 +43,14 @@ MP_REGISTER_MODULE_DELEGATION(modinput, modinput_attr);
 // modpicovector
 extern void modpicovector_attr(mp_obj_t self_in, qstr attr, mp_obj_t *dest);
 extern mp_obj_t modpicovector___init__(void);
+extern mp_obj_t modpicovector_dda(size_t n_args, const mp_obj_t *pos_args);
 static MP_DEFINE_CONST_FUN_OBJ_0(modpicovector___init___obj, modpicovector___init__);
+static MP_DEFINE_CONST_FUN_OBJ_VAR(modpicovector_dda_obj, 5, modpicovector_dda);
 
 static const mp_rom_map_elem_t modpicovector_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR___name__), MP_ROM_QSTR(MP_QSTR_modpicovector) },
     { MP_ROM_QSTR(MP_QSTR___init__), MP_ROM_PTR(&modpicovector___init___obj) },
+    { MP_ROM_QSTR(MP_QSTR_dda), MP_ROM_PTR(&modpicovector_dda_obj) },
     { MP_ROM_QSTR(MP_QSTR_brushes),  MP_ROM_PTR(&type_Brushes) },
     { MP_ROM_QSTR(MP_QSTR_shapes),  MP_ROM_PTR(&type_Shapes) },
     { MP_ROM_QSTR(MP_QSTR_Image),  MP_ROM_PTR(&type_Image) },

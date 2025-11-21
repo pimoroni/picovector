@@ -16,9 +16,9 @@ namespace picovector {
     float y;
     float w;
     float h;
-    
+
     rect_t() {}
-    
+
     rect_t(float x, float y, float w, float h) : x(x), y(y), w(w), h(h) {}
 
     rect_t(const point_t &p1, const point_t &p2) {
@@ -48,6 +48,10 @@ namespace picovector {
 
     bool contains(const point_t &p) {
       return p.x >= x && p.x <= x + w && p.y >= y && p.y <= y + h;
+    }
+
+    bool contains(const rect_t &o) {
+      return o.x >= x && o.y >= y && (o.x + o.w) <= (x + w) && (o.y + o.h) < (y + h);
     }
 
     rect_t normalise() {

@@ -1,13 +1,13 @@
 #include "mp_tracked_allocator.hpp"
 #include "../pixel_font.hpp"
-#include "../span.hpp"
+#include "../blend.hpp"
 
 #include "mp_helpers.hpp"
 
 using namespace picovector;
 
 extern "C" {
-
+  #include <inttypes.h>
   #include "py/stream.h"
   #include "py/reader.h"
   #include "py/runtime.h"
@@ -58,7 +58,7 @@ extern "C" {
     uint32_t glyph_count  = ru32(file);
     uint16_t glyph_width  = ru16(file);
     uint16_t glyph_height = ru16(file);
-    debug_printf("- glyph width = %d, height = %d, count = %lu\n", glyph_width, glyph_height, glyph_count);
+    debug_printf("- glyph width = %d, height = %d, count = %" PRIu32 "\n", glyph_width, glyph_height, glyph_count);
 
     char name[32];
     mp_stream_read_exactly(file, name, sizeof(name), &error);
@@ -67,7 +67,7 @@ extern "C" {
     // calculate how much data needed to store each glyphs pixel data
     uint32_t bpr = floor((glyph_width + 7) / 8);
     uint32_t glyph_data_size = bpr * glyph_height;
-    debug_printf("- glyph data size = %lu (%lu byes per row)\n", glyph_data_size, bpr);
+    debug_printf("- glyph data size = %" PRIu32 " (%" PRIu32 " byes per row)\n", glyph_data_size, bpr);
 
     // allocate buffers to store glyph and pixel data
     result->glyph_buffer_size = sizeof(pixel_font_glyph_t) * glyph_count;
@@ -76,8 +76,8 @@ extern "C" {
     result->glyph_data_buffer_size = glyph_data_size * glyph_count;
     result->glyph_data_buffer = (uint8_t*)m_malloc(result->glyph_data_buffer_size);
 
-    debug_printf("- glyph buffer at %p (%lu bytes)\n", result->glyph_buffer, result->glyph_buffer_size);
-    debug_printf("- glyph data buffer at %p (%lu bytes)\n", result->glyph_data_buffer, result->glyph_data_buffer_size);
+    debug_printf("- glyph buffer at %p (%" PRIu32 " bytes)\n", result->glyph_buffer, result->glyph_buffer_size);
+    debug_printf("- glyph data buffer at %p (%" PRIu32 " bytes)\n", result->glyph_data_buffer, result->glyph_data_buffer_size);
 
     if(!result->glyph_buffer || !result->glyph_data_buffer) {
       mp_raise_msg_varg(&mp_type_OSError, MP_ERROR_TEXT("couldn't allocate buffer for font data"));

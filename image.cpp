@@ -4,7 +4,7 @@
 #include <vector>
 
 #include "image.hpp"
-#include "span.hpp"
+#include "blend.hpp"
 #include "brush.hpp"
 #include "shape.hpp"
 
@@ -171,15 +171,12 @@ namespace picovector {
     int syo = p.y < 0 ? -p.y : 0;
 
     for(int i = 0; i < tr.h; i++) {
-
-      uint32_t *dst = (uint32_t *)t->ptr(tr.x, tr.y + i);
-
+      uint8_t *dst = (uint8_t *)t->ptr(tr.x, tr.y + i);
+      uint8_t *src = (uint8_t *)this->ptr(sxo, syo + i);
       if(this->_has_palette) {
-        uint8_t *src = (uint8_t *)this->ptr(sxo, syo + i);
-        span_blit_argb8_palette(src, dst, &this->_palette[0], tr.w, this->alpha());
+        _span_blit_rgba_rgba(dst, src, (uint8_t*)&this->_palette[0], tr.w, this->_alpha);
       }else{
-        uint32_t *src = (uint32_t *)this->ptr(sxo, syo + i);
-        span_blit_argb8(src, dst, tr.w, this->alpha());
+        _span_blit_rgba_rgba(dst, src, tr.w, this->_alpha);
       }
     }
   }
@@ -209,23 +206,84 @@ namespace picovector {
       v += vstep;
 
       if(y >= b.y && y < b.y + b.h) {
-        uint32_t *dst = (uint32_t *)target->ptr(p.x, y);
+        uint8_t *dst = (uint8_t *)target->ptr(p.x, y);
 
         int tx = round(u);
         int ty = round(v);
 
         uint32_t col;
         if(this->_has_palette) {
-          uint8_t *src = (uint8_t *)this->ptr(tx, ty);
-          col = this->_palette[*src];
+          _blend_rgba_rgba(dst, (uint8_t*)&this->_palette[*(uint8_t *)this->ptr(tx, ty)]);
         } else {
-          uint32_t *src = (uint32_t *)this->ptr(tx, ty);
-          col = *src;
+          _blend_rgba_rgba(dst, (uint8_t *)this->ptr(tx, ty));
         }
-        *dst = col;
       }
     }
   }
+
+  // blit from source rectangle into target rectangle
+  void image_t::blit(image_t *t, rect_t sr, rect_t tr) {
+    if(sr.empty()) return; // source rect empty, nothing to blit
+
+    float scx = tr.w / sr.w; // scale x
+    float scy = tr.h / sr.h; // scale y
+
+    rect_t csr = sr;
+
+    // clip the source rect if needed
+    // rect_t csr = sr;
+    // if(!_bounds.contains(sr)) { // source rect not entirely contained, need to clip
+    //   csr = sr.intersection(_bounds);
+    //   if(csr.empty()) return; // clipped source rect empty, nothing to blit
+
+    //   // clip target rect to new clipped source rect
+    //   tr = {
+    //     tr.x + ((csr.x - sr.x) * scx),
+    //     tr.y + ((csr.y - sr.y) * scy),
+    //     csr.w * scx,
+    //     csr.h * scy
+    //   };
+    // }
+
+    // clip the target rect if needed
+    rect_t ctr = tr;
+    if(!t->_bounds.contains(tr)) { // target rect not entirely contained, need to clip
+      ctr = tr.intersection(t->_bounds);
+      if(ctr.empty()) return; // clipped source rect empty, nothing to blit
+
+      // clip source rect to new clipped target rect
+      csr = {
+        csr.x + ((ctr.x - tr.x) / scx),
+        csr.y + ((ctr.y - tr.y) / scy),
+        ctr.w / scx,
+        ctr.h / scy
+      };
+    }
+
+    // render the scaled spans
+    float srcstepx = csr.w / ctr.w;
+    float srcstepy = csr.h / ctr.h;
+
+    float srcx = csr.x;
+    float srcy = csr.y;
+
+
+    for(int y = 0; y < ctr.h; y++) {
+      uint8_t *dst = (uint8_t*)t->ptr(ctr.x, ctr.y + y);
+      uint8_t *src = (uint8_t*)this->ptr(0, int(srcy));
+      int32_t x = int(srcx * 65536.0f);
+      int32_t step = int(srcstepx * 65536.0f);
+
+      if(this->_has_palette) {
+        _span_scale_blit_rgba_rgba(dst, src, (uint8_t*)&this->_palette[0], x, step, abs(ctr.w), this->_alpha);
+      }else{
+        _span_scale_blit_rgba_rgba(dst, src, x, step, abs(ctr.w), this->_alpha);
+      }
+
+      srcy += srcstepy;
+    }
+  }
+
 
   void image_t::blit(image_t *target, rect_t tr) {
     bool invert_x = tr.w < 0.0f;
@@ -252,12 +310,15 @@ namespace picovector {
     int ey = ctr.y + ctr.h;//max(ctr.y, ctr.y + ctr.h);
 
     for(int y = sy; y < ey; y++) {
-      void *dst = target->ptr(ctr.x, y);
+      uint8_t *dst = (uint8_t*)target->ptr(ctr.x, y);
+      uint8_t *src = (uint8_t*)this->ptr(0, int(srcy));
+      int32_t x = int(srcx * 65536.0f);
+      int32_t step = int(srcstepx * 65536.0f);
 
       if(this->_has_palette) {
-        span_blit_scale_palette((uint32_t *)this->ptr(0, int(srcy)), (uint32_t *)dst, &this->_palette[0], int(srcx * 65536.0f), int(srcstepx * 65536.0f), abs(ctr.w), this->alpha());
+        _span_scale_blit_rgba_rgba(dst, src, (uint8_t*)&this->_palette[0], x, step, abs(ctr.w), this->_alpha);
       }else{
-        span_blit_scale((uint32_t *)this->ptr(0, int(srcy)), (uint32_t *)dst, int(srcx * 65536.0f), int(srcstepx * 65536.0f), abs(ctr.w), this->alpha());
+        _span_scale_blit_rgba_rgba(dst, src, x, step, abs(ctr.w), this->_alpha);
       }
 
       srcy += srcstepy;
@@ -274,7 +335,7 @@ namespace picovector {
   }
 
   void image_t::rectangle(const rect_t &r) {
-    for(int y = 0; y < r.h; y++) {
+    for(int y = r.y; y < r.y + r.h; y++) {
       this->_brush->render_span(this, r.x, y, r.w);
     }
   }

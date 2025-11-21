@@ -43,7 +43,7 @@ namespace picovector {
     rect_t cb = b.intersection(target->bounds());
 
     // setup a node storage buffer that can do up to 32 sampling lines
-    constexpr int NODE_BUFFER_HEIGHT = 120;
+    constexpr int NODE_BUFFER_HEIGHT = 64;
     auto nodes = new((uint8_t *)PicoVector_working_buffer) int16_t [NODE_BUFFER_HEIGHT][64];
     auto node_counts = new((uint8_t *)PicoVector_working_buffer + (NODE_BUFFER_HEIGHT * 64 * 2)) uint8_t[NODE_BUFFER_HEIGHT];
 

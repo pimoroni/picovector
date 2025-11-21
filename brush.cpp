@@ -1,6 +1,6 @@
 #include "brush.hpp"
 #include "image.hpp"
-#include "span.hpp"
+#include "blend.hpp"
 
 //using namespace std;
 
@@ -21,17 +21,15 @@ namespace picovector {
   }
 
   void color_brush::pixel(uint32_t *dst) {
-    span_argb8(dst, 1, color);
+    _blend_rgba_rgba((uint8_t*)dst, (uint8_t*)&color);
   }
 
   void color_brush::render_span(image_t *target, int x, int y, int w) {
-    uint32_t *dst = (uint32_t*)target->ptr(x, y);
-    span_argb8(dst, w, color);
+    _span_blend_rgba_rgba((uint8_t*)target->ptr(x, y), (uint8_t*)&color, w);
   }
 
   void color_brush::render_span_buffer(image_t *target, int x, int y, int w, uint8_t *sb) {
-    uint32_t *dst = (uint32_t*)target->ptr(x, y);
-    span_argb8(dst, w, color, sb);
+    _span_blend_rgba_rgba_masked((uint8_t*)target->ptr(x, y), (uint8_t*)&color, sb, w);
   }
 
   brighten_brush::brighten_brush(int amount) : amount(amount) {}
@@ -77,7 +75,7 @@ namespace picovector {
     uint8_t *src = (uint8_t*)&color;
     while(w--) {
       uint32_t xored = _make_col(dst[0] ^ src[0], dst[1] ^ src[1], dst[2] ^ src[2], src[3]);
-      _rgba_blend_to((uint32_t *)dst, &xored);
+      _blend_rgba_rgba(dst, (uint8_t*)&xored);
       dst += 4;
     }
   }
@@ -88,7 +86,7 @@ namespace picovector {
     uint8_t *src = (uint8_t*)&color;
     while(w--) {
       uint32_t xored = _make_col(dst[0] ^ src[0], dst[1] ^ src[1], dst[2] ^ src[2], *sb);
-      _rgba_blend_to((uint32_t *)dst, &xored);
+      _blend_rgba_rgba(dst, (uint8_t*)&xored);
       dst += 4;
       sb++;
     }

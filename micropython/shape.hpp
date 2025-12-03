@@ -28,6 +28,51 @@ extern "C" {
     return mp_const_none;
   }
 
+  mp_obj_t shapes_custom(size_t n_args, const mp_obj_t *args) {
+    shape_obj_t *shape = mp_obj_malloc_with_finaliser(shape_obj_t, &type_Shape);
+    shape->shape = new(PV_MALLOC(sizeof(shape_t))) shape_t(1);
+
+    for (size_t arg_i = 0; arg_i < n_args; arg_i++) {
+      mp_obj_t path_obj = args[arg_i];
+
+      if(!mp_obj_is_type(path_obj, &mp_type_list)) {
+        mp_raise_TypeError(MP_ERROR_TEXT("expected a list of tuples"));
+      }
+
+      size_t count;
+      mp_obj_t *path;
+      mp_obj_list_get(path_obj, &count, &path);
+
+      path_t poly(count);
+
+      for(size_t i = 0; i < count; i++) {
+        mp_obj_t point_obj = path[i];
+
+        if(!mp_obj_is_type(point_obj, &mp_type_tuple)) {
+          mp_raise_TypeError(MP_ERROR_TEXT("list elements must be tuples"));
+        }
+
+        size_t tuple_len;
+        mp_obj_t *tuple_items;
+        mp_obj_tuple_get(point_obj, &tuple_len, &tuple_items);
+
+        if (tuple_len != 2) {
+          mp_raise_ValueError(MP_ERROR_TEXT("tuples must contain (x, y) coordinates"));
+        }
+
+        // Extract elements; assuming ints here
+        float x = mp_obj_get_float(tuple_items[0]);
+        float y = mp_obj_get_float(tuple_items[1]);
+
+        poly.add_point(x, y);
+      }
+
+      shape->shape->add_path(poly);
+    }
+
+    return MP_OBJ_FROM_PTR(shape);
+  }
+
   mp_obj_t shapes_regular_polygon(size_t n_args, const mp_obj_t *pos_args) {
     float x = mp_obj_get_float(pos_args[0]);
     float y = mp_obj_get_float(pos_args[1]);
@@ -179,6 +224,9 @@ extern "C" {
       locals_dict, &shape_locals_dict
   );
 
+  static MP_DEFINE_CONST_FUN_OBJ_VAR(shapes_custom_obj, 1, shapes_custom);
+  static MP_DEFINE_CONST_STATICMETHOD_OBJ(shapes_custom_static_obj, MP_ROM_PTR(&shapes_custom_obj));
+
   static MP_DEFINE_CONST_FUN_OBJ_VAR(shapes_regular_polygon_obj, 4, shapes_regular_polygon);
   static MP_DEFINE_CONST_STATICMETHOD_OBJ(shapes_regular_polygon_static_obj, MP_ROM_PTR(&shapes_regular_polygon_obj));
 
@@ -208,6 +256,7 @@ extern "C" {
 
 
   static const mp_rom_map_elem_t shapes_locals_dict_table[] = {
+    { MP_ROM_QSTR(MP_QSTR_custom), MP_ROM_PTR(&shapes_custom_static_obj) },
     { MP_ROM_QSTR(MP_QSTR_regular_polygon), MP_ROM_PTR(&shapes_regular_polygon_static_obj) },
     { MP_ROM_QSTR(MP_QSTR_squircle), MP_ROM_PTR(&shapes_squircle_static_obj) },
     { MP_ROM_QSTR(MP_QSTR_circle), MP_ROM_PTR(&shapes_circle_static_obj) },

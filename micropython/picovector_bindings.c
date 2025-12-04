@@ -69,4 +69,4 @@ const mp_obj_module_t modpicovector = {
 };
 
 MP_REGISTER_MODULE(MP_QSTR_picovector, modpicovector);
-MP_REGISTER_MODULE_DELEGATION(modpicovector, modpicovector_attr);
+//MP_REGISTER_MODULE_DELEGATION(modpicovector, modpicovector_attr);

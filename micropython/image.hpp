@@ -43,10 +43,16 @@ extern "C" {
   static mp_obj_t image_new(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *args) {
     image_obj_t *self = mp_obj_malloc_with_finaliser(image_obj_t, type);
 
-    int w = mp_obj_get_int(args[2]);
-    int h = mp_obj_get_int(args[3]);
+    int w = mp_obj_get_int(args[0]);
+    int h = mp_obj_get_int(args[1]);
 
-    self->image = new(m_malloc(sizeof(image_t))) image_t(w, h);
+    if (n_args > 2) {
+      mp_buffer_info_t bufinfo;
+      mp_get_buffer_raise(args[2], &bufinfo, MP_BUFFER_WRITE);
+      self->image = new(m_malloc(sizeof(image_t))) image_t(bufinfo.buf, w, h);
+    } else {
+      self->image = new(m_malloc(sizeof(image_t))) image_t(w, h);
+    }
 
     return MP_OBJ_FROM_PTR(self);
   }

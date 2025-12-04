@@ -20,15 +20,7 @@ extern "C" {
 
   #include "py/runtime.h"
 
-  int screen_width = 160;
-  int screen_height = 120;
-  uint32_t framebuffer[160 * 120];
-
-#ifndef PICO
-  int debug_width = 300;
-  int debug_height = 360;
-  uint32_t debug_buffer[300 * 360];
-#endif
+  uint32_t framebuffer[320 * 240];
 
   mp_obj_t modpicovector___init__(void) {
       return mp_const_none;
@@ -159,21 +151,21 @@ extern "C" {
   }
 
 
-  void modpicovector_attr(mp_obj_t self_in, qstr attr, mp_obj_t *dest) {
+  /*void modpicovector_attr(mp_obj_t self_in, qstr attr, mp_obj_t *dest) {
     if (dest[0] == MP_OBJ_NULL) {
       if (attr == MP_QSTR_screen) {
         image_obj_t *image = mp_obj_malloc_with_finaliser(image_obj_t, &type_Image);
-        image->image = new(m_malloc(sizeof(image_t))) image_t(framebuffer, screen_width, screen_height);
+        image->image = new(m_malloc(sizeof(image_t))) image_t(framebuffer, 160, 120);
         dest[0] = MP_OBJ_FROM_PTR(image);
+        return;
       }
-#ifndef PICO
-      if (attr == MP_QSTR_debug) {
+      if (attr == MP_QSTR_screen_fullres) {
         image_obj_t *image = mp_obj_malloc_with_finaliser(image_obj_t, &type_Image);
-        image->image = new(m_malloc(sizeof(image_t))) image_t(debug_buffer, debug_width, debug_height);
+        image->image = new(m_malloc(sizeof(image_t))) image_t(framebuffer, 320, 240);
         dest[0] = MP_OBJ_FROM_PTR(image);
+        return;
       }
-#endif
     }
-  }
+  }*/
 
 }

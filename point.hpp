@@ -8,14 +8,14 @@
 namespace picovector {
 
   class point_t {
-  public:  
+  public:
     float x;
     float y;
 
     point_t() {}
     point_t(float x, float y) : x(x), y(y) {}
 
-    
+
     bool operator==(const point_t &rhs) const {
       return x == rhs.x && y == rhs.y;
     }

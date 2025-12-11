@@ -115,10 +115,6 @@ namespace picovector {
       w -= left + right;
       h -= top + bottom;
     }
-
-    void debug(std::string l = "?") {
-      printf("%s: %f, %f (%f x %f)\n", l.c_str(), x, y, w, h);
-    }
   };
 
 }

@@ -80,7 +80,7 @@ namespace picovector {
     rect_t b = shape->bounds();
 
     // clip the shape bounds to the target bounds
-    rect_t cb = b.intersection(target->bounds());
+    rect_t cb = b.intersection(target->clip());
     cb.x = floor(cb.x);
     cb.y = floor(cb.y);
     cb.w = ceil(cb.w);

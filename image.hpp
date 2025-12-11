@@ -39,6 +39,7 @@ namespace picovector {
       size_t          _bytes_per_pixel;
 
       rect_t          _bounds;
+      rect_t          _clip;
       uint8_t         _alpha = 255;
       antialias_t     _antialias = OFF;
       pixel_format_t  _pixel_format = RGBA8888;
@@ -64,6 +65,8 @@ namespace picovector {
       uint32_t row_stride();
 
       rect_t bounds();
+      rect_t clip();
+      void clip(rect_t r);
 
       bool has_palette();
       void delete_palette();
@@ -90,10 +93,10 @@ namespace picovector {
 
       uint32_t pixel_unsafe(int x, int y);
       uint32_t pixel(int x, int y);
-
+      void span(int x, int y, int w);
       void clear();
-      void rectangle(const rect_t &r);
-      void triangle(const point_t &p1, const point_t &p2, const point_t &p3);
+      void rectangle(rect_t r);
+      void triangle(point_t p1, point_t p2, point_t p3);
       void round_rectangle(const rect_t &r, int radius);
       void circle(const point_t &p, const int &r);
       void ellipse(const point_t &p, const int &rx, const int &ry);

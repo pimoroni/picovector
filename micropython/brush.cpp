@@ -84,11 +84,11 @@ extern "C" {
     if(n_args == 1) {
       brush->brush = m_new_class(image_brush, src->image);
     } else {
-      if(!mp_obj_is_type(args[1], &type_Matrix)) {
+      if(!mp_obj_is_type(args[1], &type_mat3)) {
         mp_raise_TypeError(MP_ERROR_TEXT("parameter must be of matrix type"));
       }
 
-      matrix_obj_t *transform = (matrix_obj_t *)MP_OBJ_TO_PTR(args[1]);
+      mat3_obj_t *transform = (mat3_obj_t *)MP_OBJ_TO_PTR(args[1]);
       mat3_t *m = &transform->m;
       brush->brush = m_new_class(image_brush, src->image, m);
     }

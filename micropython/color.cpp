@@ -1,3 +1,5 @@
+#include "mp_tracked_allocator.hpp"
+
 #include "mp_helpers.hpp"
 #include "picovector.hpp"
 

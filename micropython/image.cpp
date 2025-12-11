@@ -59,12 +59,27 @@ MPY_BIND_CLASSMETHOD_ARGS1(load_into, path, {
   })
 
 
-MPY_BIND_VAR(5, window, {
+MPY_BIND_VAR(2, window, {
     const image_obj_t *self = (image_obj_t *)MP_OBJ_TO_PTR(args[0]);
-    int x = mp_obj_get_int(args[1]);
-    int y = mp_obj_get_int(args[2]);
-    int w = mp_obj_get_int(args[3]);
-    int h = mp_obj_get_int(args[4]);
+
+    int x;
+    int y;
+    int w;
+    int h;
+
+    if (mp_obj_is_type(args[1], &type_rect)) {
+      const rect_obj_t *rect = (rect_obj_t *)MP_OBJ_TO_PTR(args[1]);
+      x = rect->rect.x;
+      y = rect->rect.y;
+      w = rect->rect.w;
+      h = rect->rect.h;
+    }else{
+      x = mp_obj_get_float(args[1]);
+      y = mp_obj_get_float(args[2]);
+      w = mp_obj_get_float(args[3]);
+      h = mp_obj_get_float(args[4]);
+    }
+
     image_obj_t *result = mp_obj_malloc_with_finaliser(image_obj_t, &type_image);
     result->image = new(m_malloc(sizeof(image_t))) image_t(self->image, rect_t(x, y, w, h));
     result->parent = (void*)self;
@@ -72,10 +87,31 @@ MPY_BIND_VAR(5, window, {
   })
 
 
+  // MPY_BIND_VAR(2, clip, {
+  //   const image_obj_t *self = (image_obj_t *)MP_OBJ_TO_PTR(args[0]);
+
+  //   if(mp_obj_is_type(args[1], &type_rect)) {
+  //     const rect_obj_t *rect = (rect_obj_t *)MP_OBJ_TO_PTR(args[1]);
+  //     self->image->clip(rect->rect);
+  //     return mp_const_none;
+  //   }
+
+  //   if(n_args == 5) {
+  //     int x = mp_obj_get_float(args[1]);
+  //     int y = mp_obj_get_float(args[2]);
+  //     int w = mp_obj_get_float(args[3]);
+  //     int h = mp_obj_get_float(args[4]);
+  //     self->image->clip(rect_t(x, y, w, h));
+  //     return mp_const_none;
+  //   }
+
+  //   mp_raise_msg_varg(&mp_type_ValueError, MP_ERROR_TEXT("invalid parameters, expected either clip(r) or clip(x, y, w, h)"));
+  // })
+
   MPY_BIND_VAR(2, shape, {
     const image_obj_t *self = (image_obj_t *)MP_OBJ_TO_PTR(args[0]);
 
-    if (mp_obj_is_type(args[1], &type_Shape)) {
+    if (mp_obj_is_type(args[1], &type_shape)) {
       const shape_obj_t *shape = (shape_obj_t *)MP_OBJ_TO_PTR(args[1]);
       self->image->draw(shape->shape);
       return mp_const_none;
@@ -99,11 +135,11 @@ MPY_BIND_VAR(5, window, {
   MPY_BIND_VAR(2, rectangle, {
     const image_obj_t *self = (image_obj_t *)MP_OBJ_TO_PTR(args[0]);
 
-    /*if(mp_obj_is_type(args[1], &type_rect)) {
+    if(mp_obj_is_type(args[1], &type_rect)) {
       rect_obj_t *rect = (rect_obj_t *)MP_OBJ_TO_PTR(args[1]);
       self->image->rectangle(rect->rect);
       return mp_const_none;
-    }*/
+    }
 
     if(n_args == 5) {
       int x = mp_obj_get_int(args[1]);
@@ -128,10 +164,10 @@ MPY_BIND_VAR(5, window, {
     }
 
     if(n_args == 5) {
-      int x1 = mp_obj_get_int(args[1]);
-      int y1 = mp_obj_get_int(args[2]);
-      int x2 = mp_obj_get_int(args[3]);
-      int y2 = mp_obj_get_int(args[4]);
+      int x1 = mp_obj_get_float(args[1]);
+      int y1 = mp_obj_get_float(args[2]);
+      int x2 = mp_obj_get_float(args[3]);
+      int y2 = mp_obj_get_float(args[4]);
       self->image->line(point_t(x1, y1), point_t(x2, y2));
       return mp_const_none;
     }
@@ -139,10 +175,58 @@ MPY_BIND_VAR(5, window, {
     mp_raise_msg_varg(&mp_type_ValueError, MP_ERROR_TEXT("invalid parameters, expected either line(p1, p2) or line(x1, y1, x2, y2)"));
   })
 
+
+  MPY_BIND_VAR(3, circle, {
+    const image_obj_t *self = (image_obj_t *)MP_OBJ_TO_PTR(args[0]);
+
+    if(mp_obj_is_type(args[1], &type_point)) {
+      point_obj_t *p = (point_obj_t *)MP_OBJ_TO_PTR(args[1]);
+      float r = mp_obj_get_float(args[2]);
+      self->image->circle(p->point, r);
+      return mp_const_none;
+    }
+
+    if(n_args == 4) {
+      int x = mp_obj_get_float(args[1]);
+      int y = mp_obj_get_float(args[2]);
+      int r = mp_obj_get_float(args[3]);
+      self->image->circle(point_t(x, y), r);
+      return mp_const_none;
+    }
+
+    mp_raise_msg_varg(&mp_type_ValueError, MP_ERROR_TEXT("invalid parameters, expected either circle(p, r) or circle(x, y, r)"));
+  })
+
+  MPY_BIND_VAR(4, triangle, {
+    const image_obj_t *self = (image_obj_t *)MP_OBJ_TO_PTR(args[0]);
+
+    if(mp_obj_is_type(args[1], &type_point) && mp_obj_is_type(args[2], &type_point) && mp_obj_is_type(args[3], &type_point)) {
+      point_obj_t *p1 = (point_obj_t *)MP_OBJ_TO_PTR(args[1]);
+      point_obj_t *p2 = (point_obj_t *)MP_OBJ_TO_PTR(args[2]);
+      point_obj_t *p3 = (point_obj_t *)MP_OBJ_TO_PTR(args[3]);
+      self->image->triangle(p1->point, p2->point, p3->point);
+      return mp_const_none;
+    }
+
+    if(n_args == 7) {
+      int x1 = mp_obj_get_float(args[1]);
+      int y1 = mp_obj_get_float(args[2]);
+      int x2 = mp_obj_get_float(args[3]);
+      int y2 = mp_obj_get_float(args[4]);
+      int x3 = mp_obj_get_float(args[5]);
+      int y3 = mp_obj_get_float(args[6]);
+      self->image->triangle(point_t(x1, y1), point_t(x2, y2), point_t(x3, y3));
+      return mp_const_none;
+    }
+
+    mp_raise_msg_varg(&mp_type_ValueError, MP_ERROR_TEXT("invalid parameters, expected either triangle(p1, p2, p3) or triangle(x1, y1, x2, y2, x3, y3)"));
+  })
+
+
 MPY_BIND_VAR(3, get, {
     const image_obj_t *self = (image_obj_t *)MP_OBJ_TO_PTR(args[0]);
-    int x = mp_obj_get_int(args[1]);
-    int y = mp_obj_get_int(args[2]);
+    int x = mp_obj_get_float(args[1]);
+    int y = mp_obj_get_float(args[2]);
     color_obj_t *color = mp_obj_malloc(color_obj_t, &type_color);
     color->c = self->image->get(x, y);
     return MP_OBJ_FROM_PTR(color);
@@ -150,8 +234,8 @@ MPY_BIND_VAR(3, get, {
 
 MPY_BIND_VAR(3, put, {
     const image_obj_t *self = (image_obj_t *)MP_OBJ_TO_PTR(args[0]);
-    int x = mp_obj_get_int(args[1]);
-    int y = mp_obj_get_int(args[2]);
+    int x = mp_obj_get_float(args[1]);
+    int y = mp_obj_get_float(args[2]);
     self->image->put(x, y);
     return mp_const_none;
   })
@@ -267,6 +351,26 @@ MPY_BIND_ATTR(image, {
     action_t action = m_attr_action(dest);
 
     switch(attr) {
+      case MP_QSTR_clip: {
+        if(action == GET) {
+          rect_obj_t *result = mp_obj_malloc(rect_obj_t, &type_rect);
+          result->rect = self->image->clip();
+          dest[0] = MP_OBJ_FROM_PTR(result);
+          return;
+        }
+
+        if(action == SET) {
+          if(!mp_obj_is_type(dest[1], &type_rect)) {
+            mp_raise_TypeError(MP_ERROR_TEXT("value must be of type rect"));
+          }
+
+          rect_obj_t * r = (rect_obj_t *)dest[1];
+          self->image->clip(r->rect);
+          dest[0] = MP_OBJ_NULL;
+          return;
+        }
+      };
+
       case MP_QSTR_width: {
         if(action == GET) {
           dest[0] = mp_obj_new_int(self->image->bounds().w);
@@ -351,15 +455,15 @@ MPY_BIND_ATTR(image, {
         }
 
         if(action == SET) {
-          if(!mp_obj_is_type(dest[1], &type_Font) && !mp_obj_is_type(dest[1], &type_PixelFont)) {
+          if(!mp_obj_is_type(dest[1], &type_font) && !mp_obj_is_type(dest[1], &type_pixel_font)) {
             mp_raise_TypeError(MP_ERROR_TEXT("value must be of type Font or PixelFont"));
           }
-          if(mp_obj_is_type(dest[1], &type_Font)) {
+          if(mp_obj_is_type(dest[1], &type_font)) {
             self->font = (font_obj_t *)dest[1];
             self->pixel_font = nullptr;
             self->image->font(&self->font->font);
           }
-          if(mp_obj_is_type(dest[1], &type_PixelFont)) {
+          if(mp_obj_is_type(dest[1], &type_pixel_font)) {
             self->pixel_font = (pixel_font_obj_t *)dest[1];
             self->font = nullptr;
             self->image->pixel_font(self->pixel_font->font);
@@ -380,11 +484,14 @@ MPY_BIND_LOCALS_DICT(image,
       MPY_BIND_ROM_PTR_STATIC(load),
       MPY_BIND_ROM_PTR(load_into),
       MPY_BIND_ROM_PTR(window),
+      //MPY_BIND_ROM_PTR(clip),
 
       // primitives
       MPY_BIND_ROM_PTR(clear),
       MPY_BIND_ROM_PTR(rectangle),
       MPY_BIND_ROM_PTR(line),
+      MPY_BIND_ROM_PTR(circle),
+      MPY_BIND_ROM_PTR(triangle),
       MPY_BIND_ROM_PTR(get),
       MPY_BIND_ROM_PTR(put),
 

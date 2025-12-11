@@ -3,6 +3,8 @@
 #include "mp_helpers.hpp"
 #include "picovector.hpp"
 
+using namespace picovector;
+
 extern "C" {
 
   #include "py/runtime.h"
@@ -10,13 +12,17 @@ extern "C" {
 
   MPY_BIND_NEW(rect, {
     rect_obj_t *self = mp_obj_malloc_with_finaliser(rect_obj_t, type);
-    if(n_args != 4) {
-      mp_raise_msg_varg(&mp_type_OSError, MP_ERROR_TEXT("rect constructor takes four values: x, y, width, and height"));
+
+    if(n_args != 4 && n_args != 0) {
+      mp_raise_msg_varg(&mp_type_ValueError, MP_ERROR_TEXT("invalid parameters, expected rect() or rect(x, y, w, h)"));
     }
-    self->rect.x = mp_obj_get_float(args[0]);
-    self->rect.y = mp_obj_get_float(args[1]);
-    self->rect.w = mp_obj_get_float(args[2]);
-    self->rect.h = mp_obj_get_float(args[3]);
+
+    if(n_args == 4) {
+      self->rect.x = mp_obj_get_float(args[0]);
+      self->rect.y = mp_obj_get_float(args[1]);
+      self->rect.w = mp_obj_get_float(args[2]);
+      self->rect.h = mp_obj_get_float(args[3]);
+    }
     return MP_OBJ_FROM_PTR(self);
   })
 
@@ -36,33 +42,35 @@ extern "C" {
     return mp_const_none;
   })
 
-  MPY_BIND_VAR(2, intersection, {
-    rect_obj_t *self = (rect_obj_t *)MP_OBJ_TO_PTR(args[0]);
-    rect_obj_t *other = (rect_obj_t *)MP_OBJ_TO_PTR(args[1]);
+  MPY_BIND_CLASSMETHOD_ARGS1(intersection, rect_in, {
+    rect_obj_t *self = (rect_obj_t *)MP_OBJ_TO_PTR(self_in);
+    rect_obj_t *other = (rect_obj_t *)MP_OBJ_TO_PTR(rect_in);
     rect_obj_t *result = mp_obj_malloc(rect_obj_t, &type_rect);
     result->rect = self->rect.intersection(other->rect);
     return MP_OBJ_FROM_PTR(result);
   })
 
-  MPY_BIND_VAR(2, intersects, {
-    rect_obj_t *self = (rect_obj_t *)MP_OBJ_TO_PTR(args[0]);
-    rect_obj_t *other = (rect_obj_t *)MP_OBJ_TO_PTR(args[1]);
+  MPY_BIND_CLASSMETHOD_ARGS1(intersects, rect_in, {
+    rect_obj_t *self = (rect_obj_t *)MP_OBJ_TO_PTR(self_in);
+    rect_obj_t *other = (rect_obj_t *)MP_OBJ_TO_PTR(rect_in);
     rect_obj_t *result = mp_obj_malloc(rect_obj_t, &type_rect);
     return mp_obj_new_bool(self->rect.intersects(other->rect));
   })
 
-  MPY_BIND_VAR(2, contains, {
-    rect_obj_t *self = (rect_obj_t *)MP_OBJ_TO_PTR(args[0]);
+  MPY_BIND_CLASSMETHOD_ARGS1(contains, obj_in, {
+    rect_obj_t *self = (rect_obj_t *)MP_OBJ_TO_PTR(self_in);
 
-    if(mp_obj_is_type(args[1], &type_rect)) {
-      rect_obj_t *other = (rect_obj_t *)MP_OBJ_TO_PTR(args[1]);
+    if(mp_obj_is_type(obj_in, &type_rect)) {
+      rect_obj_t *other = (rect_obj_t *)MP_OBJ_TO_PTR(obj_in);
       return mp_obj_new_bool(self->rect.contains(other->rect));
     }
 
-    if(mp_obj_is_type(args[1], &type_point)) {
-      point_obj_t *point = (point_obj_t *)MP_OBJ_TO_PTR(args[1]);
+    if(mp_obj_is_type(obj_in, &type_point)) {
+      point_obj_t *point = (point_obj_t *)MP_OBJ_TO_PTR(obj_in);
       return mp_obj_new_bool(self->rect.contains(point->point));
     }
+    
+    mp_raise_msg_varg(&mp_type_ValueError, MP_ERROR_TEXT("invalid parameters, expected either rect(x, y, w, h) or point(x, y)"));
 
     return mp_const_none;
   })
@@ -83,11 +91,11 @@ extern "C" {
       return mp_const_none;
     }
 
-    mp_raise_msg_varg(&mp_type_ValueError, MP_ERROR_TEXT("offset expects either a point or x and y offset"));
+    mp_raise_msg_varg(&mp_type_ValueError, MP_ERROR_TEXT("invalid parameters, expected either offset(p) or offset(x, y)"));
   })
 
-  MPY_BIND_VAR(1, empty, {
-    rect_obj_t *self = (rect_obj_t *)MP_OBJ_TO_PTR(args[0]);
+  MPY_BIND_CLASSMETHOD_ARGS0(empty, {
+    rect_obj_t *self = (rect_obj_t *)MP_OBJ_TO_PTR(self_in);
     return mp_obj_new_bool(self->rect.empty());
   })
 
@@ -99,59 +107,59 @@ extern "C" {
     switch(attr | action) {
       case MP_QSTR_l | GET:
       case MP_QSTR_x | GET:
-        dest[0] = mp_obj_new_int(self->rect.x);
+        dest[0] = mp_obj_new_float(self->rect.x);
         return;
 
       case MP_QSTR_l | SET:
       case MP_QSTR_x | SET:
-        self->rect.x = mp_obj_get_int(dest[1]);
+        self->rect.x = mp_obj_get_float(dest[1]);
         dest[0] = MP_OBJ_NULL;
         return;
 
       case MP_QSTR_t | GET:
       case MP_QSTR_y | GET:
-        dest[0] = mp_obj_new_int(self->rect.y);
+        dest[0] = mp_obj_new_float(self->rect.y);
         return;
 
       case MP_QSTR_t | SET:
       case MP_QSTR_y | SET:
-        self->rect.y = mp_obj_get_int(dest[1]);
+        self->rect.y = mp_obj_get_float(dest[1]);
         dest[0] = MP_OBJ_NULL;
         return;
 
       case MP_QSTR_w | GET:
-        dest[0] = mp_obj_new_int(self->rect.w);
+        dest[0] = mp_obj_new_float(self->rect.w);
         return;
 
       case MP_QSTR_w | SET:
-        self->rect.w = mp_obj_get_int(dest[1]);
+        self->rect.w = mp_obj_get_float(dest[1]);
         dest[0] = MP_OBJ_NULL;
         return;
 
       case MP_QSTR_h | GET:
-        dest[0] = mp_obj_new_int(self->rect.h);
+        dest[0] = mp_obj_new_float(self->rect.h);
         return;
 
       case MP_QSTR_h | SET:
-        self->rect.h = mp_obj_get_int(dest[1]);
+        self->rect.h = mp_obj_get_float(dest[1]);
         dest[0] = MP_OBJ_NULL;
         return;
 
       case MP_QSTR_r | GET:
-        dest[0] = mp_obj_new_int(self->rect.w + self->rect.x);
+        dest[0] = mp_obj_new_float(self->rect.w + self->rect.x);
         return;
 
       case MP_QSTR_r | SET:
-        self->rect.w = mp_obj_get_int(dest[1]) - self->rect.x;
+        self->rect.w = mp_obj_get_float(dest[1]) - self->rect.x;
         dest[0] = MP_OBJ_NULL;
         return;
 
       case MP_QSTR_b | GET:
-        dest[0] = mp_obj_new_int(self->rect.h + self->rect.y);
+        dest[0] = mp_obj_new_float(self->rect.h + self->rect.y);
         return;
 
       case MP_QSTR_b | SET:
-        self->rect.h = mp_obj_get_int(dest[1]) - self->rect.y;
+        self->rect.h = mp_obj_get_float(dest[1]) - self->rect.y;
         dest[0] = MP_OBJ_NULL;
         return;
     };
@@ -177,21 +185,7 @@ extern "C" {
       attr, (const void *)rect_attr,
       locals_dict, &rect_locals_dict
   );
-/*
- // Expanded version of the above
- // NOTE: A spurious comma on the end of locals_dict caused an entire journey of mayhem
-  const mp_obj_type_t type_rect = {
-    .base = { &mp_type_type },
-    .flags = MP_TYPE_FLAG_NONE,
-    .name = MP_QSTR_rect,
-    .slot_index_make_new = 1,
-    .slot_index_attr = 2,
-    .slot_index_locals_dict = 3,
-    .slots = {
-      (const void *)rect_new,
-      (const void *)rect_attr,
-      &rect_locals_dict
-     }
-  };
-*/
+
 }
+
+

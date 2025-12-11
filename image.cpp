@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "rasteriser.hpp"
+#include "algorithms/algorithms.hpp"
 #include "image.hpp"
 #include "blend.hpp"
 #include "brush.hpp"
@@ -21,13 +22,15 @@ namespace picovector {
   image_t::image_t(image_t *source, rect_t r) {
     rect_t i = source->_bounds.intersection(r);
     *this = *source;
-    this->_bounds = rect_t(0, 0, i.w, i.h);
-    this->_buffer = source->ptr(i.x, i.y);
-    this->_managed_buffer = false;
+    _bounds = rect_t(0, 0, i.w, i.h);
+    _clip = rect_t(0, 0, i.w, i.h);
+    _buffer = source->ptr(i.x, i.y);
+    _managed_buffer = false;
   }
 
   image_t::image_t(int w, int h, pixel_format_t pixel_format, bool has_palette) {
     _bounds = rect_t(0, 0, w, h);
+    _clip = rect_t(0, 0, w, h);
     _brush = &_default_image_brush;
     _pixel_format = pixel_format;
     _has_palette = has_palette;
@@ -42,6 +45,7 @@ namespace picovector {
 
   image_t::image_t(void *buffer, int w, int h, pixel_format_t pixel_format, bool has_palette) {
     _bounds = rect_t(0, 0, w, h);
+    _clip = rect_t(0, 0, w, h);
     _brush = &_default_image_brush;
     _pixel_format = pixel_format;
     _has_palette = has_palette;
@@ -82,6 +86,14 @@ namespace picovector {
 
   rect_t image_t::bounds() {
     return this->_bounds;
+  }
+
+  rect_t image_t::clip() {
+    return this->_clip;
+  }
+
+  void image_t::clip(rect_t r) {
+    this->_clip = _bounds.intersection(r);
   }
 
   bool image_t::has_palette() {
@@ -160,12 +172,12 @@ namespace picovector {
   }
 
   void image_t::clear() {
-    rectangle(_bounds);
+    rectangle(_clip);
   }
 
   void image_t::blit(image_t *t, const point_t p) {
     rect_t tr(p.x, p.y, _bounds.w, _bounds.h); // target rect
-    tr = tr.intersection(t->_bounds); // clip to target image bounds
+    tr = tr.intersection(t->_clip); // clip to target image bounds
 
     if(tr.empty()) {return;}
 
@@ -193,7 +205,7 @@ namespace picovector {
     - uve: the end coordinate of the texture
   */
   void image_t::vspan_tex(image_t *target, point_t p, uint c, point_t uvs, point_t uve) {
-    rect_t b = target->bounds();
+    rect_t b = target->_clip;
     if(p.x < b.x || p.x > b.x + b.w) {
       return;
     }
@@ -249,8 +261,8 @@ namespace picovector {
 
     // clip the target rect if needed
     rect_t ctr = tr;
-    if(!t->_bounds.contains(tr)) { // target rect not entirely contained, need to clip
-      ctr = tr.intersection(t->_bounds);
+    if(!t->_clip.contains(tr)) { // target rect not entirely contained, need to clip
+      ctr = tr.intersection(t->_clip);
       if(ctr.empty()) return; // clipped source rect empty, nothing to blit
 
       // clip source rect to new clipped target rect
@@ -295,7 +307,7 @@ namespace picovector {
     tr.h = abs(tr.h);
 
     // clip the target rect to the target bounds
-    rect_t ctr = tr.intersection(target->bounds());
+    rect_t ctr = tr.intersection(target->_clip);
     if(ctr.empty()) {return;}
 
     // calculate the source step
@@ -342,33 +354,121 @@ namespace picovector {
     render(shape, this, &shape->transform, _brush);
   }
 
-  void image_t::rectangle(const rect_t &_r) {
-    rect_t r = _r.intersection(_bounds);
+  void image_t::rectangle(rect_t r) {
+    r = r.intersection(_clip);
     for(int y = r.y; y < r.y + r.h; y++) {
       this->_brush->render_span(this, r.x, y, r.w);
     }
   }
 
+  void image_t::span(int x, int y, int w) {
+    if(y < _clip.y || y >= _clip.y + _clip.h) return;
+    if(x + w < 0 || x >= _clip.x + _clip.w) return;
 
-  void image_t::circle(const point_t &p, const int &r) {
-    // int sy = max(p.y - r, 0);
-    // int ey = min(p.y + r, bounds.h);
-    // for(int y = sy; y < ey; y++) {
-    //   int w = sqrt((r * r) - ((y - p.y) * (y - p.y)));
-    //   int sx = p.x - w;
-    //   int ex = p.x + w;
-    //   if(ex < 0 || sx >= bounds.h) {continue;}
-    //   sx = max(sx, 0);
-    //   ex = min(ex, bounds.w);
+    if(x < 0) {
+      w += x; x = 0;
+    }
 
-    //   //printf("c: %d -> %d @ %d\n", sx, ex, y);
-    //   span_argb8(ptr(sx, y), ex - sx, c);
-    // }
+    if(x + w >= _clip.x + _clip.w) {
+      w = _clip.x + _clip.w - x;
+    }
+    this->_brush->render_span(this, x, y, w);
   }
 
+  void image_t::circle(const point_t &p, const int &r) {
 
-  void triangle(const point_t &p1, const point_t &p2, const point_t &p3) {
+    rect_t b = rect_t(p.x - r, p.y - r, r * 2, r * 2);
+    if(!b.intersects(_clip)) return;
 
+    int ox = r, oy = 0, err = -r;
+    while (ox >= oy)
+    {
+      int last_oy = oy;
+
+      err += oy; oy++; err += oy;
+
+      this->span(p.x - ox, p.y + last_oy, ox * 2 + 1);
+      if (last_oy != 0) {
+        this->span(p.x - ox, p.y - last_oy, ox * 2 + 1);
+      }
+
+      if(err >= 0 && ox != last_oy) {
+        this->span(p.x - last_oy, p.y + ox, last_oy * 2 + 1);
+        if (ox != 0) {
+          this->span(p.x - last_oy, p.y - ox, last_oy * 2 + 1);
+        }
+
+        err -= ox; ox--; err -= ox;
+      }
+    }
+  }
+
+  int32_t orient2d(point_t p1, point_t p2, point_t p3) {
+    return (p2.x - p1.x) * (p3.y - p1.y) - (p2.y - p1.y) * (p3.x - p1.x);
+  }
+
+  bool is_top_left(const point_t &p1, const point_t &p2) {
+    return (p1.y == p2.y && p1.x > p2.x) || (p1.y < p2.y);
+  }
+
+  void image_t::triangle(point_t p1, point_t p2, point_t p3) {
+    rect_t b(
+      point_t(min(p1.x, min(p2.x, p3.x)), min(p1.y, min(p2.y, p3.y))),
+      point_t(max(p1.x, max(p2.x, p3.x)), max(p1.y, max(p2.y, p3.y)))
+    );
+
+    // clip extremes to frame buffer size
+    b = b.intersection(_clip);
+
+    // if triangle completely out of bounds then don't bother!
+    if (b.empty()) return;
+
+    // fix "winding" of vertices if needed
+    int32_t winding = orient2d(p1, p2, p3);
+    if (winding < 0) {
+      point_t t;
+      t = p1; p1 = p3; p3 = t;
+    }
+
+    // bias ensures no overdraw between neighbouring triangles
+    int8_t bias0 = is_top_left(p2, p3) ? 0 : -1;
+    int8_t bias1 = is_top_left(p3, p1) ? 0 : -1;
+    int8_t bias2 = is_top_left(p1, p2) ? 0 : -1;
+
+    int32_t a01 = p1.y - p2.y;
+    int32_t b01 = p2.x - p1.x;
+    int32_t a12 = p2.y - p3.y;
+    int32_t b12 = p3.x - p2.x;
+    int32_t a20 = p3.y - p1.y;
+    int32_t b20 = p1.x - p3.x;
+
+    point_t tl(b.x, b.y);
+    int32_t w0row = orient2d(p2, p3, tl) + bias0;
+    int32_t w1row = orient2d(p3, p1, tl) + bias1;
+    int32_t w2row = orient2d(p1, p2, tl) + bias2;
+
+    for (int32_t y = 0; y < b.h; y++) {
+      int32_t w0 = w0row;
+      int32_t w1 = w1row;
+      int32_t w2 = w2row;
+
+      point_t dest = point_t(b.x, b.y + y);
+      for (int32_t x = 0; x < b.w; x++) {
+        if ((w0 | w1 | w2) >= 0) {
+          put_unsafe(dest.x, dest.y);
+        }
+
+        dest.x++;
+
+        w0 += a12;
+        w1 += a20;
+        w2 += a01;
+      }
+
+      w0row += b12;
+      w1row += b20;
+      w2row += b01;
+    }
   }
 
   void round_rectangle(const rect_t &r, int radius) {
@@ -380,90 +480,24 @@ namespace picovector {
 
   }
 
-enum {
-    CS_LEFT   = 1,
-    CS_RIGHT  = 2,
-    CS_BOTTOM = 4,
-    CS_TOP    = 8,
-};
-
-
-static int cs_outcode(int x, int y, int xmin, int ymin, int xmax, int ymax) {
-    int code = 0;
-    if (x < xmin) code |= CS_LEFT;
-    else if (x > xmax) code |= CS_RIGHT;
-    if (y < ymin) code |= CS_BOTTOM;
-    else if (y > ymax) code |= CS_TOP;
-    return code;
-}
-
-int clip_line_cs(int *x0, int *y0, int *x1, int *y1,
-                 int xmin, int ymin, int xmax, int ymax)
-{
-    int x0v = *x0, y0v = *y0;
-    int x1v = *x1, y1v = *y1;
-
-    int out0 = cs_outcode(x0v, y0v, xmin, ymin, xmax, ymax);
-    int out1 = cs_outcode(x1v, y1v, xmin, ymin, xmax, ymax);
-
-    for (;;) {
-        if (!(out0 | out1)) {
-            // trivially inside
-            *x0 = x0v; *y0 = y0v;
-            *x1 = x1v; *y1 = y1v;
-            return 1;
-        } else if (out0 & out1) {
-            // trivially outside
-            return 0;
-        } else {
-            // at least one endpoint is outside; pick it
-            int out = out0 ? out0 : out1;
-            int x, y;
-
-            int dx = x1v - x0v;
-            int dy = y1v - y0v;
-
-            if (out & CS_TOP) {
-                // y = ymax
-                y = ymax;
-                x = x0v + dx * (ymax - y0v) / dy;
-            } else if (out & CS_BOTTOM) {
-                // y = ymin
-                y = ymin;
-                x = x0v + dx * (ymin - y0v) / dy;
-            } else if (out & CS_RIGHT) {
-                // x = xmax
-                x = xmax;
-                y = y0v + dy * (xmax - x0v) / dx;
-            } else { // CS_LEFT
-                x = xmin;
-                y = y0v + dy * (xmin - x0v) / dx;
-            }
-
-            if (out == out0) {
-                x0v = x; y0v = y;
-                out0 = cs_outcode(x0v, y0v, xmin, ymin, xmax, ymax);
-            } else {
-                x1v = x; y1v = y;
-                out1 = cs_outcode(x1v, y1v, xmin, ymin, xmax, ymax);
-            }
-        }
-    }
-}
 
   void image_t::line(point_t p1, point_t p2) {
+    rect_t b = this->_clip;
+    b.w -= 1;
+    b.h -= 1; // TODO: this is hacky... fix it properly
+
+    if(!clip_line(p1, p2, b)) {
+      return; // fully outside bounds, nothing to draw
+    }
+
     int x0 = p1.x;
     int x1 = p2.x;
     int y0 = p1.y;
     int y1 = p2.y;
-    int xmin = _bounds.x;
-    int ymin = _bounds.y;
-    int xmax = _bounds.x + _bounds.w;
-    int ymax = _bounds.y + _bounds.h;
-
-    if (!clip_line_cs(&x0, &y0, &x1, &y1, xmin, ymin, xmax, ymax)) {
-        return; // fully outside
-    }
+    int xmin = _clip.x;
+    int ymin = _clip.y;
+    int xmax = _clip.x + _clip.w;
+    int ymax = _clip.y + _clip.h;
 
     int dx = abs(x1 - x0);
     int sx = x0 < x1 ? 1 : -1;
@@ -471,13 +505,12 @@ int clip_line_cs(int *x0, int *y0, int *x1, int *y1,
     int sy = y0 < y1 ? 1 : -1;
     int err = dx + dy;
 
-
-    for (;;) {
+    while(true) {
         this->put_unsafe(x0, y0);
         if (x0 == x1 && y0 == y1) break;
         int e2 = 2 * err;
-        if (e2 >= dy) { err += dy; x0 += sx; }
-        if (e2 <= dx) { err += dx; y0 += sy; }
+        if (e2 >= dy) {err += dy; x0 += sx;}
+        if (e2 <= dx) {err += dx; y0 += sy;}
     }
   }
 
@@ -486,8 +519,8 @@ int clip_line_cs(int *x0, int *y0, int *x1, int *y1,
   }
 
   void image_t::put(int x, int y) {
-    x = max(int(_bounds.x), min(x, int(_bounds.x + _bounds.w - 1)));
-    y = max(int(_bounds.y), min(y, int(_bounds.y + _bounds.h - 1)));
+    x = max(int(_clip.x), min(x, int(_clip.x + _clip.w - 1)));
+    y = max(int(_clip.y), min(y, int(_clip.y + _clip.h - 1)));
     this->put_unsafe(x, y);
   }
 
@@ -500,8 +533,8 @@ int clip_line_cs(int *x0, int *y0, int *x1, int *y1,
   }
 
   uint32_t image_t::get(int x, int y) {
-    x = max(int(_bounds.x), min(x, int(_bounds.x + _bounds.w - 1)));
-    y = max(int(_bounds.y), min(y, int(_bounds.y + _bounds.h - 1)));
+    x = max(int(_clip.x), min(x, int(_clip.x + _clip.w - 1)));
+    y = max(int(_clip.y), min(y, int(_clip.y + _clip.h - 1)));
     return this->get_unsafe(x, y);
   }
 

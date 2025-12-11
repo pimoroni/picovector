@@ -29,10 +29,10 @@ extern "C" {
     brush_obj_t *brush;
   } shape_obj_t;
 
-  typedef struct _matrix_obj_t {
+  typedef struct _mat3_obj_t {
     mp_obj_base_t base;
     mat3_t m;
-  } matrix_obj_t;
+  } mat3_obj_t;
 
   typedef struct _png_handle_t {
     mp_obj_t fhandle;

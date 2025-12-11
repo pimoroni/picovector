@@ -43,7 +43,7 @@ namespace picovector {
     rect_t cb = b.intersection(target->bounds());
 
     // setup a node storage buffer that can do up to 32 sampling lines
-    constexpr int NODE_BUFFER_HEIGHT = 64;
+    constexpr int NODE_BUFFER_HEIGHT = 120;
     auto nodes = new((uint8_t *)PicoVector_working_buffer) int16_t [NODE_BUFFER_HEIGHT][64];
     auto node_counts = new((uint8_t *)PicoVector_working_buffer + (NODE_BUFFER_HEIGHT * 64 * 2)) uint8_t[NODE_BUFFER_HEIGHT];
 
@@ -133,7 +133,7 @@ namespace picovector {
       //debug_printf("> render scanlines\n");
 
       // render out each scanline
-      constexpr size_t SPAN_BUFFER_SIZE = 256;
+      constexpr size_t SPAN_BUFFER_SIZE = 512;
       //static uint8_t span_buffer[SPAN_BUFFER_SIZE];
       auto span_buffer = new((uint8_t *)PicoVector_working_buffer + (NODE_BUFFER_HEIGHT * 64 * 2) + (NODE_BUFFER_HEIGHT)) uint8_t [SPAN_BUFFER_SIZE];
       for(int y = 0; y < NODE_BUFFER_HEIGHT; y += aa_level) {

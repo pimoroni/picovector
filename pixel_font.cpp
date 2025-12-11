@@ -74,7 +74,7 @@ namespace picovector {
     int xc = glyph->width - xoff;
     xc = min(xc, int(bounds.w - xf));
 
-    uint32_t *dst = (uint32_t *)target->ptr(0, yf);
+    //uint32_t *dst = (uint32_t *)target->ptr(0, yf);
     uint32_t row_stride = target->row_stride() / 4;
 
     for(int yo = yf; yo < yf + yc; yo++) {
@@ -82,11 +82,12 @@ namespace picovector {
         int bit = xo - x;
         uint8_t b = data[bit >> 3];
         if(b & (0b1 << (7 - (bit & 0b111)))) {
-          brush->pixel(&dst[xo]);
+          //brush->pixel(&dst[xo]);
+          brush->render_span(target, xo, yo, 1);
         }
       }
 
-      dst += row_stride;
+      //dst += row_stride;
       data += bytes_per_row;
     }
   }

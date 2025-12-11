@@ -93,7 +93,32 @@ namespace picovector {
 
       void clear();
       void rectangle(const rect_t &r);
+      void triangle(const point_t &p1, const point_t &p2, const point_t &p3);
+      void round_rectangle(const rect_t &r, int radius);
       void circle(const point_t &p, const int &r);
+      void ellipse(const point_t &p, const int &rx, const int &ry);
+      void line(point_t p1, point_t p2);
+      void put(const point_t &p1);
+      void put(int x, int y);
+      void put_unsafe(int x, int y);
+      uint32_t get(const point_t &p1);
+      uint32_t get(int x, int y);
+      uint32_t get_unsafe(int x, int y);
+
+// pixel(x, y, col) or set(x, y, col)
+// 	•	line(x0, y0, x1, y1)
+// 	•	rect(x, y, w, h)
+// 	•	rect_fill(x, y, w, h)
+// 	•	circ(x, y, r)
+// 	•	circ_fill(x, y, r)
+// 	•	tri(x0, y0, x1, y1, x2, y2)
+// 	•	tri_fill(...)
+// 	•	poly(points…)
+// 	•	poly_fill(...)
+
+
+
+
       void draw(shape_t *shape);
       void blit(image_t *t, const point_t p);
       void blit(image_t *t, rect_t tr);

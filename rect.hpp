@@ -70,9 +70,11 @@ namespace picovector {
       return n;
     }
 
-    rect_t intersection(rect_t r) {
-      rect_t rn = r.normalise();
-      rect_t tn = this->normalise();
+    rect_t intersection(const rect_t &r) const {
+      rect_t rn = r;
+      rn.normalise();
+      rect_t tn = *this;
+      tn.normalise();
 
       // Compute the edges of the intersection
       float x1 = max(tn.x, rn.x);
@@ -92,14 +94,22 @@ namespace picovector {
       return !i.empty();
     }
 
-    void shrink(int a) {
-      x += a;
-      y += a;
-      w -= a + a;
-      h -= a + a;
+    void inflate(float a) {
+      this->inflate(a, a, a, a);
     }
 
-    void shrink(float left, float top, float right, float bottom) {
+    void inflate(float left, float top, float right, float bottom) {
+      x -= left;
+      y -= top;
+      w += left + right;
+      h += top + bottom;
+    }
+
+    void deflate(float a) {
+      this->deflate(a, a, a, a);
+    }
+
+    void deflate(float left, float top, float right, float bottom) {
       x += left;
       y += top;
       w -= left + right;

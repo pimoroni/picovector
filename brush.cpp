@@ -2,27 +2,7 @@
 #include "image.hpp"
 #include "blend.hpp"
 
-//using namespace std;
-
 namespace picovector {
-
-  #define debug_printf(fmt, ...) fprintf(stdout, fmt, ##__VA_ARGS__)
-
-
-  void brush_t::render_spans(image_t *target, _rspan *spans, int count) {
-    while(count--) {
-      this->render_span(target, spans->x, spans->y, spans->w);
-      spans++;
-    }
-  }
-
-  color_brush::color_brush(int r, int g, int b, int a) {
-    this->color = _make_col(r, g, b, a);
-  }
-
-  void color_brush::pixel(uint32_t *dst) {
-    _blend_rgba_rgba((uint8_t*)dst, (uint8_t*)&color);
-  }
 
   void color_brush::render_span(image_t *target, int x, int y, int w) {
     _span_blend_rgba_rgba((uint8_t*)target->ptr(x, y), (uint8_t*)&color, w);
@@ -32,11 +12,8 @@ namespace picovector {
     _span_blend_rgba_rgba_masked((uint8_t*)target->ptr(x, y), (uint8_t*)&color, sb, w);
   }
 
-  brighten_brush::brighten_brush(int amount) : amount(amount) {}
 
-  void brighten_brush::pixel(uint32_t *dst) {
-    return;
-  }
+
 
   void brighten_brush::render_span(image_t *target, int x, int y, int w) {
     uint32_t *dst = (uint32_t*)target->ptr(x, y);
@@ -62,14 +39,6 @@ namespace picovector {
     }
   }
 
-  xor_brush::xor_brush(int r, int g, int b) {
-    this->color = _make_col(r, g, b);
-  }
-
-  void xor_brush::pixel(uint32_t *dst) {
-    return;
-  }
-
   void xor_brush::render_span(image_t *target, int x, int y, int w) {
     uint8_t *dst = (uint8_t*)target->ptr(x, y);
     uint8_t *src = (uint8_t*)&color;
@@ -90,26 +59,102 @@ namespace picovector {
       dst += 4;
       sb++;
     }
-
-    //uint32_t *dst = target->ptr(x, y);
-    //span_argb8(dst, w, color, sb);
   }
 
 
-  // void xor::render_spans(image *target, shape *shape, render_span *spans, int count) {
-  //   while(count--) {
-  //     debug_printf("%d, %d (%d)\n", spans->x, spans->y, spans->w);
 
-  //     uint32_t *dst = target->ptr(spans->x, spans->y);
-  //     for(int i = 0; i < spans->w; i++) {
-  //       uint8_t *pd = (uint8_t *)dst;
-  //       pd[1] = ^pd[1];
-  //       pd[2] = ^pd[2];
-  //       pd[3] = ^pd[3];
+  void pattern_brush::render_span(image_t *target, int x, int y, int w) {
+    uint8_t *dst = (uint8_t*)target->ptr(x, y);
 
-  //       dst++;
-  //     }
-  //     spans++;
-  //   }
-  // }
+    uint8_t *src1 = (uint8_t*)&c1;
+    uint8_t *src2 = (uint8_t*)&c2;
+
+    while(w--) {
+      uint8_t u = 7 - (x & 0b111);
+      uint8_t v = y & 0b111;
+      uint8_t b = p[v];
+      uint8_t *src = b & (1 << u) ? src1 : src2;
+      _blend_rgba_rgba(dst, src);
+      dst += 4;
+      x++;
+    }
+  }
+
+
+  void pattern_brush::render_span_buffer(image_t *target, int x, int y, int w, uint8_t *sb) {
+    uint8_t *dst = (uint8_t*)target->ptr(x, y);
+
+    uint8_t *src1 = (uint8_t*)&c1;
+    uint8_t *src2 = (uint8_t*)&c2;
+
+    while(w--) {
+      uint8_t u = 7 - (x & 0b111);
+      uint8_t v = y & 0b111;
+      uint8_t b = p[v];
+      uint8_t *src = b & (1 << u) ? src1 : src2;
+      _blend_rgba_rgba(dst, src, *sb);
+      dst += 4;
+      x++;
+      sb++;
+    }
+  }
+
+  void image_brush::render_span(image_t *target, int x, int y, int w) {
+    uint8_t *dst = (uint8_t*)target->ptr(x, y);
+
+    rect_t b = src->bounds();
+
+    point_t p1(x, y);
+    point_t p2((x + w), y);
+
+    p1 = p1.transform(&this->it);
+    p2 = p2.transform(&this->it);
+
+    point_t pd((p2.x - p1.x) / w, (p2.y - p1.y) / w);
+    point_t p = p1;
+
+    int tw = int(b.w);
+    int th = int(b.h);
+
+    for(int i = 0; i < w; i++) {
+      p.x += pd.x;
+      p.y += pd.y;
+      int u = (int(p.x) % tw + tw) % tw;
+      int v = (int(p.y) % th + th) % th;
+      uint32_t c = src->get_unsafe(u, v);
+      _blend_rgba_rgba(dst, (uint8_t*)&c);
+      dst += 4;
+      dst += 4;
+    }
+  }
+
+
+  void image_brush::render_span_buffer(image_t *target, int x, int y, int w, uint8_t *sb) {
+    uint8_t *dst = (uint8_t*)target->ptr(x, y);
+    rect_t b = src->bounds();
+
+    point_t p1(x, y);
+    point_t p2((x + w), y);
+
+    p1 = p1.transform(&this->it);
+    p2 = p2.transform(&this->it);
+
+    point_t pd((p2.x - p1.x) / w, (p2.y - p1.y) / w);
+    point_t p = p1;
+
+    int tw = int(b.w);
+    int th = int(b.h);
+
+    while(w--) {
+      p.x += pd.x;
+      p.y += pd.y;
+      int u = (int(p.x) % tw + tw) % tw;
+      int v = (int(p.y) % th + th) % th;
+      uint32_t c = src->get_unsafe(u, v);
+      _blend_rgba_rgba(dst, (uint8_t*)&c, *sb);
+      dst += 4;
+      sb++;
+    }
+  }
+
 }

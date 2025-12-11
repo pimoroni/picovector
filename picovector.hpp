@@ -27,12 +27,9 @@
 #endif
 
 // TODO: bring back AA support
+const size_t working_buffer_size = (50 + 20) * 1024;
+extern char __attribute__((aligned(4))) PicoVector_working_buffer[working_buffer_size];
 
-#ifdef PICO
-extern char PicoVector_working_buffer[48156]; // On device
-#else
-extern char PicoVector_working_buffer[48240]; // macOS (emulator)
-#endif
 
 namespace picovector {
 

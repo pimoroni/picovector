@@ -1,22 +1,13 @@
-
-#include "../picovector.hpp"
-
 #ifdef PICO
 #include "pico/stdlib.h"
 #endif
 
 #include "mp_helpers.hpp"
-
-using namespace picovector;
+#include "picovector.hpp"
 
 extern "C" {
-  #include "py/stream.h"
-  #include "py/reader.h"
   #include "py/runtime.h"
-  #include "extmod/vfs.h"
   #include "py/mphal.h"
-
-  extern const mp_obj_type_t type_Input;
 
 #define BUTTON_HOME 0b100000
 #define BUTTON_A    0b010000
@@ -24,6 +15,8 @@ extern "C" {
 #define BUTTON_C    0b000100
 #define BUTTON_UP   0b000010
 #define BUTTON_DOWN 0b000001
+
+mp_obj_t ticks;
 
 #ifdef PICO
   uint8_t picovector_buttons;
@@ -37,7 +30,7 @@ extern "C" {
   extern double picovector_last_ticks;
 #endif
 
-  void modinput_attr(mp_obj_t self_in, qstr attr, mp_obj_t *dest) {
+  MPY_BIND_ATTR(input, {
     (void)self_in;
 
     if(attr == MP_QSTR_ticks && dest[0] == MP_OBJ_NULL) {
@@ -100,10 +93,10 @@ extern "C" {
     }
 
     dest[1] = MP_OBJ_SENTINEL;
-  }
+  })
 
   // Call io.poll() to set up frame stable input and tick values
-  mp_obj_t modinput_poll() {
+  MPY_BIND_ARGS0(poll, {
 #ifdef PICO
     uint8_t buttons = 0;
     buttons |= gpio_get(BW_SWITCH_A)    ? 0 : BUTTON_A;
@@ -118,8 +111,28 @@ extern "C" {
     picovector_last_ticks = picovector_ticks;
     picovector_ticks = mp_hal_ticks_ms();
 #endif
+    ticks = mp_obj_new_int_from_ll(picovector_ticks);
     return mp_const_none;
-  }
+  })
 
+  static const mp_rom_map_elem_t input_globals_table[] = {
+    MPY_BIND_ROM_PTR(poll),
+    // TODO Move these to MicroPython?
+    { MP_ROM_QSTR(MP_QSTR_BUTTON_HOME), MP_ROM_INT(BUTTON_HOME) },
+    { MP_ROM_QSTR(MP_QSTR_BUTTON_A),    MP_ROM_INT(BUTTON_A) },
+    { MP_ROM_QSTR(MP_QSTR_BUTTON_B),    MP_ROM_INT(BUTTON_B) },
+    { MP_ROM_QSTR(MP_QSTR_BUTTON_C),    MP_ROM_INT(BUTTON_C) },
+    { MP_ROM_QSTR(MP_QSTR_BUTTON_UP),   MP_ROM_INT(BUTTON_UP) },
+    { MP_ROM_QSTR(MP_QSTR_BUTTON_DOWN), MP_ROM_INT(BUTTON_DOWN) },
+  };
+  static MP_DEFINE_CONST_DICT(input_globals, input_globals_table);
+
+  const mp_obj_module_t mod_input = {
+      .base = { &mp_type_module },
+      .globals = (mp_obj_dict_t *)&input_globals,
+  };
+
+  MP_REGISTER_MODULE(MP_QSTR_io, mod_input);
+  MP_REGISTER_MODULE_DELEGATION(mod_input, input_attr);
 }
 

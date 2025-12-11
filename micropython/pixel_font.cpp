@@ -1,10 +1,7 @@
 #include "mp_tracked_allocator.hpp"
-#include "../pixel_font.hpp"
-#include "../blend.hpp"
 
 #include "mp_helpers.hpp"
-
-using namespace picovector;
+#include "picovector.hpp"
 
 extern "C" {
   #include <inttypes.h>
@@ -13,33 +10,26 @@ extern "C" {
   #include "py/runtime.h"
   #include "extmod/vfs.h"
 
-  extern const mp_obj_type_t type_PixelFont;
-
-  typedef struct _pixel_font_obj_t {
-    mp_obj_base_t base;
-    pixel_font_t *font;
-    uint8_t *glyph_buffer;
-    uint32_t glyph_buffer_size;
-    uint8_t *glyph_data_buffer;
-    uint32_t glyph_data_buffer_size;
-  } pixel_font_obj_t;
-
-  mp_obj_t pixel_font__del__(mp_obj_t self_in) {
+  MPY_BIND_DEL(pixel_font, {
     self(self_in, pixel_font_obj_t);
-#if PICO
-    m_free(self->glyph_buffer);
-    m_free(self->glyph_data_buffer);
-#else
+#if MICROPY_MALLOC_USES_ALLOCATED_SIZE
     m_free(self->glyph_buffer, self->glyph_buffer_size);
     m_free(self->glyph_data_buffer, self->glyph_data_buffer_size);
+#else
+    m_free(self->glyph_buffer);
+    m_free(self->glyph_data_buffer);
 #endif
     return mp_const_none;
-  }
+  })
 
-  mp_obj_t pixel_font_load(mp_obj_t path) {
+  MPY_BIND_STATICMETHOD_ARGS1(load, path, {
     pixel_font_obj_t *result = mp_obj_malloc_with_finaliser(pixel_font_obj_t, &type_PixelFont);
 
-    mp_obj_t args[2] = {path, MP_ROM_QSTR(MP_QSTR_r)};
+    // open the file for binary reading
+    //mp_obj_t args[2] = {path, MP_ROM_QSTR(MP_QSTR_r)} // Brace enclosed initialiser lists don't work in the binding macros :(
+    mp_obj_t args[2]; 
+    args[0] = path;
+    args[1] = MP_ROM_QSTR(MP_QSTR_r);
     mp_obj_t file = mp_vfs_open(MP_ARRAY_SIZE(args), args, (mp_map_t *)&mp_const_empty_map);
 
     int error;
@@ -108,8 +98,7 @@ extern "C" {
     mp_stream_close(file);
 
     return MP_OBJ_FROM_PTR(result);
-  }
-
+  })
 
   static void pixel_font_attr(mp_obj_t self_in, qstr attr, mp_obj_t *dest) {
     self(self_in, pixel_font_obj_t);
@@ -136,17 +125,10 @@ extern "C" {
     dest[1] = MP_OBJ_SENTINEL;
   }
 
-  static MP_DEFINE_CONST_FUN_OBJ_1(pixel_font__del___obj, pixel_font__del__);
-
-  static MP_DEFINE_CONST_FUN_OBJ_1(pixel_font_load_obj, pixel_font_load);
-  static MP_DEFINE_CONST_STATICMETHOD_OBJ(pixel_font_load_static_obj, MP_ROM_PTR(&pixel_font_load_obj));
-
-  static const mp_rom_map_elem_t pixel_font_locals_dict_table[] = {
-      { MP_ROM_QSTR(MP_QSTR___del__), MP_ROM_PTR(&pixel_font__del___obj) },
-      { MP_ROM_QSTR(MP_QSTR_load), MP_ROM_PTR(&pixel_font_load_static_obj) },
-
-  };
-  static MP_DEFINE_CONST_DICT(pixel_font_locals_dict, pixel_font_locals_dict_table);
+  MPY_BIND_LOCALS_DICT(pixel_font,
+      MPY_BIND_ROM_PTR_DEL(pixel_font),
+      MPY_BIND_ROM_PTR_STATIC(load),
+  )
 
   MP_DEFINE_CONST_OBJ_TYPE(
       type_PixelFont,

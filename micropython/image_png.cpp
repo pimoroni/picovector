@@ -1,6 +1,5 @@
-#pragma once
-
-#include "image.hpp"
+#include "mp_helpers.hpp"
+#include "picovector.hpp"
 
 extern "C" {
 
@@ -12,10 +11,6 @@ extern "C" {
   #ifndef NO_QSTR
     #include "PNGdec.h"
   #endif
-  
-  typedef struct _png_handle_t {
-    mp_obj_t fhandle;
-  } png_handle_t;
 
   void *pngdec_open_callback(const char *filename, int32_t *size) {
     mp_obj_t fn = mp_obj_new_str(filename, (mp_uint_t)strlen(filename));
@@ -67,11 +62,8 @@ extern "C" {
     return seek_s.offset;
   }
 
-
-
   void pngdec_decode_callback(PNGDRAW *pDraw) {
     image_t *target = (image_t *)pDraw->pUser;
-
 
     uint8_t *psrc = (uint8_t *)pDraw->pPixels;
     int w = pDraw->iWidth;
@@ -126,24 +118,6 @@ extern "C" {
             pdst++;
           }
         }
-
-        // pDraw->pPalette
-        // uint32_t *pdst = (uint32_t *)target->ptr(0, pDraw->y);
-        // while(c--) {
-        //   uint8_t pi = *psrc;
-        //   // do something with index here
-
-        //   *pdst = _make_col(
-        //     pDraw->pPalette[(pi * 3) + 0],
-        //     pDraw->pPalette[(pi * 3) + 1],
-        //     pDraw->pPalette[(pi * 3) + 2],
-        //     pDraw->iHasAlpha ? pDraw->pPalette[768 + pi] : 255
-        //   );
-
-        //   psrc++;
-        //   pdst++;
-        // }
-
       } break;
 
       case PNG_PIXEL_GRAYSCALE: {

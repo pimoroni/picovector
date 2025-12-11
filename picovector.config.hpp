@@ -3,14 +3,14 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-#if PICO
-  void *m_malloc(size_t num_bytes);
-  void *m_realloc(void *ptr, size_t new_num_bytes);
-  void m_free(void *ptr);
-#else
+#if MICROPY_MALLOC_USES_ALLOCATED_SIZE
   void *m_malloc(size_t num_bytes);
   void *m_realloc(void *ptr, size_t old_num_bytes, size_t new_num_bytes);
   void m_free(void *ptr, size_t num_bytes);
+#else
+  void *m_malloc(size_t num_bytes);
+  void *m_realloc(void *ptr, size_t new_num_bytes);
+  void m_free(void *ptr);
 #endif
 #ifdef __cplusplus
 }

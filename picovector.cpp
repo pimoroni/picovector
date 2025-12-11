@@ -9,15 +9,10 @@
 
 using std::sort;
 
-// Common memory pool for font/span rendering buffers and PNGDEC
-// This is sized to *just* fit the PNGDEC state which is 48156 bytes on
-// Pico and 48156 on macOS.
-// On Pico it *must* be 32bit aligned (I found out the hard way.)
-#ifdef PICO
-char __attribute__((aligned(4))) PicoVector_working_buffer[48156]; // On device
-#else
-char PicoVector_working_buffer[48240]; // macOS (emulator)
-#endif
+// memory pool for rasterisation, png decoding, and other memory intensive
+// tasks (sized to fit PNGDEC state) - on pico it *must* be 32bit aligned (i
+// found out the hard way.)
+char __attribute__((aligned(4))) PicoVector_working_buffer[working_buffer_size];
 
 // This will completely break imgui or sokol or something
 //because these will be called before the MicroPython heap is initialised.
@@ -86,6 +81,10 @@ namespace picovector {
 
     // clip the shape bounds to the target bounds
     rect_t cb = b.intersection(target->bounds());
+    cb.x = floor(cb.x);
+    cb.y = floor(cb.y);
+    cb.w = ceil(cb.w);
+    cb.h = ceil(cb.h);
 
     //debug_printf("rendering shape %p with %d paths\n", (void*)shape, int(shape->paths.size()));
     //debug_printf("setup interpolators\n");

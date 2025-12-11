@@ -1,0 +1,197 @@
+#include "mp_tracked_allocator.hpp"
+
+#include "mp_helpers.hpp"
+#include "picovector.hpp"
+
+extern "C" {
+
+  #include "py/runtime.h"
+
+
+  MPY_BIND_NEW(rect, {
+    rect_obj_t *self = mp_obj_malloc_with_finaliser(rect_obj_t, type);
+    if(n_args != 4) {
+      mp_raise_msg_varg(&mp_type_OSError, MP_ERROR_TEXT("rect constructor takes four values: x, y, width, and height"));
+    }
+    self->rect.x = mp_obj_get_float(args[0]);
+    self->rect.y = mp_obj_get_float(args[1]);
+    self->rect.w = mp_obj_get_float(args[2]);
+    self->rect.h = mp_obj_get_float(args[3]);
+    return MP_OBJ_FROM_PTR(self);
+  })
+
+  MPY_BIND_VAR(2, deflate, {
+    rect_obj_t *self = (rect_obj_t *)MP_OBJ_TO_PTR(args[0]);
+    float a1 = mp_obj_get_float(args[1]);
+    float a2 = n_args == 2 ? mp_obj_get_float(args[2]) : a1;
+    self->rect.deflate(a1, a2, a1, a2);
+    return mp_const_none;
+  })
+
+  MPY_BIND_VAR(2, inflate, {
+    rect_obj_t *self = (rect_obj_t *)MP_OBJ_TO_PTR(args[0]);
+    float a1 = mp_obj_get_float(args[1]);
+    float a2 = n_args == 2 ? mp_obj_get_float(args[2]) : a1;
+    self->rect.inflate(a1, a2, a1, a2);
+    return mp_const_none;
+  })
+
+  MPY_BIND_VAR(2, intersection, {
+    rect_obj_t *self = (rect_obj_t *)MP_OBJ_TO_PTR(args[0]);
+    rect_obj_t *other = (rect_obj_t *)MP_OBJ_TO_PTR(args[1]);
+    rect_obj_t *result = mp_obj_malloc(rect_obj_t, &type_rect);
+    result->rect = self->rect.intersection(other->rect);
+    return MP_OBJ_FROM_PTR(result);
+  })
+
+  MPY_BIND_VAR(2, intersects, {
+    rect_obj_t *self = (rect_obj_t *)MP_OBJ_TO_PTR(args[0]);
+    rect_obj_t *other = (rect_obj_t *)MP_OBJ_TO_PTR(args[1]);
+    rect_obj_t *result = mp_obj_malloc(rect_obj_t, &type_rect);
+    return mp_obj_new_bool(self->rect.intersects(other->rect));
+  })
+
+  MPY_BIND_VAR(2, contains, {
+    rect_obj_t *self = (rect_obj_t *)MP_OBJ_TO_PTR(args[0]);
+
+    if(mp_obj_is_type(args[1], &type_rect)) {
+      rect_obj_t *other = (rect_obj_t *)MP_OBJ_TO_PTR(args[1]);
+      return mp_obj_new_bool(self->rect.contains(other->rect));
+    }
+
+    if(mp_obj_is_type(args[1], &type_point)) {
+      point_obj_t *point = (point_obj_t *)MP_OBJ_TO_PTR(args[1]);
+      return mp_obj_new_bool(self->rect.contains(point->point));
+    }
+
+    return mp_const_none;
+  })
+
+  MPY_BIND_VAR(2, offset, {
+    rect_obj_t *self = (rect_obj_t *)MP_OBJ_TO_PTR(args[0]);
+
+    if(mp_obj_is_type(args[1], &type_point)) {
+      point_obj_t *point = (point_obj_t *)MP_OBJ_TO_PTR(args[1]);
+      self->rect.offset(point->point);
+      return mp_const_none;
+    }
+
+    if(n_args == 2) {
+      float xo = mp_obj_get_float(args[0]);
+      float yo = mp_obj_get_float(args[1]);
+      self->rect.offset(xo, yo);
+      return mp_const_none;
+    }
+
+    mp_raise_msg_varg(&mp_type_ValueError, MP_ERROR_TEXT("offset expects either a point or x and y offset"));
+  })
+
+  MPY_BIND_VAR(1, empty, {
+    rect_obj_t *self = (rect_obj_t *)MP_OBJ_TO_PTR(args[0]);
+    return mp_obj_new_bool(self->rect.empty());
+  })
+
+  MPY_BIND_ATTR(rect, {
+    self(self_in, rect_obj_t);
+
+    action_t action = m_attr_action(dest);
+
+    switch(attr | action) {
+      case MP_QSTR_l | GET:
+      case MP_QSTR_x | GET:
+        dest[0] = mp_obj_new_int(self->rect.x);
+        return;
+
+      case MP_QSTR_l | SET:
+      case MP_QSTR_x | SET:
+        self->rect.x = mp_obj_get_int(dest[1]);
+        dest[0] = MP_OBJ_NULL;
+        return;
+
+      case MP_QSTR_t | GET:
+      case MP_QSTR_y | GET:
+        dest[0] = mp_obj_new_int(self->rect.y);
+        return;
+
+      case MP_QSTR_t | SET:
+      case MP_QSTR_y | SET:
+        self->rect.y = mp_obj_get_int(dest[1]);
+        dest[0] = MP_OBJ_NULL;
+        return;
+
+      case MP_QSTR_w | GET:
+        dest[0] = mp_obj_new_int(self->rect.w);
+        return;
+
+      case MP_QSTR_w | SET:
+        self->rect.w = mp_obj_get_int(dest[1]);
+        dest[0] = MP_OBJ_NULL;
+        return;
+
+      case MP_QSTR_h | GET:
+        dest[0] = mp_obj_new_int(self->rect.h);
+        return;
+
+      case MP_QSTR_h | SET:
+        self->rect.h = mp_obj_get_int(dest[1]);
+        dest[0] = MP_OBJ_NULL;
+        return;
+
+      case MP_QSTR_r | GET:
+        dest[0] = mp_obj_new_int(self->rect.w + self->rect.x);
+        return;
+
+      case MP_QSTR_r | SET:
+        self->rect.w = mp_obj_get_int(dest[1]) - self->rect.x;
+        dest[0] = MP_OBJ_NULL;
+        return;
+
+      case MP_QSTR_b | GET:
+        dest[0] = mp_obj_new_int(self->rect.h + self->rect.y);
+        return;
+
+      case MP_QSTR_b | SET:
+        self->rect.h = mp_obj_get_int(dest[1]) - self->rect.y;
+        dest[0] = MP_OBJ_NULL;
+        return;
+    };
+
+    dest[1] = MP_OBJ_SENTINEL;
+  })
+
+  MPY_BIND_LOCALS_DICT(rect,
+    MPY_BIND_ROM_PTR(deflate),
+    MPY_BIND_ROM_PTR(inflate),
+    MPY_BIND_ROM_PTR(intersection),
+    MPY_BIND_ROM_PTR(intersects),
+    MPY_BIND_ROM_PTR(contains),
+    MPY_BIND_ROM_PTR(empty),
+    MPY_BIND_ROM_PTR(offset),
+  )
+
+  MP_DEFINE_CONST_OBJ_TYPE(
+      type_rect,
+      MP_QSTR_rect,
+      MP_TYPE_FLAG_NONE,
+      make_new, (const void *)rect_new,
+      attr, (const void *)rect_attr,
+      locals_dict, &rect_locals_dict
+  );
+/*
+ // Expanded version of the above
+ // NOTE: A spurious comma on the end of locals_dict caused an entire journey of mayhem
+  const mp_obj_type_t type_rect = {
+    .base = { &mp_type_type },
+    .flags = MP_TYPE_FLAG_NONE,
+    .name = MP_QSTR_rect,
+    .slot_index_make_new = 1,
+    .slot_index_attr = 2,
+    .slot_index_locals_dict = 3,
+    .slots = {
+      (const void *)rect_new,
+      (const void *)rect_attr,
+      &rect_locals_dict
+     }
+  };
+*/
+}

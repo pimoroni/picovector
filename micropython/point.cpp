@@ -5,10 +5,21 @@
 
 using namespace picovector;
 
+bool mp_obj_is_point(mp_obj_t point_in) {
+  return mp_obj_is_type(point_in, &type_point);
+}
+
+point_t mp_obj_get_point(mp_obj_t point_in) {
+  if(mp_obj_is_point(point_in)) {
+    point_obj_t *point = (point_obj_t *)MP_OBJ_TO_PTR(point_in);
+    return point->point;
+  }
+  mp_raise_msg_varg(&mp_type_ValueError, MP_ERROR_TEXT("invalid parameters, expected point(x, y)"));
+}
+
 extern "C" {
 
   #include "py/runtime.h"
-
 
   MPY_BIND_NEW(point, {
     point_obj_t *self = mp_obj_malloc_with_finaliser(point_obj_t, type);

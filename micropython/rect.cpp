@@ -5,10 +5,28 @@
 
 using namespace picovector;
 
+bool mp_obj_is_rect(mp_obj_t rect_in) {
+  return mp_obj_is_type(rect_in, &type_rect);
+}
+
+rect_t mp_obj_get_rect(mp_obj_t rect_in) {
+  if(mp_obj_is_rect(rect_in)) {
+    rect_obj_t *rect = (rect_obj_t *)MP_OBJ_TO_PTR(rect_in);
+    return rect->rect;
+  }
+  mp_raise_msg_varg(&mp_type_ValueError, MP_ERROR_TEXT("invalid parameters, expected rect(x, y, w, h)"));
+}
+
+rect_t mp_obj_get_rect_from_xywh(const mp_obj_t *args) {
+    int x = mp_obj_get_float(args[0]);
+    int y = mp_obj_get_float(args[1]);
+    int w = mp_obj_get_float(args[2]);
+    int h = mp_obj_get_float(args[3]);
+    return rect_t(x, y, w, h);
+}
+
 extern "C" {
-
   #include "py/runtime.h"
-
 
   MPY_BIND_NEW(rect, {
     rect_obj_t *self = mp_obj_malloc_with_finaliser(rect_obj_t, type);

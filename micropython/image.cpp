@@ -135,18 +135,13 @@ MPY_BIND_VAR(2, window, {
   MPY_BIND_VAR(2, rectangle, {
     const image_obj_t *self = (image_obj_t *)MP_OBJ_TO_PTR(args[0]);
 
-    if(mp_obj_is_type(args[1], &type_rect)) {
-      rect_obj_t *rect = (rect_obj_t *)MP_OBJ_TO_PTR(args[1]);
-      self->image->rectangle(rect->rect);
+    if(mp_obj_is_rect(args[1])) {
+      self->image->rectangle(mp_obj_get_rect(args[1]));
       return mp_const_none;
     }
 
     if(n_args == 5) {
-      int x = mp_obj_get_int(args[1]);
-      int y = mp_obj_get_int(args[2]);
-      int w = mp_obj_get_int(args[3]);
-      int h = mp_obj_get_int(args[4]);
-      self->image->rectangle(rect_t(x, y, w, h));
+      self->image->rectangle(mp_obj_get_rect_from_xywh(&args[1]));
       return mp_const_none;
     }
 
@@ -304,39 +299,31 @@ MPY_BIND_VAR(9, vspan_tex, {
     return mp_const_none;
   })
 
-MPY_BIND_VAR(4, blit, {
+MPY_BIND_VAR(3, blit, {
     const image_obj_t *self = (image_obj_t *)MP_OBJ_TO_PTR(args[0]);
-    const image_obj_t *src = (image_obj_t *)MP_OBJ_TO_PTR(args[1]);
-    int x = mp_obj_get_float(args[2]);
-    int y = mp_obj_get_float(args[3]);
-    src->image->blit(self->image, point_t(x, y));
-    return mp_const_none;
-  })
 
-MPY_BIND_VAR(6, scale_blit, {
-    const image_obj_t *self = (image_obj_t *)MP_OBJ_TO_PTR(args[0]);
-    const image_obj_t *src = (image_obj_t *)MP_OBJ_TO_PTR(args[1]);
+    if(mp_obj_is_type(args[1], &type_image)) {
 
-    if(n_args == 6) {
-      int x = mp_obj_get_float(args[2]);
-      int y = mp_obj_get_float(args[3]);
-      int w = mp_obj_get_float(args[4]);
-      int h = mp_obj_get_float(args[5]);
+      const image_obj_t *src = (image_obj_t *)MP_OBJ_TO_PTR(args[1]);
 
-      src->image->blit(self->image, rect_t(x, y, w, h));
-    }else{
-      int sx = mp_obj_get_float(args[2]);
-      int sy = mp_obj_get_float(args[3]);
-      int sw = mp_obj_get_float(args[4]);
-      int sh = mp_obj_get_float(args[5]);
-      int dx = mp_obj_get_float(args[6]);
-      int dy = mp_obj_get_float(args[7]);
-      int dw = mp_obj_get_float(args[8]);
-      int dh = mp_obj_get_float(args[9]);
+      if(n_args == 3 && mp_obj_is_point(args[2])) {
+        src->image->blit(self->image, mp_obj_get_point(args[2]));
+        return mp_const_none;
+      }
 
-      src->image->blit(self->image, rect_t(sx, sy, sw, sh), rect_t(dx, dy, dw, dh));
+      if(n_args == 3 && mp_obj_is_rect(args[2])) {
+        src->image->blit(self->image, mp_obj_get_rect(args[2]));
+        return mp_const_none;
+      }
+
+      if(n_args == 4 && mp_obj_is_rect(args[2]) && mp_obj_is_rect(args[3])) {
+        src->image->blit(self->image, mp_obj_get_rect(args[2]), mp_obj_get_rect(args[3]));
+        return mp_const_none;
+      }
+
     }
-    return mp_const_none;
+
+    mp_raise_msg_varg(&mp_type_TypeError, MP_ERROR_TEXT("invalid parameter, expected blit(image, point), blit(image, rect) or blit(image, source_rect, dest_rect)"));
   })
 
 MPY_BIND_CLASSMETHOD_ARGS0(clear, {
@@ -505,7 +492,6 @@ MPY_BIND_LOCALS_DICT(image,
       // blitting
       MPY_BIND_ROM_PTR(vspan_tex),
       MPY_BIND_ROM_PTR(blit),
-      MPY_BIND_ROM_PTR(scale_blit),
 
       // TODO: Just define these in MicroPython?
       { MP_ROM_QSTR(MP_QSTR_X4), MP_ROM_INT(antialias_t::X4)},

@@ -177,12 +177,16 @@ namespace picovector {
 
   void image_t::blit(image_t *t, const point_t p) {
     rect_t tr(p.x, p.y, _bounds.w, _bounds.h); // target rect
+
+    int yoff = tr.y < t->_clip.y ? t->_clip.y - tr.y : 0;
+    int xoff = tr.x < t->_clip.x ? t->_clip.x - tr.x : 0;
+
     tr = tr.intersection(t->_clip); // clip to target image bounds
 
     if(tr.empty()) {return;}
 
-    int sxo = p.x < 0 ? -p.x : 0;
-    int syo = p.y < 0 ? -p.y : 0;
+    int sxo = xoff;
+    int syo = yoff;// p.y < 0 ? -p.y : 0;
 
     for(int i = 0; i < tr.h; i++) {
       uint8_t *dst = (uint8_t *)t->ptr(tr.x, tr.y + i);
@@ -306,6 +310,11 @@ namespace picovector {
     tr.w = abs(tr.w);
     tr.h = abs(tr.h);
 
+    int yoff = 0;
+    if(tr.y < target->_clip.y) {
+      yoff = target->_clip.y - tr.y;
+    }
+
     // clip the target rect to the target bounds
     rect_t ctr = tr.intersection(target->_clip);
     if(ctr.empty()) {return;}
@@ -318,7 +327,7 @@ namespace picovector {
     float srcx = invert_x ? this->_bounds.w - 1 : 0;
     float srcy = invert_y ? this->_bounds.h - 1 : 0;
     srcx += (ctr.x - tr.x) * srcstepx;
-    srcy += (ctr.y - tr.y) * srcstepy;
+    srcy += (yoff) * srcstepy;
 
     int sy = ctr.y;// min(ctr.y, ctr.y + ctr.h);
     int ey = ctr.y + ctr.h;//max(ctr.y, ctr.y + ctr.h);
@@ -506,7 +515,8 @@ namespace picovector {
     int err = dx + dy;
 
     while(true) {
-        this->put_unsafe(x0, y0);
+        //this->put_unsafe(x0, y0);
+        this->_brush->render_span(this, x0, y0, 1);
         if (x0 == x1 && y0 == y1) break;
         int e2 = 2 * err;
         if (e2 >= dy) {err += dy; x0 += sx;}

@@ -54,6 +54,7 @@ extern "C" {
 #define MPY_BIND_ROM_PTR(name) { MP_ROM_QSTR(MP_QSTR_##name), MP_ROM_PTR(&mpy_binding_##name##_obj) }
 #define MPY_BIND_ROM_PTR_STATIC(name) { MP_ROM_QSTR(MP_QSTR_##name), MP_ROM_PTR(&mpy_binding_##name##_static_obj) }
 #define MPY_BIND_ROM_PTR_DEL(name) { MP_ROM_QSTR(MP_QSTR___del__), MP_ROM_PTR(&name##__del___obj) }
+#define MPY_BIND_ROM_INT(name, value) { MP_ROM_QSTR(MP_QSTR_##name), MP_ROM_INT(value) }
 
 #define MPY_BIND_LOCALS_DICT(prefix, ...) \
   static const mp_rom_map_elem_t prefix##_locals_dict_table[] = {\

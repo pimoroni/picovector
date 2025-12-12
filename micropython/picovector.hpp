@@ -88,3 +88,11 @@ extern "C" {
   extern int32_t pngdec_seek_callback(PNGFILE *png, int32_t p);
   extern void pngdec_decode_callback(PNGDRAW *pDraw);
 }
+
+extern rect_t mp_obj_get_rect(mp_obj_t rect_in);
+extern rect_t mp_obj_get_rect_from_xywh(const mp_obj_t *args);
+
+extern point_t mp_obj_get_point(mp_obj_t point_in);
+
+extern bool mp_obj_is_rect(mp_obj_t rect_in);
+extern bool mp_obj_is_point(mp_obj_t point_in);

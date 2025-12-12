@@ -115,14 +115,15 @@ extern "C" {
     return MP_OBJ_FROM_PTR(shape);
   })
 
-  MPY_BIND_STATICMETHOD_VAR(4, arc, {
+  MPY_BIND_STATICMETHOD_VAR(6, arc, {
     float x = mp_obj_get_float(args[0]);
     float y = mp_obj_get_float(args[1]);
-    float r = mp_obj_get_float(args[2]);
-    float f = mp_obj_get_float(args[3]);
-    float t = mp_obj_get_float(args[4]);
+    float i = mp_obj_get_float(args[2]);
+    float o = mp_obj_get_float(args[3]);
+    float f = mp_obj_get_float(args[4]);
+    float t = mp_obj_get_float(args[5]);
     shape_obj_t *shape = mp_obj_malloc_with_finaliser(shape_obj_t, &type_shape);
-    shape->shape = arc(x, y, f, t, r);
+    shape->shape = arc(x, y, f, t, i, o);
     return MP_OBJ_FROM_PTR(shape);
   })
 

@@ -5,16 +5,16 @@
 #include "mp_helpers.hpp"
 #include "picovector.hpp"
 
-extern "C" {
-  #include "py/runtime.h"
-  #include "py/mphal.h"
-
 #define BUTTON_HOME 0b100000
 #define BUTTON_A    0b010000
 #define BUTTON_B    0b001000
 #define BUTTON_C    0b000100
 #define BUTTON_UP   0b000010
 #define BUTTON_DOWN 0b000001
+
+extern "C" {
+  #include "py/runtime.h"
+  #include "py/mphal.h"
 
 mp_obj_t ticks;
 

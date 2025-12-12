@@ -47,11 +47,21 @@ extern "C" {
     if(n_args == 1 && mp_obj_is_type(args[0], &type_brush)) {
       return (brush_obj_t *)args[0];
     }
-
     if(n_args == 1 && mp_obj_is_type(args[0], &type_color)) {
       color_obj_t *color = (color_obj_t *)MP_OBJ_TO_PTR(args[0]);
       brush_obj_t *brush = mp_obj_malloc(brush_obj_t, &type_brush);
       brush->brush = m_new_class(color_brush, color->c);
+      return brush;
+    }
+    if(n_args == 1 && mp_obj_is_int(args[0])) {
+      brush_obj_t *brush = mp_obj_malloc(brush_obj_t, &type_brush);
+      uint32_t color = mp_obj_get_uint(args[0]);
+      // RP2 MicroPython cannot represent a const uint32_t in a static locals dict.
+      // Ao assume any colour with zero alpha is a const colour that should be opaque.
+      if((color & 0xff000000) == 0) {
+        color |= 0xff000000;
+      }
+      brush->brush = m_new_class(color_brush, color);
       return brush;
     }
     if(n_args >= 3 && mp_obj_is_int(args[0]) && mp_obj_is_int(args[1]) && mp_obj_is_int(args[2])) {

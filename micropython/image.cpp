@@ -326,9 +326,16 @@ MPY_BIND_VAR(3, blit, {
     mp_raise_msg_varg(&mp_type_TypeError, MP_ERROR_TEXT("invalid parameter, expected blit(image, point), blit(image, rect) or blit(image, source_rect, dest_rect)"));
   })
 
-MPY_BIND_CLASSMETHOD_ARGS0(clear, {
-    self(self_in, image_obj_t);
-    self->image->clear();
+MPY_BIND_VAR(1, clear, {
+    const image_obj_t *self = (image_obj_t *)MP_OBJ_TO_PTR(args[0]);
+
+    if(n_args == 2) {
+      const color_obj_t *color = (color_obj_t *)MP_OBJ_TO_PTR(args[1]);
+      self->image->clear(color->c);
+    }else{
+      self->image->clear();
+    }
+
     return mp_const_none;
   })
 

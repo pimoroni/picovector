@@ -95,6 +95,7 @@ namespace picovector {
       uint32_t pixel(int x, int y);
       void span(int x, int y, int w);
       void clear();
+      void clear(uint32_t c);
       void rectangle(rect_t r);
       void triangle(point_t p1, point_t p2, point_t p3);
       void round_rectangle(const rect_t &r, int radius);

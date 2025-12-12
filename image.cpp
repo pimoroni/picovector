@@ -171,6 +171,25 @@ namespace picovector {
     return window;
   }
 
+  void image_t::clear(uint32_t c) {
+    int count = this->_bounds.w * this->_bounds.h;
+
+    if(_has_palette) {
+      memset(_buffer, c, count);
+    }else{
+      int dw8 = count >> 3;   // number of blocks of eight pixels
+      int r = count & 0b111;  // remainder
+      uint32_t* p = (uint32_t*)_buffer;
+      while(dw8--) { // unrolled blocks of 8 pixels
+        *p++ = c; *p++ = c; *p++ = c; *p++ = c;
+        *p++ = c; *p++ = c; *p++ = c; *p++ = c;
+      }
+      while(r--) { // fill in remainder
+        *p++ = c;
+      }
+    }
+  }
+
   void image_t::clear() {
     rectangle(_clip);
   }
@@ -515,8 +534,7 @@ namespace picovector {
     int err = dx + dy;
 
     while(true) {
-        //this->put_unsafe(x0, y0);
-        this->_brush->render_span(this, x0, y0, 1);
+        this->put_unsafe(x0, y0);
         if (x0 == x1 && y0 == y1) break;
         int e2 = 2 * err;
         if (e2 >= dy) {err += dy; x0 += sx;}

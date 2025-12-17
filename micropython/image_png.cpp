@@ -72,7 +72,7 @@ extern "C" {
       case PNG_PIXEL_TRUECOLOR: {
         uint32_t *pdst = (uint32_t *)target->ptr(0, pDraw->y);
         while(w--) {
-          *pdst = _make_col(psrc[0], psrc[1], psrc[2], 255);
+          *pdst = rgba(psrc[0], psrc[1], psrc[2], 255);
           psrc += 3;
           pdst++;
         }
@@ -81,7 +81,7 @@ extern "C" {
       case PNG_PIXEL_TRUECOLOR_ALPHA: {
         uint32_t *pdst = (uint32_t *)target->ptr(0, pDraw->y);
         while(w--) {
-          *pdst = _make_col(psrc[0], psrc[1], psrc[2], psrc[3]);
+          *pdst = rgba(psrc[0], psrc[1], psrc[2], psrc[3]);
           psrc += 4;
           pdst++;
         }
@@ -90,7 +90,7 @@ extern "C" {
       case PNG_PIXEL_INDEXED: {
         if(target->has_palette()) {
           for(int i = 0; i < 256; i++) {
-            uint32_t c = _make_col(
+            uint32_t c = rgba(
               pDraw->pPalette[i * 3 + 0],
               pDraw->pPalette[i * 3 + 1],
               pDraw->pPalette[i * 3 + 2],
@@ -108,7 +108,7 @@ extern "C" {
         } else {
           uint32_t *pdst = (uint32_t *)target->ptr(0, pDraw->y);
           while(w--) {
-            *pdst = _make_col(
+            *pdst = rgba(
               pDraw->pPalette[*psrc * 3 + 0],
               pDraw->pPalette[*psrc * 3 + 1],
               pDraw->pPalette[*psrc * 3 + 2],
@@ -128,23 +128,23 @@ extern "C" {
 
           switch(pDraw->iBpp) {
             case 8: {
-              *pdst = _make_col(src, src, src);
+              *pdst = rgba(src, src, src);
               pdst++;
             } break;
 
             case 4: {
               int src1 = (src & 0xf0) | ((src & 0xf0) >> 4);
               int src2 = (src & 0x0f) | ((src & 0x0f) << 4);
-              *pdst = _make_col(src1, src1, src1);
+              *pdst = rgba(src1, src1, src1);
               pdst++;
-              *pdst = _make_col(src2, src2, src2);
+              *pdst = rgba(src2, src2, src2);
               pdst++;
             } break;
 
             case 1: {
               for(int i = 0; i < 8; i++) {
                 int v = src & 0b10000000 ? 255 : 0;
-                *pdst = _make_col(v, v, v);
+                *pdst = rgba(v, v, v);
                 pdst++;
                 src <<= 1;
               }

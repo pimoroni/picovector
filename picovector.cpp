@@ -4,8 +4,9 @@
 #include "brush.hpp"
 #include "image.hpp"
 #include "shape.hpp"
-#include "point.hpp"
-#include "matrix.hpp"
+#include "types.hpp"
+#include "mat3.hpp"
+#include "blend.hpp"
 
 using std::sort;
 
@@ -171,12 +172,13 @@ namespace picovector {
         psb++;
       }
 
-      brush->render_span_buffer(target, cb.x, y, cb.w, sb);
+      brush->mask_span_func(brush, cb.x, y, cb.w, sb);
+      //brush->render_span_buffer(target, cb.x, y, cb.w, sb);
     }
 
     bool _debug_points = false;
     if(_debug_points) {
-      color_brush white(255, 255, 255, 50);
+      color_brush_t white(target, rgba(255, 255, 255, 50));
       for(path_t &path : shape->paths) {
         point_t last = path.points.back(); // start with last point to close loop
         last = last.transform(transform);
@@ -184,7 +186,8 @@ namespace picovector {
         for(point_t next : path.points) {
           // _rspan span = {.x = next.x .y = next.y, w = 1, o = 255};
           if(next.x >= 0 && next.x < 160 && next.y >= 0 && next.y < 120) {
-            white.render_span(target, next.x, next.y, 1);
+            white.pixel_func(&white, next.x, next.y);
+            //white.render_span(target, next.x, next.y, 1);
           }
         }
       }

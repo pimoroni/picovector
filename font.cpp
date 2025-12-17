@@ -4,7 +4,7 @@
 #include "image.hpp"
 #include "picovector.hpp"
 #include "brush.hpp"
-#include "matrix.hpp"
+#include "mat3.hpp"
 
 using std::sort;
 
@@ -181,7 +181,8 @@ namespace picovector {
 
         if(ry < cb.y + cb.h) {
           //debug_printf("> render_span_buffer: cb.x=%f, ry=%d, cb.w=%f\n", cb.x, ry, cb.w);
-          brush->render_span_buffer(target, cb.x, ry, cb.w, span_buffer);
+          //brush->render_span_buffer(target, cb.x, ry, cb.w, span_buffer);
+          brush->mask_span_func(brush, cb.x, ry, cb.w, span_buffer);
         }
       }
     }

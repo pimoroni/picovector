@@ -43,25 +43,27 @@ extern "C" {
       return mp_const_none;
   }
 
-  brush_obj_t *mp_obj_to_brush(size_t n_args, const mp_obj_t *args) {
+  brush_obj_t *mp_obj_to_brush(image_t *target, size_t n_args, const mp_obj_t *args) {
     if(n_args == 1 && mp_obj_is_type(args[0], &type_brush)) {
-      return (brush_obj_t *)args[0];
+      brush_obj_t *brush = (brush_obj_t *)MP_OBJ_TO_PTR(args[0]);
+      return brush;
     }
     if(n_args == 1 && mp_obj_is_type(args[0], &type_color)) {
       color_obj_t *color = (color_obj_t *)MP_OBJ_TO_PTR(args[0]);
       brush_obj_t *brush = mp_obj_malloc(brush_obj_t, &type_brush);
-      brush->brush = m_new_class(color_brush, color->c);
+      brush->brush = m_new_class(color_brush_t, target, color->c);
       return brush;
     }
     if(n_args == 1 && mp_obj_is_int(args[0])) {
       brush_obj_t *brush = mp_obj_malloc(brush_obj_t, &type_brush);
       uint32_t color = mp_obj_get_uint(args[0]);
       // RP2 MicroPython cannot represent a const uint32_t in a static locals dict.
-      // Ao assume any colour with zero alpha is a const colour that should be opaque.
+      // So assume any colour with zero alpha is a const colour that should be opaque.
+      // This also does the sensible thing when a user specifies a 24bit colour.
       if((color & 0xff000000) == 0) {
         color |= 0xff000000;
       }
-      brush->brush = m_new_class(color_brush, color);
+      brush->brush = m_new_class(color_brush_t, target, color);
       return brush;
     }
     if(n_args >= 3 && mp_obj_is_int(args[0]) && mp_obj_is_int(args[1]) && mp_obj_is_int(args[2])) {
@@ -70,7 +72,7 @@ extern "C" {
       int g = mp_obj_get_int(args[1]);
       int b = mp_obj_get_int(args[2]);
       int a = (n_args > 3 && mp_obj_is_int(args[3])) ? mp_obj_get_int(args[3]) : 255;
-      brush->brush = m_new_class(color_brush, r, g, b, a);
+      brush->brush = m_new_class(color_brush_t, target, rgba(r, g, b, a));
       return brush;
     }
 
@@ -78,8 +80,7 @@ extern "C" {
   }
 
   mp_obj_t modpicovector_pen(size_t n_args, const mp_obj_t *args) {
-    brush_obj_t *new_brush = mp_obj_to_brush(n_args, args);
-
+    brush_obj_t *new_brush = mp_obj_to_brush(default_target->image, n_args, args);
     if(!new_brush){
       mp_raise_TypeError(MP_ERROR_TEXT("value must be of type brush or color"));
     }

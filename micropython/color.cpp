@@ -13,7 +13,7 @@ extern "C" {
     int b = (int)mp_obj_get_float(args[2]);
     int a = n_args > 3 ? (int)mp_obj_get_float(args[3]) : 255;
     color_obj_t *color = mp_obj_malloc(color_obj_t, &type_color);
-    color->c = _make_col(r, g, b, a);
+    color->c = rgba(r, g, b, a);
     return MP_OBJ_FROM_PTR(color);
   })
 
@@ -23,7 +23,7 @@ extern "C" {
     int v = (int)mp_obj_get_float(args[2]);
     int a = n_args > 3 ? (int)mp_obj_get_float(args[3]) : 255;
     color_obj_t *color = mp_obj_malloc(color_obj_t, &type_color);
-    color->c = _make_col_hsv(h, s, v, a);
+    color->c = hsv(h, s, v, a);
     return MP_OBJ_FROM_PTR(color);
   })
 
@@ -33,14 +33,19 @@ extern "C" {
     int h = (int)mp_obj_get_float(args[2]);
     int a = n_args > 3 ? (int)mp_obj_get_float(args[3]) : 255;
     color_obj_t *color = mp_obj_malloc(color_obj_t, &type_color);
-    color->c = _make_col_oklch(l, c, h, a);
+    color->c = oklch(l, c, h, a);
     return MP_OBJ_FROM_PTR(color);
   })
 
   MPY_BIND_VAR(2, blend, {
     const color_obj_t *self = (color_obj_t *)MP_OBJ_TO_PTR(args[0]);
     const color_obj_t *other = (color_obj_t *)MP_OBJ_TO_PTR(args[1]);
-    _blend_rgba_rgba((uint8_t*)&self->c, (uint8_t*)&other->c);
+    uint8_t *src = (uint8_t*)&other->c;
+    uint8_t r = src[0];
+    uint8_t g = src[1];
+    uint8_t b = src[2];
+    uint8_t a = src[3];
+    blend_rgba_rgba((uint8_t*)&self->c, r, g, b, a);
     return MP_OBJ_NULL;
   })
 
@@ -51,9 +56,9 @@ extern "C" {
   MPY_BIND_VAR(2, darken, {
     const color_obj_t *self = (color_obj_t *)MP_OBJ_TO_PTR(args[0]);
     int v = 255 - (int)mp_obj_get_float(args[1]);
-    _r(&self->c, darken_u8(_r(&self->c), v));
-    _g(&self->c, darken_u8(_g(&self->c), v));
-    _b(&self->c, darken_u8(_b(&self->c), v));
+    set_r(&self->c, darken_u8(get_r(&self->c), v));
+    set_g(&self->c, darken_u8(get_g(&self->c), v));
+    set_b(&self->c, darken_u8(get_b(&self->c), v));
     return MP_OBJ_NULL;
   })
 
@@ -66,9 +71,9 @@ extern "C" {
   MPY_BIND_VAR(2, lighten, {
     const color_obj_t *self = (color_obj_t *)MP_OBJ_TO_PTR(args[0]);
     int v = 256 + (int)mp_obj_get_float(args[1]);
-    _r(&self->c, lighten_u8(_r(&self->c), v));
-    _g(&self->c, lighten_u8(_g(&self->c), v));
-    _b(&self->c, lighten_u8(_b(&self->c), v));
+    set_r(&self->c, lighten_u8(get_r(&self->c), v));
+    set_g(&self->c, lighten_u8(get_g(&self->c), v));
+    set_b(&self->c, lighten_u8(get_b(&self->c), v));
     return MP_OBJ_NULL;
   })
 
@@ -83,38 +88,38 @@ extern "C" {
 
     switch(attr | action) {
       case MP_QSTR_r | GET:
-        dest[0] = mp_obj_new_int(_r(&self->c));
+        dest[0] = mp_obj_new_int(get_r(&self->c));
         return;
 
       case MP_QSTR_r | SET:
-        _r(&self->c, (int)mp_obj_get_float(dest[1]));
+        set_r(&self->c, (int)mp_obj_get_float(dest[1]));
         dest[0] = MP_OBJ_NULL;
         return;
 
       case MP_QSTR_g | GET:
-        dest[0] = mp_obj_new_int(_g(&self->c));
+        dest[0] = mp_obj_new_int(get_g(&self->c));
         return;
 
       case MP_QSTR_g | SET:
-        _g(&self->c, (int)mp_obj_get_float(dest[1]));
+        set_g(&self->c, (int)mp_obj_get_float(dest[1]));
         dest[0] = MP_OBJ_NULL;
         return;
 
       case MP_QSTR_b | GET:
-        dest[0] = mp_obj_new_int(_b(&self->c));
+        dest[0] = mp_obj_new_int(get_b(&self->c));
         return;
 
       case MP_QSTR_b | SET:
-        _b(&self->c, (int)mp_obj_get_float(dest[1]));
+        set_b(&self->c, (int)mp_obj_get_float(dest[1]));
         dest[0] = MP_OBJ_NULL;
         return;
 
       case MP_QSTR_a | GET:
-        dest[0] = mp_obj_new_int(_a(&self->c));
+        dest[0] = mp_obj_new_int(get_a(&self->c));
         return;
 
       case MP_QSTR_a | SET:
-        _a(&self->c, (int)mp_obj_get_float(dest[1]));
+        set_a(&self->c, (int)mp_obj_get_float(dest[1]));
         dest[0] = MP_OBJ_NULL;
         return;
 
@@ -136,13 +141,14 @@ extern "C" {
     MPY_BIND_ROM_PTR_STATIC(rgb),
     MPY_BIND_ROM_PTR_STATIC(hsv),
     MPY_BIND_ROM_PTR_STATIC(oklch),
-  
+
     // color modifiers
     MPY_BIND_ROM_PTR(darken),
     MPY_BIND_ROM_PTR(lighten),
     MPY_BIND_ROM_PTR(blend),
 
     // color constants
+    // note: these do not include alpha, since it overflows RP2s int type
     MPY_BIND_ROM_INT(black,  0x000000),
     MPY_BIND_ROM_INT(white,  0xffffff),
     MPY_BIND_ROM_INT(red,    0x0000ff),

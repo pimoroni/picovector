@@ -10,7 +10,7 @@ extern "C" {
   mp_obj_t image__del__(mp_obj_t self_in) {
     self(self_in, image_obj_t);
     if(self->image) {
-      self->image->delete_palette();
+      //self->image->delete_palette();
       m_del_class(image_t, self->image);
     }
     return mp_const_none;
@@ -329,12 +329,12 @@ MPY_BIND_VAR(3, blit, {
 MPY_BIND_VAR(1, clear, {
     const image_obj_t *self = (image_obj_t *)MP_OBJ_TO_PTR(args[0]);
 
-    if(n_args == 2) {
-      const color_obj_t *color = (color_obj_t *)MP_OBJ_TO_PTR(args[1]);
-      self->image->clear(color->c);
-    }else{
+    // if(n_args == 2) {
+    //   const color_obj_t *color = (color_obj_t *)MP_OBJ_TO_PTR(args[1]);
+    //   self->image->clear(color->c);
+    // }else{
       self->image->clear();
-    }
+//    }
 
     return mp_const_none;
   })
@@ -345,6 +345,14 @@ MPY_BIND_ATTR(image, {
     action_t action = m_attr_action(dest);
 
     switch(attr) {
+      case MP_QSTR_raw: {
+        if(action == GET) {
+          mp_obj_t raw = mp_obj_new_bytearray_by_ref(self->image->buffer_size(), self->image->ptr(0, 0));
+          dest[0] = raw;
+          return;
+        }
+      };
+
       case MP_QSTR_clip: {
         if(action == GET) {
           rect_obj_t *result = mp_obj_malloc(rect_obj_t, &type_rect);
@@ -423,12 +431,13 @@ MPY_BIND_ATTR(image, {
         }
 
         if(action == SET) {
-          brush_obj_t *brush = mp_obj_to_brush(1, &dest[1]);
+          brush_obj_t *brush = mp_obj_to_brush(self->image, 1, &dest[1]);
           if(!brush){
             mp_raise_TypeError(MP_ERROR_TEXT("value must be of type brush or color"));
           }
           self->brush = brush;
           self->image->brush(self->brush->brush);
+
           dest[0] = MP_OBJ_NULL;
           return;
         }

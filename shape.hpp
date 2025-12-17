@@ -2,9 +2,8 @@
 
 #include <vector>
 #include "picovector.hpp"
-#include "matrix.hpp"
-#include "rect.hpp"
-#include "point.hpp"
+#include "mat3.hpp"
+#include "types.hpp"
 
 namespace picovector {
 

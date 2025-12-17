@@ -78,8 +78,10 @@ extern "C" {
     point_t point;
   } point_obj_t;
 
+  extern image_obj_t *default_target;
+
   // used by image.pen = N and picovector.pen() (global pen)
-  extern brush_obj_t *mp_obj_to_brush(size_t n_args, const mp_obj_t *args);
+  extern brush_obj_t *mp_obj_to_brush(image_t *target, size_t n_args, const mp_obj_t *args);
 
   // image.cpp uses pngdec_open_callback from image_png
   extern void *pngdec_open_callback(const char *filename, int32_t *size);

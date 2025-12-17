@@ -14,8 +14,6 @@ using std::vector;
 
 namespace picovector {
 
-  color_brush _default_image_brush(255, 255, 255, 255);
-
   image_t::image_t() {
   }
 
@@ -31,7 +29,7 @@ namespace picovector {
   image_t::image_t(int w, int h, pixel_format_t pixel_format, bool has_palette) {
     _bounds = rect_t(0, 0, w, h);
     _clip = rect_t(0, 0, w, h);
-    _brush = &_default_image_brush;
+    _brush = nullptr;
     _pixel_format = pixel_format;
     _has_palette = has_palette;
     _managed_buffer = true;
@@ -46,7 +44,7 @@ namespace picovector {
   image_t::image_t(void *buffer, int w, int h, pixel_format_t pixel_format, bool has_palette) {
     _bounds = rect_t(0, 0, w, h);
     _clip = rect_t(0, 0, w, h);
-    _brush = &_default_image_brush;
+    _brush = nullptr;
     _pixel_format = pixel_format;
     _has_palette = has_palette;
     _buffer = buffer;
@@ -76,7 +74,7 @@ namespace picovector {
     return this->_bytes_per_pixel;
   }
 
-  bool image_t::compatible_buffer(image_t *other) {
+  bool image_t::is_compatible(image_t *other) {
     return this->_palette == other->_palette && this->_pixel_format == other->_pixel_format;
   }
 
@@ -101,11 +99,11 @@ namespace picovector {
   }
 
   // TODO: why?
-  void image_t::delete_palette() {
-    if(this->has_palette()) {
-      this->_palette.clear();
-    }
-  }
+  // void image_t::delete_palette() {
+  //   if(this->has_palette()) {
+  //     this->_palette.clear();
+  //   }
+  // }
 
   void image_t::palette(uint8_t i, uint32_t c) {
     this->_palette[i] = c;
@@ -171,27 +169,33 @@ namespace picovector {
     return window;
   }
 
-  void image_t::clear(uint32_t c) {
-    int count = this->_bounds.w * this->_bounds.h;
+  // void image_t::clear(uint32_t c) {
+  //   int count = this->_bounds.w * this->_bounds.h;
 
-    if(_has_palette) {
-      memset(_buffer, c, count);
-    }else{
-      int dw8 = count >> 3;   // number of blocks of eight pixels
-      int r = count & 0b111;  // remainder
-      uint32_t* p = (uint32_t*)_buffer;
-      while(dw8--) { // unrolled blocks of 8 pixels
-        *p++ = c; *p++ = c; *p++ = c; *p++ = c;
-        *p++ = c; *p++ = c; *p++ = c; *p++ = c;
-      }
-      while(r--) { // fill in remainder
-        *p++ = c;
-      }
-    }
-  }
+  //   printf("clear %p (%d)\n", this->_brush, count);
+  //   this->_brush->span_func(this->_brush, 0, 0, count);
+
+  //   // if(_has_palette) {
+  //   //   memset(_buffer, c, count);
+  //   // }else{
+  //   //   int dw8 = count >> 3;   // number of blocks of eight pixels
+  //   //   int r = count & 0b111;  // remainder
+  //   //   uint32_t* p = (uint32_t*)_buffer;
+  //   //   while(dw8--) { // unrolled blocks of 8 pixels
+  //   //     *p++ = c; *p++ = c; *p++ = c; *p++ = c;
+  //   //     *p++ = c; *p++ = c; *p++ = c; *p++ = c;
+  //   //   }
+  //   //   while(r--) { // fill in remainder
+  //   //     *p++ = c;
+  //   //   }
+  //   // }
+  // }
 
   void image_t::clear() {
-    rectangle(_clip);
+    int count = this->_bounds.w * this->_bounds.h;
+    this->_brush->span_func(this->_brush, 0, 0, count);
+
+//    rectangle(_clip);
   }
 
   void image_t::blit(image_t *t, const point_t p) {
@@ -249,11 +253,14 @@ namespace picovector {
         int ty = round(v);
 
         uint32_t col;
+        uint8_t *src;
         if(this->_has_palette) {
-          _blend_rgba_rgba(dst, (uint8_t*)&this->_palette[*(uint8_t *)this->ptr(tx, ty)]);
+          src = (uint8_t *)&this->_palette[*(uint8_t *)this->ptr(tx, ty)];
         } else {
-          _blend_rgba_rgba(dst, (uint8_t *)this->ptr(tx, ty));
+          src = (uint8_t *)this->ptr(tx, ty);
         }
+
+        blend_rgba_rgba(dst, src[0], src[1], src[2], src[3]);
       }
     }
   }
@@ -367,11 +374,6 @@ namespace picovector {
     }
   }
 
-  void* image_t::ptr(int x, int y) {
-    //debug_printf("get ptr at %d, %d (bpp = %d, rs = %d)\n", x, y, (int)this->_bytes_per_pixel, (int)this->_row_stride);
-    return (uint8_t *)(this->_buffer) + (x * this->_bytes_per_pixel) + (y * this->_row_stride);
-  }
-
   void image_t::draw(shape_t *shape) {
     // pvr_reset();
     // for(auto &path : shape->paths) {
@@ -385,7 +387,8 @@ namespace picovector {
   void image_t::rectangle(rect_t r) {
     r = r.intersection(_clip);
     for(int y = r.y; y < r.y + r.h; y++) {
-      this->_brush->render_span(this, r.x, y, r.w);
+      this->_brush->span_func(this->_brush, r.x, y, r.w);
+      //this->_brush->render_span(this, r.x, y, r.w);
     }
   }
 
@@ -400,7 +403,8 @@ namespace picovector {
     if(x + w >= _clip.x + _clip.w) {
       w = _clip.x + _clip.w - x;
     }
-    this->_brush->render_span(this, x, y, w);
+    this->_brush->span_func(this->_brush, x, y, w);
+    //this->_brush->render_span(this, x, y, w);
   }
 
   void image_t::circle(const point_t &p, const int &r) {
@@ -475,27 +479,26 @@ namespace picovector {
     int32_t w1row = orient2d(p3, p1, tl) + bias1;
     int32_t w2row = orient2d(p1, p2, tl) + bias2;
 
+    pixel_func_t pf = this->_brush->pixel_func;
+
     for (int32_t y = 0; y < b.h; y++) {
       int32_t w0 = w0row;
       int32_t w1 = w1row;
       int32_t w2 = w2row;
 
-      point_t dest = point_t(b.x, b.y + y);
+      int xo = b.x;
+      int yo = b.y + y;
       for (int32_t x = 0; x < b.w; x++) {
         if ((w0 | w1 | w2) >= 0) {
-          put_unsafe(dest.x, dest.y);
+          pf(this->_brush, xo, yo);
         }
 
-        dest.x++;
-
-        w0 += a12;
-        w1 += a20;
-        w2 += a01;
+        xo++;
+        w0 += a12; w1 += a20; w2 += a01;
       }
 
-      w0row += b12;
-      w1row += b20;
-      w2row += b01;
+      w0row += b12; w1row += b20; w2row += b01;
+
     }
   }
 
@@ -513,7 +516,6 @@ namespace picovector {
     rect_t b = this->_clip;
     b.w -= 1;
     b.h -= 1; // TODO: this is hacky... fix it properly
-
     if(!clip_line(p1, p2, b)) {
       return; // fully outside bounds, nothing to draw
     }
@@ -522,10 +524,6 @@ namespace picovector {
     int x1 = p2.x;
     int y0 = p1.y;
     int y1 = p2.y;
-    int xmin = _clip.x;
-    int ymin = _clip.y;
-    int xmax = _clip.x + _clip.w;
-    int ymax = _clip.y + _clip.h;
 
     int dx = abs(x1 - x0);
     int sx = x0 < x1 ? 1 : -1;
@@ -533,8 +531,10 @@ namespace picovector {
     int sy = y0 < y1 ? 1 : -1;
     int err = dx + dy;
 
+    pixel_func_t pf = this->_brush->pixel_func;
+
     while(true) {
-        this->put_unsafe(x0, y0);
+        pf(this->_brush, x0, y0);
         if (x0 == x1 && y0 == y1) break;
         int e2 = 2 * err;
         if (e2 >= dy) {err += dy; x0 += sx;}
@@ -549,11 +549,12 @@ namespace picovector {
   void image_t::put(int x, int y) {
     x = max(int(_clip.x), min(x, int(_clip.x + _clip.w - 1)));
     y = max(int(_clip.y), min(y, int(_clip.y + _clip.h - 1)));
-    this->put_unsafe(x, y);
+    this->_brush->pixel_func(this->_brush, x, y);
   }
 
   void image_t::put_unsafe(int x, int y) {
-    this->_brush->render_span(this, x, y, 1);
+    this->_brush->pixel_func(this->_brush, x, y);
+    //this->_brush->render_span(this, x, y, 1);
   }
 
   uint32_t image_t::get(const point_t &p) {

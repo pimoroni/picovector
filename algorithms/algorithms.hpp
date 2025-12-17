@@ -1,6 +1,5 @@
 #include <functional>
-#include "../rect.hpp"
-#include "../point.hpp"
+#include "../types.hpp"
 
 namespace picovector {
 

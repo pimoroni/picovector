@@ -1,125 +1,64 @@
 #pragma once
 
-#include <vector>
 #include "picovector.hpp"
-#include "blend.hpp"
-#include "matrix.hpp"
+#include "mat3.hpp"
+#include "image.hpp"
 
 namespace picovector {
 
-  class image_t;
+  typedef void (*pixel_func_t)(brush_t *brush, int x, int y);
+  typedef void (*span_func_t)(brush_t *brush, int x, int y, int w);
+  typedef void (*mask_span_func_t)(brush_t *brush, int x, int y, int w, uint8_t *mask);
+  struct brush_t {
+    pixel_func_t pixel_func;
+    span_func_t span_func;
+    mask_span_func_t mask_span_func;
+    image_t *target;
 
-  class brush_t {
-  public:
-    virtual ~brush_t() {};
-    virtual void render_span(image_t *target, int x, int y, int w) = 0;
-    virtual void render_span_buffer(image_t *target, int x, int y, int w, uint8_t *sb) = 0;
+    explicit brush_t(image_t *t) : target(t) {}
   };
 
-  class color_brush : public brush_t {
-  public:
-    uint32_t color;
-    color_brush(int r, int g, int b, int a = 255) : color(_make_col(r, g, b, a)) {};
-    color_brush(uint32_t c) : color(c) {};
-    void render_span(image_t *target, int x, int y, int w);
-    void render_span_buffer(image_t *target, int x, int y, int w, uint8_t *sb);
+  struct color_brush_t : public brush_t {
+    uint32_t c;
+    uint8_t r, g, b, a;
+
+    color_brush_t(image_t *target, uint32_t c);
   };
 
-
-  class brighten_brush : public brush_t {
-  public:
-    int amount;
-    brighten_brush(int amount) : amount(amount) {}
-    void render_span(image_t *target, int x, int y, int w);
-    void render_span_buffer(image_t *target, int x, int y, int w, uint8_t *sb) {};
-  };
-
-  class xor_brush : public brush_t {
-  public:
-    uint32_t color;
-    xor_brush(uint32_t color) : color(color) {}
-    void render_span(image_t *target, int x, int y, int w);
-    void render_span_buffer(image_t *target, int x, int y, int w, uint8_t *sb);
-  };
-
-  // embedded patterns
-  const uint8_t patterns[38][8] = {
-    {0b00000000,0b00000000,0b00000000,0b00000000,0b00000000,0b00000000,0b00000000,0b00000000},
-    {0b00100010,0b00000000,0b10001000,0b00000000,0b00100010,0b00000000,0b10001000,0b00000000},
-    {0b00100010,0b10001000,0b00100010,0b10001000,0b00100010,0b10001000,0b00100010,0b10001000},
-    {0b01010101,0b10101010,0b01010101,0b10101010,0b01010101,0b10101010,0b01010101,0b10101010},
-    {0b10101010,0b00000000,0b10101010,0b00000000,0b10101010,0b00000000,0b10101010,0b00000000},
-    {0b01010101,0b01010101,0b01010101,0b01010101,0b01010101,0b01010101,0b01010101,0b01010101},
-    {0b00010001,0b00100010,0b01000100,0b10001000,0b00010001,0b00100010,0b01000100,0b10001000},
-    {0b01110111,0b01110111,0b01110111,0b01110111,0b01110111,0b01110111,0b01110111,0b01110111},
-    {0b01001110,0b11001111,0b11111100,0b11100100,0b00100111,0b00111111,0b11110011,0b01110010},
-    {0b01111111,0b11101111,0b11111101,0b11011111,0b11111110,0b11110111,0b10111111,0b11111011},
-    {0b00000000,0b01110111,0b01110111,0b01110111,0b00000000,0b01110111,0b01110111,0b01110111},
-    {0b00000000,0b01111111,0b01111111,0b01111111,0b00000000,0b11110111,0b11110111,0b11110111},
-    {0b01111111,0b11111111,0b11111111,0b11111111,0b11111111,0b11111111,0b11111111,0b11111111},
-    {0b01111111,0b10111111,0b11011111,0b11111111,0b11111101,0b11111011,0b11110111,0b11111111},
-    {0b01111101,0b10111011,0b11000110,0b10111011,0b01111101,0b11111110,0b11111110,0b11111110},
-    {0b00000111,0b10001011,0b11011101,0b10111000,0b01110000,0b11101000,0b11011101,0b10001110},
-    {0b10101010,0b01011111,0b10111111,0b10111111,0b10101010,0b11110101,0b11111011,0b11111011},
-    {0b11011111,0b10101111,0b01110111,0b01110111,0b01110111,0b01110111,0b11111010,0b11111101},
-    {0b01000000,0b11111111,0b01000000,0b01000000,0b01001111,0b01001111,0b01001111,0b01001111},
-    {0b11111111,0b11111111,0b11111111,0b11111111,0b11111111,0b11111111,0b11111111,0b11111111},
-    {0b01111111,0b11111111,0b11110111,0b11111111,0b01111111,0b11111111,0b11110111,0b11111111},
-    {0b01110111,0b11111111,0b11011101,0b11111111,0b01110111,0b11111111,0b11011101,0b11111111},
-    {0b01110111,0b11011101,0b01110111,0b11011101,0b01110111,0b11011101,0b01110111,0b11011101},
-    {0b01010101,0b11111111,0b01010101,0b11111111,0b01010101,0b11111111,0b01010101,0b11111111},
-    {0b00000000,0b11111111,0b00000000,0b11111111,0b00000000,0b11111111,0b00000000,0b11111111},
-    {0b11101110,0b11011101,0b10111011,0b01110111,0b11101110,0b11011101,0b10111011,0b01110111},
-    {0b00000000,0b11111111,0b11111111,0b11111111,0b00000000,0b11111111,0b11111111,0b11111111},
-    {0b11111110,0b11111101,0b11111011,0b11110111,0b11101111,0b11011111,0b10111111,0b01111111},
-    {0b01010101,0b11111111,0b01111111,0b11111111,0b01110111,0b11111111,0b01111111,0b11111111},
-    {0b00000000,0b01111111,0b01111111,0b01111111,0b01111111,0b01111111,0b01111111,0b01111111},
-    {0b11110111,0b11100011,0b11011101,0b00111110,0b01111111,0b11111110,0b11111101,0b11111011},
-    {0b01110111,0b11101011,0b11011101,0b10111110,0b01110111,0b11111111,0b01010101,0b11111111},
-    {0b10111111,0b01011111,0b11111111,0b11111111,0b11111011,0b11110101,0b11111111,0b11111111},
-    {0b11111100,0b01111011,0b10110111,0b11001111,0b11110011,0b11111101,0b11111110,0b11111110},
-    {0b01111111,0b01111111,0b10111110,0b11000001,0b11110111,0b11110111,0b11101011,0b00011100},
-    {0b11101111,0b11011111,0b10101011,0b01010101,0b00000000,0b11111101,0b11111011,0b11110111},
-    {0b10001000,0b01110110,0b01110000,0b01110000,0b10001000,0b01100111,0b00000111,0b00000111},
-    {0b11111111,0b11110111,0b11101011,0b11010101,0b10101010,0b11010101,0b11101011,0b11110111}
-  };
-
-  class pattern_brush : public brush_t {
+  extern const uint8_t patterns[38][8];
+  struct pattern_brush_t : public brush_t {
   public:
     uint8_t p[8];
     uint32_t c1;
     uint32_t c2;
 
-    pattern_brush(uint32_t c1, uint32_t c2, uint8_t i) : c1(c1), c2(c2) {
-      memcpy(this->p, &patterns[i], sizeof(uint8_t) * 8);
-    }
-
-    pattern_brush(uint32_t c1, uint32_t c2, uint8_t *p) : c1(c1), c2(c2) {
-      memcpy(this->p, p, sizeof(uint8_t) * 8);
-    }
-
-    void render_span(image_t *target, int x, int y, int w);
-    void render_span_buffer(image_t *target, int x, int y, int w, uint8_t *sb);
+    pattern_brush_t(image_t *target, uint32_t c1, uint32_t c2, uint8_t pattern_index);
+    pattern_brush_t(image_t *target, uint32_t c1, uint32_t c2, uint8_t *pattern);
   };
 
-
-  class image_brush : public brush_t {
+  struct image_brush_t : public brush_t {
   public:
     image_t *src;
-    mat3_t it;
+    mat3_t inverse_transform;
 
-    image_brush(image_t *src, mat3_t *transform = nullptr) : src(src) {
-      if(transform) {
-        this->it = *transform;
-      }
-      this->it.inverse();
-    }
-
-    void render_span(image_t *target, int x, int y, int w);
-    void render_span_buffer(image_t *target, int x, int y, int w, uint8_t *sb);
+    image_brush_t(image_t *target, image_t *src);
+    image_brush_t(image_t *target, image_t *src, mat3_t *transform);
   };
 
+  // class brighten_brush : public brush_t {
+  // public:
+  //   int amount;
+  //   brighten_brush(int amount) : amount(amount) {}
+  //   void render_span(image_t *target, int x, int y, int w);
+  //   void render_span_buffer(image_t *target, int x, int y, int w, uint8_t *sb) {};
+  // };
 
-
+  // class xor_brush : public brush_t {
+  // public:
+  //   uint32_t color;
+  //   xor_brush(uint32_t color) : color(color) {}
+  //   void render_span(image_t *target, int x, int y, int w);
+  //   void render_span_buffer(image_t *target, int x, int y, int w, uint8_t *sb);
+  // };
 
 }

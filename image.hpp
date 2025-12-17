@@ -4,7 +4,7 @@
 #include <string>
 
 #include "picovector.config.hpp"
-#include "rect.hpp"
+#include "types.hpp"
 
 using std::vector;
 
@@ -29,7 +29,7 @@ namespace picovector {
   class font_t;
   class pixel_font_t;
   class shape_t;
-  class brush_t;
+  struct brush_t;
 
   class image_t {
     private:
@@ -58,10 +58,12 @@ namespace picovector {
 
       size_t buffer_size();
       size_t bytes_per_pixel();
-      bool compatible_buffer(image_t *other);
+      bool is_compatible(image_t *other);
       void window(image_t *source, rect_t viewport);
       image_t window(rect_t r);
-      void* ptr(int x, int y);
+      inline void* ptr(int x, int y) const {
+        return (uint8_t *)(this->_buffer) + (x * this->_bytes_per_pixel) + (y * this->_row_stride);
+      }
       uint32_t row_stride();
 
       rect_t bounds();
@@ -69,7 +71,7 @@ namespace picovector {
       void clip(rect_t r);
 
       bool has_palette();
-      void delete_palette();
+      // void delete_palette();
       void palette(uint8_t i, uint32_t c);
       uint32_t palette(uint8_t i);
 
@@ -95,7 +97,7 @@ namespace picovector {
       uint32_t pixel(int x, int y);
       void span(int x, int y, int w);
       void clear();
-      void clear(uint32_t c);
+      //void clear(uint32_t c);
       void rectangle(rect_t r);
       void triangle(point_t p1, point_t p2, point_t p3);
       void round_rectangle(const rect_t &r, int radius);

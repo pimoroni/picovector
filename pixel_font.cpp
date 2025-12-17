@@ -4,7 +4,7 @@
 #include "image.hpp"
 #include "picovector.hpp"
 #include "brush.hpp"
-#include "matrix.hpp"
+#include "mat3.hpp"
 
 using std::min;
 using std::max;
@@ -87,7 +87,8 @@ namespace picovector {
         uint8_t b = data[bit >> 3];
         if(b & (0b1 << (7 - (bit & 0b111)))) {
           //brush->pixel(&dst[xo]);
-          brush->render_span(target, xo, yo, 1);
+          //brush->render_span(target, xo, yo, 1);
+          brush->pixel_func(brush, xo, yo);
         }
       }
 

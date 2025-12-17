@@ -1,72 +1,61 @@
 #include <algorithm>
 
+#include "types.hpp"
 #include "rasteriser.hpp"
 
-typedef int32_t fx16_t; // fixed point 16:16 type
-
-fx16_t f_to_fx16(float v) {
-  return fx16_t(v * 65536.0f);
-}
-
-struct fx16_point_t {
-  fx16_t x;
-  fx16_t y;
-};
-
-struct edge_t {
-  fx16_point_t *p1;
-  fx16_point_t *p2;
-};
-
-struct node_t {
-  int x;
-  int y;
-};
-
-struct bounds_t {
-  int x1;
-  int y1;
-  int x2;
-  int y2;
-};
-
-// tile buffer
-constexpr int max_tile_width = 64;
-constexpr int max_tile_height = 64;
-constexpr size_t tile_buffer_offset = 0;
-constexpr size_t tile_buffer_size = max_tile_width * max_tile_height;
-uint8_t *tile = (uint8_t*)(PicoVector_working_buffer + tile_buffer_offset);
-
-// scanline node buffer
-constexpr int max_nodes = 8192;
-constexpr size_t node_buffer_offset = tile_buffer_offset + tile_buffer_size;
-constexpr size_t node_buffer_size = sizeof(node_t) * max_nodes;
-node_t *nodes = (node_t*)(PicoVector_working_buffer + node_buffer_offset);
-
-// path points buffer size
-constexpr int max_points = 1024;
-constexpr size_t point_buffer_offset = node_buffer_offset + node_buffer_size;
-constexpr size_t point_buffer_size = sizeof(fx16_point_t) * max_points;
-fx16_point_t *points = (fx16_point_t*)(PicoVector_working_buffer + point_buffer_offset);
-
-// edge buffer size
-constexpr int max_edges = 1024;
-constexpr size_t edge_buffer_offset = point_buffer_offset + point_buffer_size;
-constexpr size_t edge_buffer_size = sizeof(edge_t) * max_edges;
-edge_t *edges = (edge_t*)(PicoVector_working_buffer + edge_buffer_offset);
-
-// buffer counters
-int node_count = 0;
-int point_count = 0;
-int edge_count = 0;
-fx16_t minx = INT_MAX;
-fx16_t miny = INT_MAX;
-fx16_t maxx = INT_MIN;
-fx16_t maxy = INT_MIN;
-
-int aa_scale = 1;
-
 namespace picovector {
+  struct edge_t {
+    fx16_point_t *p1;
+    fx16_point_t *p2;
+  };
+
+  struct node_t {
+    int x;
+    int y;
+  };
+
+  struct bounds_t {
+    int x1;
+    int y1;
+    int x2;
+    int y2;
+  };
+
+  // tile buffer
+  constexpr int max_tile_width = 64;
+  constexpr int max_tile_height = 64;
+  constexpr size_t tile_buffer_offset = 0;
+  constexpr size_t tile_buffer_size = max_tile_width * max_tile_height;
+  uint8_t *tile = (uint8_t*)(PicoVector_working_buffer + tile_buffer_offset);
+
+  // scanline node buffer
+  constexpr int max_nodes = 8192;
+  constexpr size_t node_buffer_offset = tile_buffer_offset + tile_buffer_size;
+  constexpr size_t node_buffer_size = sizeof(node_t) * max_nodes;
+  node_t *nodes = (node_t*)(PicoVector_working_buffer + node_buffer_offset);
+
+  // path points buffer size
+  constexpr int max_points = 1024;
+  constexpr size_t point_buffer_offset = node_buffer_offset + node_buffer_size;
+  constexpr size_t point_buffer_size = sizeof(fx16_point_t) * max_points;
+  fx16_point_t *points = (fx16_point_t*)(PicoVector_working_buffer + point_buffer_offset);
+
+  // edge buffer size
+  constexpr int max_edges = 1024;
+  constexpr size_t edge_buffer_offset = point_buffer_offset + point_buffer_size;
+  constexpr size_t edge_buffer_size = sizeof(edge_t) * max_edges;
+  edge_t *edges = (edge_t*)(PicoVector_working_buffer + edge_buffer_offset);
+
+  // buffer counters
+  int node_count = 0;
+  int point_count = 0;
+  int edge_count = 0;
+  fx16_t minx = INT_MAX;
+  fx16_t miny = INT_MAX;
+  fx16_t maxx = INT_MIN;
+  fx16_t maxy = INT_MIN;
+
+  int aa_scale = 1;
 
   void pvr_reset() {
     node_count = 0;
@@ -232,15 +221,9 @@ namespace picovector {
           int to = nsx + (ny * tw);
           uint8_t *p = tile + to;
 
-          brush->render_span(target, nsx, ny, nex - nsx);
+          brush->span_func(brush, nsx, ny, nex - nsx);
+//          brush->render_span(target, nsx, ny, nex - nsx);
 
-          // int count = nex - nsx;
-          // while(count--) {
-          //   *p++ = 255;
-          // }
-
-          // brush->
-          //printf("node %d -> %d (%d)\n", nsx, nex, ny);
 
         }
 

@@ -41,8 +41,8 @@ namespace picovector {
       float hit_y = p.y + v.y * t_exit;
 
       // calculate the edge which the intersection occured on (0=top, 1=right, 2=bottom, 3=left)
-      bool vertical = abs(hit_y - round(hit_y)) > abs(hit_x - round(hit_x));
-      int edge = vertical ? (v.x < 0 ? 3 : 1) : (v.y < 0 ? 0 : 2);
+      bool vertical = abs(hit_x - round(hit_x)) < abs(hit_y - round(hit_y));
+      int edge = vertical ? (v.x > 0 ? 3 : 1) : (v.y > 0 ? 0 : 2);
 
       // calculate the intersection offset
       float offset = vertical ? (hit_y - floor(hit_y)) : (hit_x - floor(hit_x));
@@ -52,11 +52,11 @@ namespace picovector {
       // calculate grid square of intersection
       int gx, gy;
       if(vertical) {
-        gx = int(hit_x + (edge == 3 ? -0.5f : 0.5f));
-        gy = int(hit_y);
+        gx = floor(hit_x + (v.x > 0.0f ? 0.5f : -0.5f));
+        gy = floor(hit_y);
       } else {
-        gx = int(hit_x);
-        gy = int(hit_y + (edge == 0 ? -0.5f : 0.5f));
+        gx = floor(hit_x);
+        gy = floor(hit_y + (v.y > 0.0f ? 0.5f : -0.5f));
       }
 
       if(!cb(hit_x, hit_y, gx, gy, edge, offset, distance)) {

@@ -54,13 +54,13 @@ namespace picovector {
         ix += step_x;
         total_distance = ray_length_x;
         ray_length_x += t_delta_x;
-        ray_length_y += 1
+        ray_length_y += 1;
         vertical = false;
       }
       else {
         iy += step_y;
         total_distance = ray_length_y;
-        ray_length_x += 1
+        ray_length_x += 1;
         ray_length_y += t_delta_y;
         vertical = true;
       }

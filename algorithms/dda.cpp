@@ -28,22 +28,22 @@ namespace picovector {
     float stepY = 1;
 
     // establish the +- xy direction of the ray, and take the first step to the first x and y gridlines
-    if(r.x < 0) {
+    if(v.x < 0) {
       stepX = -1;
-      rayLengthX = (player.x - gx) * angleScaleFactorX;
+      rayLengthX = (p.x - gx) * angleScaleFactorX;
     }
     else {
       stepX = 1;
-      rayLengthX = ((gx + 1) - player.x) * angleScaleFactorX;
+      rayLengthX = ((gx + 1) - p.x) * angleScaleFactorX;
     }
 
-    if(rayDirY < 0) {
+    if(v.y < 0) {
       stepY = -1;
-      rayLengthY = (player.y - gy) * angleScaleFactorY;
+      rayLengthY = (p.y - gy) * angleScaleFactorY;
     }
     else {
       stepY = 1;
-      rayLengthY = ((gy + 1) - player.y) * angleScaleFactorY;
+      rayLengthY = ((gy + 1) - p.y) * angleScaleFactorY;
     }
 
     bool stopcast = false;
@@ -57,12 +57,12 @@ namespace picovector {
       // then use the shorter to populate the intersection orientation.
       // this happens every step regardless of whether it hits something or not
       if(rayLengthX < rayLengthY) {
-        currentSquareX += stepX;
+        gx += stepX;
         distance = rayLengthX;
         rayLengthX += angleScaleFactorX;
       }
       else {
-        currentSquareY += stepY;
+        gy += stepY;
         distance = rayLengthY;
         rayLengthY += angleScaleFactorY;
         vertical = true;
@@ -75,8 +75,8 @@ namespace picovector {
         edge = (stepY == 1) ? 0 : 2;
       }
 
-      float hit_x = p.x + (r.x * distance)
-      float hit_y = p.y + (r.y * distance)
+      float hit_x = p.x + (v.x * distance)
+      float hit_y = p.y + (v.y * distance)
 
       // calculate the intersection offset
       float offset = vertical ? (hit_y - floor(hit_y)) : (hit_x - floor(hit_x));

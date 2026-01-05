@@ -58,8 +58,8 @@ namespace picovector {
         vertical = true;
       }
 
-      hit_x = p.x + (v.x * total_distance);
-      hit_y = p.y + (v.y * total_distance);
+      float hit_x = p.x + (v.x * total_distance);
+      float hit_y = p.y + (v.y * total_distance);
 
       int edge = 0;
       float offset = 0;

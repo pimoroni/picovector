@@ -50,6 +50,7 @@ namespace picovector {
     float working_distance = 0;
     int edge = 0;
 
+    int i = 0;
     while(true) {
       bool vertical = false;
 

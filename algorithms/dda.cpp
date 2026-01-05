@@ -38,31 +38,32 @@ namespace picovector {
         ray_length_y = ((iy + 1) - p.y) * t_delta_y;
     }
 
+
+
     float total_distance = 0;
 
     int i = 0; // don't know why this is here, never referenced again
     while (true) {
-      float t_exit = std::min(ray_length_x, ray_length_y); // shortest distance to the edge of the current square
       bool vertical = false;
+      int edge = 0;
+      float offset = 0;
+      float hit_x = ray_length_x;
+      float hit_y = ray_length_y;
 
       if(ray_length_x < ray_length_y) {
         ix += step_x;
         total_distance = ray_length_x;
         ray_length_x += t_delta_x;
+        ray_length_y += 1
         vertical = false;
       }
       else {
         iy += step_y;
         total_distance = ray_length_y;
+        ray_length_x += 1
         ray_length_y += t_delta_y;
         vertical = true;
       }
-
-      float hit_x = p.x + (v.x * total_distance);
-      float hit_y = p.y + (v.y * total_distance);
-
-      int edge = 0;
-      float offset = 0;
 
       if(vertical) {
         edge = v.x < 0 ? 3 : 1;

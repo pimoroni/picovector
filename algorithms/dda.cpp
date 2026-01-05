@@ -47,23 +47,23 @@ namespace picovector {
     }
 
     bool stopcast = false;
-    float distance = 0;
+    float working_distance = 0;
     int edge = 0;
 
     while(true) {
       bool vertical = false;
 
-      // check if the distance to the nearest gridline is shorter in x or y,
+      // check if the working_distance to the nearest gridline is shorter in x or y,
       // then use the shorter to populate the intersection orientation.
       // this happens every step regardless of whether it hits something or not
       if(rayLengthX < rayLengthY) {
         gx += stepX;
-        distance = rayLengthX;
+        working_distance = rayLengthX;
         rayLengthX += angleScaleFactorX;
       }
       else {
         gy += stepY;
-        distance = rayLengthY;
+        working_distance = rayLengthY;
         rayLengthY += angleScaleFactorY;
         vertical = true;
       }
@@ -75,13 +75,15 @@ namespace picovector {
         edge = (stepY == 1) ? 0 : 2;
       }
 
-      float hit_x = p.x + (v.x * distance)
-      float hit_y = p.y + (v.y * distance)
+      float hit_x = p.x + (v.x * working_distance);
+      float hit_y = p.y + (v.y * working_distance);
+
+      float distance = sqrt(pow(hit_x - p.x, 2) + pow(hit_y - p.y, 2));
 
       // calculate the intersection offset
       float offset = vertical ? (hit_y - floor(hit_y)) : (hit_x - floor(hit_x));
 
-      if(!cb(hit_x, hit_y, gx, gy, edge, offset, distance)) {
+      if(!cb(hit_x, hit_y, gx, gy, edge, offset, working_distance)) {
         break;
       }
     }

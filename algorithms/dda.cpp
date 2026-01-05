@@ -38,19 +38,28 @@ namespace picovector {
         ray_length_y = ((iy + 1) - p.y) * t_delta_y;
     }
 
+    float total_distance = 0;
+
     int i = 0; // don't know why this is here, never referenced again
     while (true) {
       float t_exit = std::min(ray_length_x, ray_length_y); // shortest distance to the edge of the current square
+      bool vertical = false;
 
-      // calculate the intersection position
-      float hit_x = p.x + v.x * t_exit;
-      float hit_y = p.y + v.y * t_exit;
+      if(ray_length_x < ray_length_y) {
+        ix += step_x;
+        total_distance = ray_length_x;
+        ray_length_x += t_delta_x;
+        vertical = false;
+      }
+      else {
+        iy += step_y;
+        total_distance = ray_length_y;
+        ray_length_y += t_delta_y;
+        vertical = true;
+      }
 
-      bool dist_to_x_hit = abs(hit_x - round(hit_x));
-      bool dist_to_y_hit = abs(hit_y - round(hit_y));
-
-      // calculate the edge which the intersection occured on (0=top, 1=right, 2=bottom, 3=left)
-      bool vertical = dist_to_y_hit < dist_to_x_hit;
+      hit_x = p.x + (v.x * total_distance);
+      hit_y = p.y + (v.y * total_distance);
 
       int edge = 0;
       float offset = 0;
@@ -64,7 +73,7 @@ namespace picovector {
         offset = hit_x - floor(hit_x);
       }
 
-      float distance = sqrt(pow(hit_x - p.x, 2) + pow(hit_y - p.y, 2));
+      float distance = total_distance; //sqrt(pow(hit_x - p.x, 2) + pow(hit_y - p.y, 2));
 
       // calculate grid square of intersection
       int gx, gy;
@@ -84,16 +93,16 @@ namespace picovector {
         break;
       }
 
-      // step to the next cell: whichever boundary we hit first
-      if (ray_length_x < ray_length_y) {
-        ix += step_x;
-        ix = round(ix);
-        ray_length_x += t_delta_x; // next vertical boundary
-      } else {
-        iy += step_y;
-        iy = round(iy);
-        ray_length_y += t_delta_y; // next horizontal boundary
-      }
+      // // step to the next cell: whichever boundary we hit first
+      // if (ray_length_x < ray_length_y) {
+      //   ix += step_x;
+      //   ix = round(ix);
+      //   ray_length_x += t_delta_x; // next vertical boundary
+      // } else {
+      //   iy += step_y;
+      //   iy = round(iy);
+      //   ray_length_y += t_delta_y; // next horizontal boundary
+      // }
     }
   }
 

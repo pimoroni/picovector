@@ -11,31 +11,31 @@ namespace picovector {
     float inv_dx = fabs(v.x) > eps ? 1.0f / v.x : 1e30f; // get y travelled per one move in x
     float inv_dy = fabs(v.y) > eps ? 1.0f / v.y : 1e30f; // get x travelled per one move in y
 
-    int step_x = 0 //(v.x > 0.0f) ? 1 : (v.x < 0.0f ? -1 : 0); // get whether we're moving in positive or negative x and y
-    int step_y = 0 //(v.y > 0.0f) ? 1 : (v.y < 0.0f ? -1 : 0);
+    int step_x = 0; //(v.x > 0.0f) ? 1 : (v.x < 0.0f ? -1 : 0); // get whether we're moving in positive or negative x and y
+    int step_y = 0; //(v.y > 0.0f) ? 1 : (v.y < 0.0f ? -1 : 0);
 
     float t_delta_x = fabs(inv_dx); // just the absolute amount of our movement vectors
     float t_delta_y = fabs(inv_dy);
 
-    float ray_length_x = 0
-    float ray_length_y = 0
+    float ray_length_x = 0;
+    float ray_length_y = 0;
 
     if(v.x < 0) {
-        step_x = -1
-        ray_length_x = (p.x - ix) * t_delta_x
+        step_x = -1;
+        ray_length_x = (p.x - ix) * t_delta_x;
     }
     else {
-        step_x = 1
-        ray_length_x = ((ix + 1) - p.x) * t_delta_x
+        step_x = 1;
+        ray_length_x = ((ix + 1) - p.x) * t_delta_x;
     }
 
     if(v.y < 0) {
-        step_y = -1
-        ray_length_y = (p.y - iy) * t_delta_y
+        step_y = -1;
+        ray_length_y = (p.y - iy) * t_delta_y;
     }
     else {
-        step_y = 1
-        ray_length_y = ((iy + 1) - p.y) * t_delta_y
+        step_y = 1;
+        ray_length_y = ((iy + 1) - p.y) * t_delta_y;
     }
 
     int i = 0; // don't know why this is here, never referenced again
@@ -46,8 +46,8 @@ namespace picovector {
       float hit_x = p.x + v.x * t_exit;
       float hit_y = p.y + v.y * t_exit;
 
-      bool dist_to_x_hit = abs(hit_x - round(hit_x))
-      bool dist_to_y_hit = abs(hit_y - round(hit_y))
+      bool dist_to_x_hit = abs(hit_x - round(hit_x));
+      bool dist_to_y_hit = abs(hit_y - round(hit_y));
 
       // calculate the edge which the intersection occured on (0=top, 1=right, 2=bottom, 3=left)
       bool vertical = dist_to_y_hit < dist_to_x_hit;
@@ -56,12 +56,12 @@ namespace picovector {
       float offset = 0;
 
       if(vertical) {
-        edge = v.x < 0 ? 3 : 1
-        offset = hit_y - floor(hit_y)
+        edge = v.x < 0 ? 3 : 1;
+        offset = hit_y - floor(hit_y);
       }
       else {
-        edge = v.y < 0 ? 0 : 2
-        offset = hit_x - floor(hit_x)
+        edge = v.y < 0 ? 0 : 2;
+        offset = hit_x - floor(hit_x);
       }
 
       float distance = sqrt(pow(hit_x - p.x, 2) + pow(hit_y - p.y, 2));

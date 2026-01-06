@@ -58,7 +58,7 @@ namespace picovector {
       }
 
       hit_x = ray_length_x;
-      hit_y = ray_length_y
+      hit_y = ray_length_y;
 
       if(vertical) {
         edge = v.x < 0 ? 3 : 1;
@@ -72,10 +72,10 @@ namespace picovector {
       float distance = 0;
 
       if(vertical) {
-        distance = ray_length_x - t_delta_x
+        distance = ray_length_x - t_delta_x;
       }
       else {
-        distance = ray_length_y - t_delta_y
+        distance = ray_length_y - t_delta_y;
       }
       
       // sqrt(pow(hit_x - p.x, 2) + pow(hit_y - p.y, 2));

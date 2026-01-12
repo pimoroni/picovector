@@ -217,7 +217,7 @@ void _span_scale_blit_rgba_rgba(uint8_t *dst, uint8_t *src, int x, int step, int
 static inline __attribute__((always_inline))
 void _span_scale_blit_rgba_rgba(uint8_t *dst, uint8_t *src, uint8_t *pal, int x, int step, int w, uint8_t a) {
   while(w--) {
-    uint8_t *osrc = src + ((x >> 16) << 2);
+    uint8_t *osrc = src + (x >> 16);
     uint8_t *col = &pal[*osrc << 2];
     uint8_t r = col[0], g = col[1], b = col[2], a = col[3];
 

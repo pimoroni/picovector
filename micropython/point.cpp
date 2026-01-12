@@ -17,6 +17,12 @@ point_t mp_obj_get_point(mp_obj_t point_in) {
   mp_raise_msg_varg(&mp_type_ValueError, MP_ERROR_TEXT("invalid parameters, expected point(x, y)"));
 }
 
+point_t mp_obj_get_point_from_xy(const mp_obj_t *args) {
+    int x = mp_obj_get_float(args[0]);
+    int y = mp_obj_get_float(args[1]);
+    return point_t(x, y);
+}
+
 extern "C" {
 
   #include "py/runtime.h"

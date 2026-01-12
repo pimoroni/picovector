@@ -95,6 +95,7 @@ extern rect_t mp_obj_get_rect(mp_obj_t rect_in);
 extern rect_t mp_obj_get_rect_from_xywh(const mp_obj_t *args);
 
 extern point_t mp_obj_get_point(mp_obj_t point_in);
+extern point_t mp_obj_get_point_from_xy(const mp_obj_t *args);
 
 extern bool mp_obj_is_rect(mp_obj_t rect_in);
 extern bool mp_obj_is_point(mp_obj_t point_in);

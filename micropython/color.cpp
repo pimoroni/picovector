@@ -19,6 +19,7 @@ extern "C" {
 
   MPY_BIND_STATICMETHOD_VAR(3, hsv, {
     int h = (int)mp_obj_get_float(args[0]);
+    h = fmod(h, 360.0f);
     int s = (int)mp_obj_get_float(args[1]);
     int v = (int)mp_obj_get_float(args[2]);
     int a = n_args > 3 ? (int)mp_obj_get_float(args[3]) : 255;

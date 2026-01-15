@@ -10,15 +10,15 @@ using std::sort;
 
 namespace picovector {
   struct _edgeinterp {
-    point_t s;
-    point_t e;
+    vec2_t s;
+    vec2_t e;
     float step;
 
     _edgeinterp() {
 
     }
 
-    _edgeinterp(point_t p1, point_t p2) {
+    _edgeinterp(vec2_t p1, vec2_t p2) {
       if(p1.y < p2.y) {
         s = p1; e = p2;
       } else {
@@ -75,10 +75,10 @@ namespace picovector {
       for(int i = 0; i < glyph->path_count; i++) {
         //debug_printf("start of path %d\n", i);
         glyph_path_t *path = &glyph->paths[i];
-        point_t last = path->points[path->point_count - 1].transform(transform);
+        vec2_t last = path->points[path->point_count - 1].transform(transform);
         for(int j = 0; j < path->point_count; j++) {
           //debug_printf(" - interpolate edge %d\n", j);
-          point_t next = path->points[j].transform(transform);
+          vec2_t next = path->points[j].transform(transform);
           //debug_printf("- %f, %f -> %f, %f\n", last.x, last.y, next.x, next.y);
           if(next.y != last.y) {
             //debug_printf("- processing edge\n");
@@ -189,18 +189,18 @@ namespace picovector {
   }
 
 
-  point_t glyph_path_point_t::transform(mat3_t *transform) {
-    return point_t(
+  vec2_t glyph_path_point_t::transform(mat3_t *transform) {
+    return vec2_t(
       transform->v00 * float(x) + transform->v01 * float(y) + transform->v02,
       transform->v10 * float(x) + transform->v11 * float(y) + transform->v12
     );
   }
 
   rect_t glyph_t::bounds(mat3_t *transform) {
-    point_t p1(x, -y);
-    point_t p2(x + w, -y);
-    point_t p3(x + w, -y - h);
-    point_t p4(x, -y);
+    vec2_t p1(x, -y);
+    vec2_t p2(x + w, -y);
+    vec2_t p3(x + w, -y - h);
+    vec2_t p4(x, -y);
 
     p1 = p1.transform(transform);
     p2 = p2.transform(transform);
@@ -228,7 +228,7 @@ namespace picovector {
         if(this->glyphs[j].codepoint == uint16_t(c)) {
           float a = this->glyphs[j].advance;
           transform = transform.translate(a, 0);
-          point_t caret(1, 1);
+          vec2_t caret(1, 1);
           caret = caret.transform(transform);
           r.w = max(r.w, caret.x);
           r.h = max(r.y, caret.y);
@@ -240,7 +240,7 @@ namespace picovector {
   }
 
   void font_t::draw(image_t *target, const char *text, float x, float y, float size) {
-    point_t caret(x, y);
+    vec2_t caret(x, y);
 
     mat3_t transform;
     transform = transform.translate(x, y);

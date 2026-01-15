@@ -37,7 +37,7 @@ namespace picovector {
     rect_t tb = target->clip();
     rect_t b(tb.x + tb.w, tb.y + tb.h, 0, this->height);
 
-    point_t caret(0, 0);
+    vec2_t caret(0, 0);
     while(*text != '\0') {
       // special case for "space"
       if(*text == 32) {

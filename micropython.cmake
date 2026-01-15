@@ -5,8 +5,6 @@ include(modules/c/pngdec/pngdec)
 list(APPEND SOURCES
   ${CMAKE_CURRENT_LIST_DIR}/micropython/picovector_bindings.c
   ${CMAKE_CURRENT_LIST_DIR}/micropython/picovector.cpp
-  ${CMAKE_CURRENT_LIST_DIR}/algorithms/dda.cpp
-  ${CMAKE_CURRENT_LIST_DIR}/algorithms/geometry.cpp
   ${CMAKE_CURRENT_LIST_DIR}/picovector.cpp
   ${CMAKE_CURRENT_LIST_DIR}/shape.cpp
   ${CMAKE_CURRENT_LIST_DIR}/font.cpp
@@ -15,7 +13,8 @@ list(APPEND SOURCES
   ${CMAKE_CURRENT_LIST_DIR}/brush.cpp
   ${CMAKE_CURRENT_LIST_DIR}/primitive.cpp
   ${CMAKE_CURRENT_LIST_DIR}/rasteriser.cpp
-  ${CMAKE_CURRENT_LIST_DIR}/micropython/rect.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/algorithms/geometry.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/algorithms/dda.cpp
   ${CMAKE_CURRENT_LIST_DIR}/micropython/brush.cpp
   ${CMAKE_CURRENT_LIST_DIR}/micropython/color.cpp
   ${CMAKE_CURRENT_LIST_DIR}/micropython/font.cpp
@@ -25,7 +24,8 @@ list(APPEND SOURCES
   ${CMAKE_CURRENT_LIST_DIR}/micropython/mat3.cpp
   ${CMAKE_CURRENT_LIST_DIR}/micropython/pixel_font.cpp
   ${CMAKE_CURRENT_LIST_DIR}/micropython/shape.cpp
-  ${CMAKE_CURRENT_LIST_DIR}/micropython/point.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/micropython/rect.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/micropython/vec2.cpp
   ${CMAKE_CURRENT_LIST_DIR}/micropython/algorithm.cpp
 )
 

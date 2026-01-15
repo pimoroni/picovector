@@ -69,10 +69,10 @@ MPY_BIND_VAR(2, window, {
 
     if (mp_obj_is_type(args[1], &type_rect)) {
       const rect_obj_t *rect = (rect_obj_t *)MP_OBJ_TO_PTR(args[1]);
-      x = rect->rect.x;
-      y = rect->rect.y;
-      w = rect->rect.w;
-      h = rect->rect.h;
+      x = rect->r.x;
+      y = rect->r.y;
+      w = rect->r.w;
+      h = rect->r.h;
     }else{
       x = mp_obj_get_float(args[1]);
       y = mp_obj_get_float(args[2]);
@@ -151,10 +151,10 @@ MPY_BIND_VAR(2, window, {
   MPY_BIND_VAR(3, line, {
     const image_obj_t *self = (image_obj_t *)MP_OBJ_TO_PTR(args[0]);
 
-    if(mp_obj_is_type(args[1], &type_point) && mp_obj_is_type(args[2], &type_point)) {
-      point_obj_t *p1 = (point_obj_t *)MP_OBJ_TO_PTR(args[1]);
-      point_obj_t *p2 = (point_obj_t *)MP_OBJ_TO_PTR(args[2]);
-      self->image->line(p1->point, p2->point);
+    if(n_args == 3 && mp_obj_is_vec2(args[1]) && mp_obj_is_vec2(args[2])) {
+      vec2_t p1 = mp_obj_get_vec2(args[1]);
+      vec2_t p2 = mp_obj_get_vec2(args[2]);
+      self->image->line(p1, p2);
       return mp_const_none;
     }
 
@@ -163,7 +163,7 @@ MPY_BIND_VAR(2, window, {
       int y1 = mp_obj_get_float(args[2]);
       int x2 = mp_obj_get_float(args[3]);
       int y2 = mp_obj_get_float(args[4]);
-      self->image->line(point_t(x1, y1), point_t(x2, y2));
+      self->image->line(vec2_t(x1, y1), vec2_t(x2, y2));
       return mp_const_none;
     }
 
@@ -174,10 +174,10 @@ MPY_BIND_VAR(2, window, {
   MPY_BIND_VAR(3, circle, {
     const image_obj_t *self = (image_obj_t *)MP_OBJ_TO_PTR(args[0]);
 
-    if(mp_obj_is_type(args[1], &type_point)) {
-      point_obj_t *p = (point_obj_t *)MP_OBJ_TO_PTR(args[1]);
+    if(mp_obj_is_vec2(args[1])) {
+      vec2_t p = mp_obj_get_vec2(args[1]);
       float r = mp_obj_get_float(args[2]);
-      self->image->circle(p->point, r);
+      self->image->circle(p, r);
       return mp_const_none;
     }
 
@@ -185,7 +185,7 @@ MPY_BIND_VAR(2, window, {
       int x = mp_obj_get_float(args[1]);
       int y = mp_obj_get_float(args[2]);
       int r = mp_obj_get_float(args[3]);
-      self->image->circle(point_t(x, y), r);
+      self->image->circle(vec2_t(x, y), r);
       return mp_const_none;
     }
 
@@ -195,22 +195,19 @@ MPY_BIND_VAR(2, window, {
   MPY_BIND_VAR(4, triangle, {
     const image_obj_t *self = (image_obj_t *)MP_OBJ_TO_PTR(args[0]);
 
-    if(mp_obj_is_type(args[1], &type_point) && mp_obj_is_type(args[2], &type_point) && mp_obj_is_type(args[3], &type_point)) {
-      point_obj_t *p1 = (point_obj_t *)MP_OBJ_TO_PTR(args[1]);
-      point_obj_t *p2 = (point_obj_t *)MP_OBJ_TO_PTR(args[2]);
-      point_obj_t *p3 = (point_obj_t *)MP_OBJ_TO_PTR(args[3]);
-      self->image->triangle(p1->point, p2->point, p3->point);
+    if(n_args == 4 && mp_obj_is_vec2(args[1]) && mp_obj_is_vec2(args[2]) && mp_obj_is_vec2(args[3])) {
+      vec2_t p1 = mp_obj_get_vec2(args[1]);
+      vec2_t p2 = mp_obj_get_vec2(args[2]);
+      vec2_t p3 = mp_obj_get_vec2(args[3]);
+      self->image->triangle(p1, p2, p3);
       return mp_const_none;
     }
 
     if(n_args == 7) {
-      int x1 = mp_obj_get_float(args[1]);
-      int y1 = mp_obj_get_float(args[2]);
-      int x2 = mp_obj_get_float(args[3]);
-      int y2 = mp_obj_get_float(args[4]);
-      int x3 = mp_obj_get_float(args[5]);
-      int y3 = mp_obj_get_float(args[6]);
-      self->image->triangle(point_t(x1, y1), point_t(x2, y2), point_t(x3, y3));
+      vec2_t p1 = mp_obj_get_vec2_from_xy(&args[1]);
+      vec2_t p2 = mp_obj_get_vec2_from_xy(&args[3]);
+      vec2_t p3 = mp_obj_get_vec2_from_xy(&args[5]);
+      self->image->triangle(p1, p2, p3);
       return mp_const_none;
     }
 
@@ -218,20 +215,28 @@ MPY_BIND_VAR(2, window, {
   })
 
 
-MPY_BIND_VAR(3, get, {
+MPY_BIND_VAR(2, get, {
     const image_obj_t *self = (image_obj_t *)MP_OBJ_TO_PTR(args[0]);
-    int x = mp_obj_get_float(args[1]);
-    int y = mp_obj_get_float(args[2]);
+    vec2_t point;
+    if(mp_obj_is_vec2(args[1])) {
+      point = mp_obj_get_vec2(args[1]);
+    } else {
+      point = mp_obj_get_vec2_from_xy(&args[1]);
+    }
     color_obj_t *color = mp_obj_malloc(color_obj_t, &type_color);
-    color->c = self->image->get(x, y);
+    color->c = self->image->get(point.x, point.y);
     return MP_OBJ_FROM_PTR(color);
   })
 
-MPY_BIND_VAR(3, put, {
+MPY_BIND_VAR(2, put, {
     const image_obj_t *self = (image_obj_t *)MP_OBJ_TO_PTR(args[0]);
-    int x = mp_obj_get_float(args[1]);
-    int y = mp_obj_get_float(args[2]);
-    self->image->put(x, y);
+    vec2_t point;
+    if(mp_obj_is_vec2(args[1])) {
+      point = mp_obj_get_vec2(args[1]);
+    } else {
+      point = mp_obj_get_vec2_from_xy(&args[1]);
+    }
+    self->image->put(point.x, point.y);
     return mp_const_none;
   })
 
@@ -243,17 +248,24 @@ MPY_BIND_VAR(3, text, {
       mp_raise_msg_varg(&mp_type_OSError, MP_ERROR_TEXT("target image has no font"));
     }
 
+    vec2_t point;
+    int arg_offset;
+
+    if(mp_obj_is_vec2(args[2])) {
+      point = mp_obj_get_vec2(args[2]);
+      arg_offset = 3;
+    } else {
+      point = mp_obj_get_vec2_from_xy(&args[2]);
+      arg_offset = 4;
+    }
+
     if(self->font) {
-      float x = mp_obj_get_float(args[2]);
-      float y = mp_obj_get_float(args[3]);
-      float size = mp_obj_get_float(args[4]);
-      self->image->font()->draw(self->image, text, x, y, size);
+      float size = mp_obj_get_float(args[arg_offset]);
+      self->image->font()->draw(self->image, text, point.x, point.y, size);
     }
 
     if(self->pixel_font) {
-      int x = mp_obj_get_float(args[2]);
-      int y = mp_obj_get_float(args[3]);
-      self->image->pixel_font()->draw(self->image, text, x, y);
+      self->image->pixel_font()->draw(self->image, text, point.x, point.y);
     }
 
     return mp_const_none;
@@ -288,14 +300,11 @@ MPY_BIND_VAR(2, measure_text, {
 MPY_BIND_VAR(9, vspan_tex, {
     const image_obj_t *self = (image_obj_t *)MP_OBJ_TO_PTR(args[0]);
     const image_obj_t *src = (image_obj_t *)MP_OBJ_TO_PTR(args[1]);
-    int x = mp_obj_get_float(args[2]);
-    int y = mp_obj_get_float(args[3]);
+    vec2_t p = mp_obj_get_vec2_from_xy(&args[2]);
     int c = mp_obj_get_float(args[4]);
-    int us = mp_obj_get_float(args[5]);
-    int vs = mp_obj_get_float(args[6]);
-    int ue = mp_obj_get_float(args[7]);
-    int ve = mp_obj_get_float(args[8]);
-    src->image->vspan_tex(self->image, point_t(x, y), c, point_t(us, vs), point_t(ue, ve));
+    vec2_t us_vs = mp_obj_get_vec2_from_xy(&args[5]);
+    vec2_t ue_ve = mp_obj_get_vec2_from_xy(&args[7]);
+    src->image->vspan_tex(self->image, p, c, us_vs, ue_ve);
     return mp_const_none;
   })
 
@@ -306,8 +315,8 @@ MPY_BIND_VAR(3, blit, {
 
       const image_obj_t *src = (image_obj_t *)MP_OBJ_TO_PTR(args[1]);
 
-      if(n_args == 3 && mp_obj_is_point(args[2])) {
-        src->image->blit(self->image, mp_obj_get_point(args[2]));
+      if(n_args == 3 && mp_obj_is_vec2(args[2])) {
+        src->image->blit(self->image, mp_obj_get_vec2(args[2]));
         return mp_const_none;
       }
 
@@ -356,7 +365,7 @@ MPY_BIND_ATTR(image, {
       case MP_QSTR_clip: {
         if(action == GET) {
           rect_obj_t *result = mp_obj_malloc(rect_obj_t, &type_rect);
-          result->rect = self->image->clip();
+          result->r = self->image->clip();
           dest[0] = MP_OBJ_FROM_PTR(result);
           return;
         }
@@ -367,7 +376,7 @@ MPY_BIND_ATTR(image, {
           }
 
           rect_obj_t * r = (rect_obj_t *)dest[1];
-          self->image->clip(r->rect);
+          self->image->clip(r->r);
           dest[0] = MP_OBJ_NULL;
           return;
         }

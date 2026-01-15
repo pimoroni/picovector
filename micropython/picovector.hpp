@@ -70,13 +70,13 @@ extern "C" {
 
   typedef struct _rect_obj_t {
     mp_obj_base_t base;
-    rect_t rect;
+    rect_t r;
   } rect_obj_t;
 
-  typedef struct _point_obj_t {
+  typedef struct _vec2_obj_t {
     mp_obj_base_t base;
-    point_t point;
-  } point_obj_t;
+    vec2_t v;
+  } vec2_obj_t;
 
   extern image_obj_t *default_target;
 
@@ -94,8 +94,8 @@ extern "C" {
 extern rect_t mp_obj_get_rect(mp_obj_t rect_in);
 extern rect_t mp_obj_get_rect_from_xywh(const mp_obj_t *args);
 
-extern point_t mp_obj_get_point(mp_obj_t point_in);
-extern point_t mp_obj_get_point_from_xy(const mp_obj_t *args);
+extern vec2_t mp_obj_get_vec2(mp_obj_t vec2_in);
+extern vec2_t mp_obj_get_vec2_from_xy(const mp_obj_t *args);
 
 extern bool mp_obj_is_rect(mp_obj_t rect_in);
-extern bool mp_obj_is_point(mp_obj_t point_in);
+extern bool mp_obj_is_vec2(mp_obj_t vec2_in);

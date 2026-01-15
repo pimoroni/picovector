@@ -146,14 +146,14 @@ namespace picovector {
     uint8_t *dst = (uint8_t*)brush->target->ptr(x, y);
     rect_t b = p->src->bounds();
 
-    fx16_point_t p1(x, y);
-    fx16_point_t p2((x + w), y);
+    fx16_vec2_t p1(x, y);
+    fx16_vec2_t p2((x + w), y);
 
     p1 = p1.transform(&p->inverse_transform);
     p2 = p2.transform(&p->inverse_transform);
 
-    fx16_point_t pd((p2.x - p1.x) / w, (p2.y - p1.y) / w);
-    fx16_point_t pt = p1;
+    fx16_vec2_t pd((p2.x - p1.x) / w, (p2.y - p1.y) / w);
+    fx16_vec2_t pt = p1;
 
     int tw = int(b.w);
     int th = int(b.h);
@@ -175,14 +175,14 @@ namespace picovector {
     uint8_t *dst = (uint8_t*)brush->target->ptr(x, y);
     rect_t b = p->src->bounds();
 
-    fx16_point_t p1(x, y);
-    fx16_point_t p2((x + w), y);
+    fx16_vec2_t p1(x, y);
+    fx16_vec2_t p2((x + w), y);
 
     p1 = p1.transform(&p->inverse_transform);
     p2 = p2.transform(&p->inverse_transform);
 
-    fx16_point_t pd((p2.x - p1.x) / w, (p2.y - p1.y) / w);
-    fx16_point_t pt = p1;
+    fx16_vec2_t pd((p2.x - p1.x) / w, (p2.y - p1.y) / w);
+    fx16_vec2_t pt = p1;
 
     int tw = int(b.w);
     int th = int(b.h);

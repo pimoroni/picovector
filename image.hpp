@@ -11,11 +11,11 @@ using std::vector;
 namespace picovector {
 
   typedef enum antialias_t {
-    OFF   = 1,
-    LOW   = 2,
-    X2    = 2,
-    HIGH  = 4,
-    X4    = 4
+    OFF   = 0,
+    LOW   = 1,
+    X2    = 1,
+    HIGH  = 2,
+    X4    = 2
   } antialias_t;
 
   typedef enum pixel_format_t {
@@ -99,15 +99,15 @@ namespace picovector {
       void clear();
       //void clear(uint32_t c);
       void rectangle(rect_t r);
-      void triangle(point_t p1, point_t p2, point_t p3);
+      void triangle(vec2_t p1, vec2_t p2, vec2_t p3);
       void round_rectangle(const rect_t &r, int radius);
-      void circle(const point_t &p, const int &r);
-      void ellipse(const point_t &p, const int &rx, const int &ry);
-      void line(point_t p1, point_t p2);
-      void put(const point_t &p1);
+      void circle(const vec2_t &p, const int &r);
+      void ellipse(const vec2_t &p, const int &rx, const int &ry);
+      void line(vec2_t p1, vec2_t p2);
+      void put(const vec2_t &p1);
       void put(int x, int y);
       void put_unsafe(int x, int y);
-      uint32_t get(const point_t &p1);
+      uint32_t get(const vec2_t &p1);
       uint32_t get(int x, int y);
       uint32_t get_unsafe(int x, int y);
 
@@ -126,13 +126,13 @@ namespace picovector {
 
 
       void draw(shape_t *shape);
-      void blit(image_t *t, const point_t p);
+      void blit(image_t *t, const vec2_t p);
       void blit(image_t *t, rect_t tr);
       void blit(image_t *t, rect_t sr, rect_t tr);
 
 
 
-      void vspan_tex(image_t *target, point_t p, uint c, point_t uvs, point_t uve);
+      void vspan_tex(image_t *target, vec2_t p, uint c, vec2_t uvs, vec2_t uve);
   };
 
 }

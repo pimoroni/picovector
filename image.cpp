@@ -192,10 +192,7 @@ namespace picovector {
   // }
 
   void image_t::clear() {
-    int count = this->_bounds.w * this->_bounds.h;
-    this->_brush->span_func(this->_brush, 0, 0, count);
-
-//    rectangle(_clip);
+    rectangle(_clip);
   }
 
   void image_t::blit(image_t *t, const vec2_t p) {

@@ -157,6 +157,10 @@ extern "C" {
   const color_obj_t color_yellow_obj = {.base = {.type = &type_color}, .c = 0xff5ed4dau};
   const color_obj_t color_white_obj  = {.base = {.type = &type_color}, .c = 0xffd6eedeu};
 
+  // badger E-ink specific greys
+  const color_obj_t color_light_grey_obj  = {.base = {.type = &type_color}, .c = 0xffc0c0c0u};
+  const color_obj_t color_dark_grey_obj   = {.base = {.type = &type_color}, .c = 0xff404040u};
+
   MPY_BIND_LOCALS_DICT(color,
     // static color generators
     MPY_BIND_ROM_PTR_STATIC(rgb),
@@ -184,6 +188,10 @@ extern "C" {
     { MP_ROM_QSTR(MP_QSTR_cyan),   MP_ROM_PTR(&color_cyan_obj) },
     { MP_ROM_QSTR(MP_QSTR_yellow), MP_ROM_PTR(&color_yellow_obj) },
     { MP_ROM_QSTR(MP_QSTR_white),  MP_ROM_PTR(&color_white_obj) },
+
+    // badger E-ink specific greys
+    { MP_ROM_QSTR(MP_QSTR_light_grey),  MP_ROM_PTR(&color_light_grey_obj) },
+    { MP_ROM_QSTR(MP_QSTR_dark_grey),  MP_ROM_PTR(&color_dark_grey_obj) },
   )
 
   MP_DEFINE_CONST_OBJ_TYPE(

@@ -17,7 +17,6 @@ namespace picovector {
     float y;
 
     vec2_t() {}
-    vec2_t(int x, int y) : x(x), y(y) {}
     vec2_t(float x, float y) : x(x), y(y) {}
 
     bool operator==(const vec2_t &rhs) const {
@@ -68,7 +67,10 @@ namespace picovector {
     fx16_t x;
     fx16_t y;
 
+#ifdef PICO
+    // On Pico "fx16_t" and by extension "int32_t" is type "long"
     fx16_vec2_t(int x, int y) : x(x), y(y) {}
+#endif
     fx16_vec2_t(fx16_t x, fx16_t y) : x(x), y(y) {}
 
     fx16_vec2_t(float fx, float fy) {
@@ -154,6 +156,17 @@ namespace picovector {
       }
 
       return n;
+    }
+
+    rect_t round() {
+      rect_t r;
+      r.x = floorf(this->x);
+      r.y = floorf(this->y);
+      // r.w = floorf(this->w);
+      // r.h = floorf(this->h);
+      r.w = ceilf(this->w + this->x) - r.x;
+      r.h = ceilf(this->h + this->y) - r.y;
+      return r;
     }
 
     rect_t intersection(const rect_t &r) const {

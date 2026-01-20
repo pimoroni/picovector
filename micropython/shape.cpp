@@ -4,7 +4,6 @@
 extern "C" {
 
   #include "py/runtime.h"
-  extern image_obj_t *default_target;
 
   mp_obj_t shape__del__(mp_obj_t self_in) {
     self(self_in, shape_obj_t);

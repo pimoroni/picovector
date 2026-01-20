@@ -2,6 +2,7 @@
 
 #include <stdint.h>
 #include <string>
+#include <vector>
 
 #include "picovector.config.hpp"
 #include "types.hpp"
@@ -9,6 +10,18 @@
 using std::vector;
 
 namespace picovector {
+
+  class image_t;
+  struct brush_t;
+
+  // empty implementations for unsupported modes
+  void pixel_func_nop(image_t *target, brush_t *brush, int x, int y);
+  void span_func_nop(image_t *target, brush_t *brush, int x, int y, int w);
+  void mask_span_func_nop(image_t *target, brush_t *brush, int x, int y, int w, uint8_t *m);
+
+  typedef void (*pixel_func_t)(image_t *target, brush_t *brush, int x, int y);
+  typedef void (*span_func_t)(image_t *target, brush_t *brush, int x, int y, int w);
+  typedef void (*mask_span_func_t)(image_t *target, brush_t *brush, int x, int y, int w, uint8_t *mask);
 
   typedef enum antialias_t {
     OFF   = 0,
@@ -50,6 +63,10 @@ namespace picovector {
       palette_t       _palette;
 
     public:
+      pixel_func_t    _pixel_func = pixel_func_nop;
+      span_func_t     _span_func = span_func_nop;
+      mask_span_func_t _mask_span_func = mask_span_func_nop;
+
       image_t();
       image_t(image_t *source, rect_t r);
       image_t(int w, int h, pixel_format_t pixel_format=RGBA8888, bool has_palette=false);
@@ -111,6 +128,9 @@ namespace picovector {
       uint32_t get(int x, int y);
       uint32_t get_unsafe(int x, int y);
 
+      // image filters
+      void blur(float radius);
+      void dither();
 // pixel(x, y, col) or set(x, y, col)
 // 	•	line(x0, y0, x1, y1)
 // 	•	rect(x, y, w, h)

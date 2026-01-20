@@ -12,9 +12,9 @@ list(APPEND SOURCES
   ${CMAKE_CURRENT_LIST_DIR}/image.cpp
   ${CMAKE_CURRENT_LIST_DIR}/brush.cpp
   ${CMAKE_CURRENT_LIST_DIR}/primitive.cpp
-  ${CMAKE_CURRENT_LIST_DIR}/rasteriser.cpp
   ${CMAKE_CURRENT_LIST_DIR}/algorithms/geometry.cpp
   ${CMAKE_CURRENT_LIST_DIR}/algorithms/dda.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/image_filters/blur.cpp
   ${CMAKE_CURRENT_LIST_DIR}/micropython/brush.cpp
   ${CMAKE_CURRENT_LIST_DIR}/micropython/color.cpp
   ${CMAKE_CURRENT_LIST_DIR}/micropython/font.cpp

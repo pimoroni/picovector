@@ -8,6 +8,7 @@
 #include "../image.hpp"
 #include "../brush.hpp"
 #include "../font.hpp"
+#include "../color.hpp"
 #include "../pixel_font.hpp"
 #include "../blend.hpp"
 #include "PNGdec.h"
@@ -47,7 +48,7 @@ extern "C" {
 
   typedef struct _color_obj_t {
     mp_obj_base_t base;
-    uint32_t c;
+    color_t *c;
   } color_obj_t;
 
   typedef struct _pixel_font_obj_t {

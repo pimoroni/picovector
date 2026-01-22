@@ -144,6 +144,11 @@ extern "C" {
     return MP_OBJ_NULL;
   }
 
+  static void vec2_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind) {
+    self(self_in, vec2_obj_t);
+    mp_printf(print, "vec(%f, %f)", self->v.x, self->v.y);
+  }
+
   MPY_BIND_LOCALS_DICT(vec2,
     MPY_BIND_ROM_PTR(transform),
   )
@@ -153,6 +158,7 @@ extern "C" {
       MP_QSTR_vec2,
       MP_TYPE_FLAG_NONE,
       make_new, (const void *)vec2_new,
+      print, (const void*)vec2_print,
       binary_op, (const void *)vec2_binary_op,
       attr, (const void *)vec2_attr,
       locals_dict, &vec2_locals_dict

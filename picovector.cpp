@@ -26,7 +26,7 @@ char __attribute__((aligned(4))) PicoVector_working_buffer[working_buffer_size];
 #define NODE_COUNT_BUFFER_SIZE (TILE_HEIGHT * 4 * sizeof(uint8_t)) // 256 byte node count buffer
 
 // buffer that each tile is rendered into before callback
-int8_t *tile_buffer = (int8_t *)&PicoVector_working_buffer[0];
+uint8_t *tile_buffer = (uint8_t *)&PicoVector_working_buffer[0];
 int16_t *node_buffer = (int16_t *)&PicoVector_working_buffer[TILE_BUFFER_SIZE];
 uint8_t *node_count_buffer = (uint8_t *)&PicoVector_working_buffer[TILE_BUFFER_SIZE + NODE_BUFFER_SIZE];
 
@@ -126,7 +126,7 @@ namespace picovector {
       int16_t *nodes = &node_buffer[(y * MAX_NODES_PER_SCANLINE)];
       insertion_sort_i16(nodes, node_count_buffer[y]);
 
-      int8_t *row_data = &tile_buffer[(y >> aa) * TILE_WIDTH];
+      uint8_t *row_data = &tile_buffer[(y >> aa) * TILE_WIDTH];
 
       for(uint32_t i = 0; i < node_count_buffer[y]; i += 2) {
         int sx = *nodes++;
@@ -176,13 +176,15 @@ namespace picovector {
     if(aa == 1) p_alpha_map = alpha_map_x4;
     if(aa == 2) p_alpha_map = alpha_map_x16;
 
-    mask_span_func_t sf = target->_mask_span_func;
+    //mask_span_func_t sf = target->_mask_span_func;
     //printf("render shape\n");
 
     // determine bounds of shape to be rendered
     rect_t sb = shape->bounds().round();
 
     rect_t clip = target->clip();
+
+    masked_span_func_t fn = target->_masked_span_func;
 
     //printf("- shape bounds %d, %d (%d x %d)\n", sbx, sby, sbw, sbh);
     //printf("- clip bounds %d, %d (%d x %d)\n", int(clip.x), int(clip.y), int(clip.w), int(clip.h));
@@ -236,7 +238,7 @@ namespace picovector {
         int rbh = rb.h;
 
         for(int ty = rby; ty < rby + rbh; ty++) {
-          int8_t* p;
+          uint8_t* p;
 
           // scale tile buffer values to alpha values
           p = &tile_buffer[ty * TILE_WIDTH + rbx];
@@ -248,7 +250,9 @@ namespace picovector {
 
           // render tile span
           p = &tile_buffer[ty * TILE_WIDTH + rbx];
-          sf(target, brush, sx + rbx, sy + ty, rbw, (uint8_t*)p);
+
+          fn(target, brush, sx + rbx, sy + ty, rbw, p);
+          //sf(target, brush, sx + rbx, sy + ty, rbw, (uint8_t*)p);
         }
       }
     }
@@ -309,13 +313,14 @@ namespace picovector {
     if(aa == 1) p_alpha_map = alpha_map_x4;
     if(aa == 2) p_alpha_map = alpha_map_x16;
 
-    mask_span_func_t sf = target->_mask_span_func;
     //printf("render shape\n");
 
     // determine bounds of shape to be rendered
     rect_t sb = glyph->bounds(transform).round();
 
     rect_t clip = target->clip();
+
+    masked_span_func_t fn = target->_masked_span_func;
 
     //printf("- shape bounds %d, %d (%d x %d)\n", sbx, sby, sbw, sbh);
     //printf("- clip bounds %d, %d (%d x %d)\n", int(clip.x), int(clip.y), int(clip.w), int(clip.h));
@@ -370,7 +375,7 @@ namespace picovector {
         int rbh = rb.h;
 
         for(int ty = rby; ty < rby + rbh; ty++) {
-          int8_t* p;
+          uint8_t* p;
 
           // scale tile buffer values to alpha values
           p = &tile_buffer[ty * TILE_WIDTH + rbx];
@@ -382,7 +387,7 @@ namespace picovector {
 
           // render tile span
           p = &tile_buffer[ty * TILE_WIDTH + rbx];
-          sf(target, brush, sx + rbx, sy + ty, rbw, (uint8_t*)p);
+          fn(target, brush, sx + rbx, sy + ty, rbw, p);
         }
       }
     }

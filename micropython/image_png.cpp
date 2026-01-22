@@ -72,7 +72,8 @@ extern "C" {
       case PNG_PIXEL_TRUECOLOR: {
         uint32_t *pdst = (uint32_t *)target->ptr(0, pDraw->y);
         while(w--) {
-          *pdst = rgba(psrc[0], psrc[1], psrc[2], 255);
+          rgb_color_t c(psrc[0], psrc[1], psrc[2], 255);
+          *pdst = c._p;
           psrc += 3;
           pdst++;
         }
@@ -81,7 +82,8 @@ extern "C" {
       case PNG_PIXEL_TRUECOLOR_ALPHA: {
         uint32_t *pdst = (uint32_t *)target->ptr(0, pDraw->y);
         while(w--) {
-          *pdst = rgba(psrc[0], psrc[1], psrc[2], psrc[3]);
+          rgb_color_t c(psrc[0], psrc[1], psrc[2], psrc[3]);
+          *pdst = c._p;
           psrc += 4;
           pdst++;
         }
@@ -90,13 +92,13 @@ extern "C" {
       case PNG_PIXEL_INDEXED: {
         if(target->has_palette()) {
           for(int i = 0; i < 256; i++) {
-            uint32_t c = rgba(
+            rgb_color_t c(
               pDraw->pPalette[i * 3 + 0],
               pDraw->pPalette[i * 3 + 1],
               pDraw->pPalette[i * 3 + 2],
               pDraw->iHasAlpha ? pDraw->pPalette[768 + i] : 255
             );
-            target->palette(i, c);
+            target->palette(i, c._p);
           }
 
           uint8_t *pdst = (uint8_t *)target->ptr(0, pDraw->y);
@@ -108,18 +110,18 @@ extern "C" {
         } else {
           uint32_t *pdst = (uint32_t *)target->ptr(0, pDraw->y);
           while(w--) {
-            *pdst = rgba(
+            *pdst = rgb_color_t(
               pDraw->pPalette[*psrc * 3 + 0],
               pDraw->pPalette[*psrc * 3 + 1],
               pDraw->pPalette[*psrc * 3 + 2],
               pDraw->iHasAlpha ? pDraw->pPalette[768 + *psrc] : 255
-            );
+            )._p;
             psrc++;
             pdst++;
           }
         }
       } break;
-
+      /*
       case PNG_PIXEL_GRAYSCALE: {
         uint32_t *pdst = (uint32_t *)target->ptr(0, pDraw->y);
         while(w--) {
@@ -154,6 +156,7 @@ extern "C" {
           psrc++;
         }
       } break;
+       */
 
       default: {
         // TODO: raise file not supported error

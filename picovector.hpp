@@ -35,7 +35,7 @@ namespace picovector {
 
   #define debug_printf(fmt, ...) fprintf(stdout, fmt, ##__VA_ARGS__)
 
-  struct brush_t;
+  class brush_t;
   class image_t;
   class shape_t;
   class glyph_t;

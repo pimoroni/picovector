@@ -7,6 +7,7 @@
 #include "algorithms/algorithms.hpp"
 #include "image.hpp"
 #include "blend.hpp"
+#include "blit.hpp"
 #include "brush.hpp"
 #include "shape.hpp"
 
@@ -145,9 +146,10 @@ namespace picovector {
 
   void image_t::brush(brush_t *brush) {
     this->_brush = brush;
-    this->_pixel_func = brush->get_pixel_func(this);
-    this->_span_func = brush->get_span_func(this);
-    this->_mask_span_func = brush->get_mask_span_func(this);
+    this->_span_func = brush->span_func();
+    this->_masked_span_func = brush->masked_span_func();
+    // this->_span_func = brush->get_span_func(this);
+    // this->_mask_span_func = brush->get_mask_span_func(this);
   }
 
   font_t* image_t::font() {
@@ -198,29 +200,122 @@ namespace picovector {
     rectangle(_clip);
   }
 
-  void image_t::blit(image_t *t, const vec2_t p) {
-    rect_t tr(p.x, p.y, _bounds.w, _bounds.h); // target rect
 
-    int yoff = tr.y < t->_clip.y ? t->_clip.y - tr.y : 0;
-    int xoff = tr.x < t->_clip.x ? t->_clip.x - tr.x : 0;
+  void clip_blit_rect(rect_t &r1, rect_t b, rect_t &r2) {
+    // perform any source rect clipping that's needed
+    float sx = r2.w / r1.w;
+    float sy = r2.h / r1.h;
 
-    tr = tr.intersection(t->_clip); // clip to target image bounds
+    if(r1.x < b.x) {
+      float d = b.x - r1.x;
+      r1.x += d;
+      r1.w -= d;
+      r2.x += (d * sx);
+      r2.w -= (d * sx);
+    }
 
-    if(tr.empty()) {return;}
+    if(r1.y < b.y) {
+      float d = b.y - r1.y;
+      r1.y += d;
+      r1.h -= d;
+      r2.y += (d * sy);
+      r2.h -= (d * sy);
+    }
 
-    int sxo = xoff;
-    int syo = yoff;// p.y < 0 ? -p.y : 0;
+    if(r1.x + r1.w > b.x + b.w) {
+      float d = (r1.x + r1.w) - (b.x + b.w);
+      r1.w -= d;
+      r2.w -= (d * sx);
+    }
 
-    for(int i = 0; i < tr.h; i++) {
-      uint8_t *dst = (uint8_t *)t->ptr(tr.x, tr.y + i);
-      uint8_t *src = (uint8_t *)this->ptr(sxo, syo + i);
-      if(this->_has_palette) {
-        _span_blit_rgba_rgba(dst, src, (uint8_t*)&this->_palette[0], tr.w, this->_alpha);
+    if(r1.y + r1.h > b.y + b.h) {
+      float d = (r1.y + r1.h) - (b.y + b.h);
+      r1.h -= d;
+      r2.h -= (d * sy);
+    }
+  }
+
+  void image_t::blit(image_t *target, const vec2_t p) {
+    rect_t sr = _bounds;
+    rect_t tr(p.x, p.y, sr.w, sr.h); // target rect
+
+    sr = sr.floor();
+    tr = tr.floor();
+    clip_blit_rect(sr, _bounds, tr);
+    clip_blit_rect(tr, target->_bounds, sr);
+    if(sr.w <= 0 || sr.h <= 0 || tr.w <= 0 || tr.h <= 0) {
+      return;
+    }
+
+    blend_func_t bf = target->_blend_func;
+
+    for(int y = 0; y < tr.h; y++) {
+      if(_has_palette) {
+        span_blit(this, target, bf, sr.x, sr.y + y, tr.x, tr.y + y, tr.w, _palette);
       }else{
-        _span_blit_rgba_rgba(dst, src, tr.w, this->_alpha);
+        span_blit(this, target, bf, sr.x, sr.y + y, tr.x, tr.y + y, tr.w);
       }
     }
   }
+
+
+  // blit from source rectangle into target rectangle
+  void image_t::blit(image_t *target, rect_t sr, rect_t tr) {
+    bool flip_h = tr.w < 0;
+    bool flip_v = tr.h < 0;
+
+    // clip target rect to target bounds
+    // printf("pre clip\n");
+    // printf("- sr = %.2f, %.2f (%.2f x %.2f)\n", sr.x, sr.y, sr.w, sr.h);
+    // printf("- tr = %.2f, %.2f (%.2f x %.2f)\n", tr.x, tr.y, tr.w, tr.h);
+    tr.w = fabs(tr.w);
+    tr.h = fabs(tr.h);
+    sr = sr.round();
+    tr = tr.round();
+    clip_blit_rect(sr, _bounds, tr);
+    clip_blit_rect(tr, target->_bounds, sr);
+    if(sr.w <= 0 || sr.h <= 0 || tr.w <= 0 || tr.h <= 0) {
+      return;
+    }
+    // printf("post clip\n");
+    // printf("- sr = %.2f, %.2f (%.2f x %.2f)\n", sr.x, sr.y, sr.w, sr.h);
+    // printf("- tr = %.2f, %.2f (%.2f x %.2f)\n", tr.x, tr.y, tr.w, tr.h);
+
+    blend_func_t bf = target->_blend_func;
+
+    // render the scaled spans
+    int srcstepx = (sr.w / tr.w) * 65536.0f;
+    int srcstepy = (sr.h / tr.h) * 65536.0f;
+
+    int srcx = sr.x * 65536.0f;
+    int srcy = sr.y * 65536.0f;
+
+    if(flip_h) {
+      srcstepx = -srcstepx;
+      srcx = ((_bounds.w - sr.x) * 65536.0f) + srcstepx;
+    }
+
+    if(flip_v) {
+      srcstepy = -srcstepy;
+      srcy = ((_bounds.h - sr.y) * 65536.0f) + srcstepy;
+    }
+
+    for(int y = tr.y; y < tr.y + tr.h; y++) {
+      if(this->_has_palette) {
+        span_blit_scale(this, target, bf, srcx, srcstepx, srcy, tr.x, y, tr.w, _palette);
+      }else{
+        span_blit_scale(this, target, bf, srcx, srcstepx, srcy, tr.x, y, tr.w);
+      }
+
+      srcy += srcstepy;
+    }
+  }
+
+
+  void image_t::blit(image_t *target, rect_t tr) {
+    blit(target, _bounds, tr);
+  }
+
 
   /*
     renders a vertical span onto the target image using this image as a
@@ -260,135 +355,21 @@ namespace picovector {
           src = (uint8_t *)this->ptr(tx, ty);
         }
 
-        blend_rgba_rgba(dst, src[0], src[1], src[2], src[3]);
+        *dst = target->_blend_func(*dst, src[0], src[1], src[2], src[3]);
       }
     }
   }
 
-  // blit from source rectangle into target rectangle
-  void image_t::blit(image_t *t, rect_t sr, rect_t tr) {
-    if(sr.empty()) return; // source rect empty, nothing to blit
-
-    float scx = tr.w / sr.w; // scale x
-    float scy = tr.h / sr.h; // scale y
-
-    rect_t csr = sr;
-
-    // clip the source rect if needed
-    // rect_t csr = sr;
-    // if(!_bounds.contains(sr)) { // source rect not entirely contained, need to clip
-    //   csr = sr.intersection(_bounds);
-    //   if(csr.empty()) return; // clipped source rect empty, nothing to blit
-
-    //   // clip target rect to new clipped source rect
-    //   tr = {
-    //     tr.x + ((csr.x - sr.x) * scx),
-    //     tr.y + ((csr.y - sr.y) * scy),
-    //     csr.w * scx,
-    //     csr.h * scy
-    //   };
-    // }
-
-    // clip the target rect if needed
-    rect_t ctr = tr;
-    if(!t->_clip.contains(tr)) { // target rect not entirely contained, need to clip
-      ctr = tr.intersection(t->_clip);
-      if(ctr.empty()) return; // clipped source rect empty, nothing to blit
-
-      // clip source rect to new clipped target rect
-      csr = {
-        csr.x + ((ctr.x - tr.x) / scx),
-        csr.y + ((ctr.y - tr.y) / scy),
-        ctr.w / scx,
-        ctr.h / scy
-      };
-    }
-
-    // render the scaled spans
-    float srcstepx = csr.w / ctr.w;
-    float srcstepy = csr.h / ctr.h;
-
-    float srcx = csr.x;
-    float srcy = csr.y;
-
-
-    for(int y = 0; y < ctr.h; y++) {
-      uint8_t *dst = (uint8_t*)t->ptr(ctr.x, ctr.y + y);
-      uint8_t *src = (uint8_t*)this->ptr(0, int(srcy));
-      int32_t x = int(srcx * 65536.0f);
-      int32_t step = int(srcstepx * 65536.0f);
-
-      if(this->_has_palette) {
-        _span_scale_blit_rgba_rgba(dst, src, (uint8_t*)&this->_palette[0], x, step, abs(ctr.w), this->_alpha);
-      }else{
-        _span_scale_blit_rgba_rgba(dst, src, x, step, abs(ctr.w), this->_alpha);
-      }
-
-      srcy += srcstepy;
-    }
-  }
-
-
-  void image_t::blit(image_t *target, rect_t tr) {
-    bool invert_x = tr.w < 0.0f;
-    bool invert_y = tr.h < 0.0f;
-
-    tr.w = abs(tr.w);
-    tr.h = abs(tr.h);
-
-    int yoff = 0;
-    if(tr.y < target->_clip.y) {
-      yoff = target->_clip.y - tr.y;
-    }
-
-    // clip the target rect to the target bounds
-    rect_t ctr = tr.intersection(target->_clip);
-    if(ctr.empty()) {return;}
-
-    // calculate the source step
-    float srcstepx = (invert_x ? -1 : 1) * this->_bounds.w / tr.w;
-    float srcstepy = (invert_y ? -1 : 1) * this->_bounds.h / tr.h;
-
-    // calculate the source offset
-    float srcx = invert_x ? this->_bounds.w - 1 : 0;
-    float srcy = invert_y ? this->_bounds.h - 1 : 0;
-    srcx += (ctr.x - tr.x) * srcstepx;
-    srcy += (yoff) * srcstepy;
-
-    int sy = ctr.y;// min(ctr.y, ctr.y + ctr.h);
-    int ey = ctr.y + ctr.h;//max(ctr.y, ctr.y + ctr.h);
-
-    for(int y = sy; y < ey; y++) {
-      uint8_t *dst = (uint8_t*)target->ptr(ctr.x, y);
-      uint8_t *src = (uint8_t*)this->ptr(0, int(srcy));
-      int32_t x = int(srcx * 65536.0f);
-      int32_t step = int(srcstepx * 65536.0f);
-
-      if(this->_has_palette) {
-        _span_scale_blit_rgba_rgba(dst, src, (uint8_t*)&this->_palette[0], x, step, abs(ctr.w), this->_alpha);
-      }else{
-        _span_scale_blit_rgba_rgba(dst, src, x, step, abs(ctr.w), this->_alpha);
-      }
-
-      srcy += srcstepy;
-    }
-  }
 
   void image_t::draw(shape_t *shape) {
-    // pvr_reset();
-    // for(auto &path : shape->paths) {
-    //   pvr_add_path(path.points.data(), path.points.size(), &shape->transform);
-    // }
-    // pvr_render(this, _bounds, _brush);
-
     render(shape, this, &shape->transform, _brush);
   }
 
   void image_t::rectangle(rect_t r) {
     r = r.intersection(_clip);
+    span_func_t fn = this->_span_func;
     for(int y = r.y; y < r.y + r.h; y++) {
-      this->_span_func(this, this->_brush, r.x, y, r.w);
-      //this->_brush->render_span(this, r.x, y, r.w);
+      fn(this, this->_brush, r.x, y, r.w);
     }
   }
 
@@ -404,11 +385,24 @@ namespace picovector {
       w = _clip.x + _clip.w - x;
     }
     this->_span_func(this, this->_brush, x, y, w);
-    //this->_brush->render_span(this, x, y, w);
+  }
+
+  void image_t::masked_span(int x, int y, int w, uint8_t *mask) {
+    if(y < _clip.y || y >= _clip.y + _clip.h) return;
+    if(x + w < 0 || x >= _clip.x + _clip.w) return;
+
+    if(x < 0) {
+      w += x; x = 0;
+    }
+
+    if(x + w >= _clip.x + _clip.w) {
+      w = _clip.x + _clip.w - x;
+    }
+
+    this->_masked_span_func(this, this->_brush, x, y, w, mask);
   }
 
   void image_t::circle(const vec2_t &p, const int &r) {
-
     rect_t b = rect_t(p.x - r, p.y - r, r * 2, r * 2);
     if(!b.intersects(_clip)) return;
 
@@ -479,7 +473,7 @@ namespace picovector {
     int32_t w1row = orient2d(p3, p1, tl) + bias1;
     int32_t w2row = orient2d(p1, p2, tl) + bias2;
 
-    pixel_func_t pf = this->_pixel_func;
+    span_func_t fn = this->_span_func;
 
     for (int32_t y = 0; y < b.h; y++) {
       int32_t w0 = w0row;
@@ -490,7 +484,7 @@ namespace picovector {
       int yo = b.y + y;
       for (int32_t x = 0; x < b.w; x++) {
         if ((w0 | w1 | w2) >= 0) {
-          pf(this, this->_brush, xo, yo);
+          fn(this, this->_brush, xo, yo, 1);
         }
 
         xo++;
@@ -531,10 +525,10 @@ namespace picovector {
     int sy = y0 < y1 ? 1 : -1;
     int err = dx + dy;
 
-    pixel_func_t pf = this->_pixel_func;
+    span_func_t fn = this->_span_func;
 
     while(true) {
-        pf(this, this->_brush, x0, y0);
+        fn(this, this->_brush, x0, y0, 1);
         if (x0 == x1 && y0 == y1) break;
         int e2 = 2 * err;
         if (e2 >= dy) {err += dy; x0 += sx;}
@@ -549,11 +543,11 @@ namespace picovector {
   void image_t::put(int x, int y) {
     x = max(int(_clip.x), min(x, int(_clip.x + _clip.w - 1)));
     y = max(int(_clip.y), min(y, int(_clip.y + _clip.h - 1)));
-    this->_pixel_func(this, this->_brush, x, y);
+    this->_span_func(this, this->_brush, x, y, 1);
   }
 
   void image_t::put_unsafe(int x, int y) {
-    this->_pixel_func(this, this->_brush, x, y);
+    this->_span_func(this, this->_brush, x, y, 1);
     //this->_brush->render_span(this, x, y, 1);
   }
 
@@ -578,39 +572,4 @@ namespace picovector {
 
 
 
-  void image_t::dither() {
-    uint8_t m[16] = {
-      0, 136, 34, 170,
-      204, 68, 238, 102,
-      51, 187, 17, 153,
-      255, 119, 221, 85
-    };
-
-    uint8_t ca[4] = {64, 191, 191, 255};
-    uint8_t cb[4] = {0, 64, 64, 191};
-
-    int width = _bounds.w;
-    int height = _bounds.h;
-
-    for(int y = 0; y < height; y++) {
-      int y_lookup = (y & 0b11) << 2;
-      for(int x = 0; x < width; x++) {
-        int offset = ((y * width) + x) << 2;
-        uint8_t *p = (uint8_t*)(_buffer) + offset;
-
-        // luminence with green bias (crude but fast)
-        int pixel = (p[0] + (p[1] * 2) + p[2]) >> 2;
-        int scale = m[y_lookup | (x & 0b11)];
-
-        int a = ca[pixel >> 6];
-        int b = cb[pixel >> 6];
-
-        if(pixel > (b + ((a - b) * scale >> 8))) {
-          p[0] = p[1] = p[2] = a;
-        }else{
-          p[0] = p[1] = p[2] = b;
-        }
-      }
-    }
-  }
 }

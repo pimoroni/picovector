@@ -185,6 +185,12 @@ extern "C" {
     dest[1] = MP_OBJ_SENTINEL;
   })
 
+
+  static void rect_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind) {
+    self(self_in, rect_obj_t);
+    mp_printf(print, "rect(%f, %f -> %f x %f)", self->r.x, self->r.y, self->r.w, self->r.h);
+  }
+
   MPY_BIND_LOCALS_DICT(rect,
     MPY_BIND_ROM_PTR(deflate),
     MPY_BIND_ROM_PTR(inflate),
@@ -200,6 +206,7 @@ extern "C" {
       MP_QSTR_rect,
       MP_TYPE_FLAG_NONE,
       make_new, (const void *)rect_new,
+      print, (const void *)rect_print,
       attr, (const void *)rect_attr,
       locals_dict, &rect_locals_dict
   );

@@ -229,6 +229,8 @@ MPY_BIND_VAR(1, dither, {
     return mp_const_none;
   })
 
+// do we want to allow this with premultiplied alpha?
+// would we undo the multiply and return rgba?
 MPY_BIND_VAR(2, get, {
     const image_obj_t *self = (image_obj_t *)MP_OBJ_TO_PTR(args[0]);
     vec2_t point;
@@ -238,7 +240,7 @@ MPY_BIND_VAR(2, get, {
       point = mp_obj_get_vec2_from_xy(&args[1]);
     }
     color_obj_t *color = mp_obj_malloc(color_obj_t, &type_color);
-    color->c = self->image->get(point.x, point.y);
+    color->c->_p = self->image->get(point.x, point.y);
     return MP_OBJ_FROM_PTR(color);
   })
 
@@ -531,7 +533,7 @@ MPY_BIND_LOCALS_DICT(image,
       MPY_BIND_ROM_PTR(line),
       MPY_BIND_ROM_PTR(circle),
       MPY_BIND_ROM_PTR(triangle),
-      MPY_BIND_ROM_PTR(get),
+      MPY_BIND_ROM_PTR(get), // Wont get real pixel value due to premult
       MPY_BIND_ROM_PTR(put),
 
       MPY_BIND_ROM_PTR(blur),

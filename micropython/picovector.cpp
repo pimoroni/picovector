@@ -50,16 +50,16 @@ extern "C" {
     if(n_args == 1 && mp_obj_is_type(args[0], &type_color)) {
       color_obj_t *color = (color_obj_t *)MP_OBJ_TO_PTR(args[0]);
       brush_obj_t *brush = mp_obj_malloc(brush_obj_t, &type_brush);
-      brush->brush = m_new_class(color_brush_t, color->c);
+      brush->brush = m_new_class(color_brush_t, *color->c);
       return brush;
     }
 
-    if(n_args == 1 && mp_obj_is_int(args[0])) {
-      brush_obj_t *brush = mp_obj_malloc(brush_obj_t, &type_brush);
-      brush->brush = m_new_class(color_brush_t, mp_obj_get_uint(args[0]));
-      return brush;
-    }
-  
+    // if(n_args == 1 && mp_obj_is_int(args[0])) {
+    //   brush_obj_t *brush = mp_obj_malloc(brush_obj_t, &type_brush);
+    //   brush->brush = m_new_class(color_brush_t, mp_obj_get_uint(args[0]));
+    //   return brush;
+    // }
+
     /*
     if(n_args >= 3 && mp_obj_is_int(args[0]) && mp_obj_is_int(args[1]) && mp_obj_is_int(args[2])) {
       brush_obj_t *brush = mp_obj_malloc(brush_obj_t, &type_brush);

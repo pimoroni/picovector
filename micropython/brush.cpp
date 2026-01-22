@@ -44,7 +44,7 @@ extern "C" {
       if(pattern_index < 0 || pattern_index > 37) {
         mp_raise_TypeError(MP_ERROR_TEXT("invalid parameter, pattern index must be a number between 0 and 37"));
       }
-      brush->brush = m_new_class(pattern_brush_t, c1->c, c2->c, pattern_index);
+      brush->brush = m_new_class(pattern_brush_t, *c1->c, *c2->c, pattern_index);
     }else if(mp_obj_is_type(args[2], &mp_type_tuple)) { // custom pattern passed as tuple
       size_t len;
       mp_obj_t *items;
@@ -57,7 +57,7 @@ extern "C" {
       for(int i = 0; i < 8; i++) {
         pattern[i] = mp_obj_get_int(items[i]);
       }
-      brush->brush = m_new_class(pattern_brush_t, c1->c, c2->c, pattern);
+      brush->brush = m_new_class(pattern_brush_t, *c1->c, *c2->c, pattern);
     } else {
       mp_raise_msg_varg(&mp_type_TypeError, MP_ERROR_TEXT("invalid parameter, expected brush.pattern(color, color, index | tuple[8], [on=image])"));
     }

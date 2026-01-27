@@ -144,16 +144,6 @@ extern "C" {
     dest[1] = MP_OBJ_SENTINEL;
   }
 
-  static void color_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind) {
-    self(self_in, color_obj_t);
-
-    // if(self->c.a() == 255) {
-    //   mp_printf(print, "color(r=%d, g=%d, b=%d)", self->c.r(), self->c.g(), self->c.b());
-    // }else{
-    //   mp_printf(print, "color(r=%d, g=%d, b=%d, a=%d)", self->c.r(), self->c.g(), self->c.b(), self->c.a());
-    // }
-  }
-
   rgb_color_t _color_black  = rgb_color_t(0x14, 0x1e, 0x28, 0xff);
   rgb_color_t _color_grape  = rgb_color_t(0x44, 0x24, 0x34, 0xff);
   rgb_color_t _color_navy   = rgb_color_t(0x30, 0x34, 0x6d, 0xff);
@@ -236,7 +226,6 @@ extern "C" {
       type_color,
       MP_QSTR_color,
       MP_TYPE_FLAG_NONE,
-      print, (const void *)color_print,
       attr, (const void *)attr,
       locals_dict, &color_locals_dict
   );

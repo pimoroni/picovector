@@ -1,5 +1,8 @@
 add_library(usermod_picovector INTERFACE)
 
+set(PNGDEC_DIR "${CMAKE_CURRENT_LIST_DIR}/lib/pngdec")
+set(JPEGDEC_DIR "${CMAKE_CURRENT_LIST_DIR}/lib/jpegdec")
+
 find_package(PNGDEC CONFIG REQUIRED)
 find_package(JPEGDEC CONFIG REQUIRED)
 
@@ -55,6 +58,12 @@ set_source_files_properties(
 )
 
 if(DEFINED PICO_BOARD)
+  # Build jpegdec for Pico
+  target_compile_definitions(jpegdec PRIVATE PICO_BUILD)
+
+  # Build picovector for Pico
+  target_compile_definitions(usermod_picovector INTERFACE PICO=1)
+
   set_source_files_properties(
     ${SOURCES}
     PROPERTIES COMPILE_OPTIONS

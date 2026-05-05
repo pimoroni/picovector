@@ -40,12 +40,6 @@ list(APPEND SOURCES
   ${CMAKE_CURRENT_LIST_DIR}/micropython/algorithm.cpp
 )
 
-if(NOT DEFINED PICOVECTOR_NOINPUT)
-  list(APPEND SOURCES
-    ${CMAKE_CURRENT_LIST_DIR}/micropython/input.cpp
-  )
-endif()
-
 target_sources(usermod_picovector INTERFACE
   ${SOURCES}
 )

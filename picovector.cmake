@@ -32,7 +32,6 @@ list(APPEND SOURCES
   ${CMAKE_CURRENT_LIST_DIR}/micropython/image_jpeg.cpp
   ${CMAKE_CURRENT_LIST_DIR}/micropython/image_png.cpp
   ${CMAKE_CURRENT_LIST_DIR}/micropython/image.cpp
-  ${CMAKE_CURRENT_LIST_DIR}/micropython/input.cpp
   ${CMAKE_CURRENT_LIST_DIR}/micropython/mat3.cpp
   ${CMAKE_CURRENT_LIST_DIR}/micropython/pixel_font.cpp
   ${CMAKE_CURRENT_LIST_DIR}/micropython/shape.cpp
@@ -40,6 +39,12 @@ list(APPEND SOURCES
   ${CMAKE_CURRENT_LIST_DIR}/micropython/vec2.cpp
   ${CMAKE_CURRENT_LIST_DIR}/micropython/algorithm.cpp
 )
+
+if(NOT DEFINED PICOVECTOR_NOINPUT)
+  list(APPEND SOURCES
+    ${CMAKE_CURRENT_LIST_DIR}/micropython/input.cpp
+  )
+endif()
 
 target_sources(usermod_picovector INTERFACE
   ${SOURCES}

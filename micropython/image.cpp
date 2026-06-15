@@ -494,6 +494,19 @@ MPY_BIND_ATTR(image, {
         }
       };
 
+      case MP_QSTR_fill_rule: {
+        if(action == GET) {
+          dest[0] = mp_obj_new_int(self->image->fill_rule());
+          return;
+        }
+
+        if(action == SET) {
+          self->image->fill_rule((fill_rule_t)mp_obj_get_int(dest[1]));
+          dest[0] = MP_OBJ_NULL;
+          return;
+        }
+      };
+
       case MP_QSTR_alpha: {
         if(action == GET) {
           dest[0] = mp_obj_new_int(self->image->alpha());
@@ -729,6 +742,8 @@ MPY_BIND_LOCALS_DICT(image,
       { MP_ROM_QSTR(MP_QSTR_X4), MP_ROM_INT(antialias_t::X4)},
       { MP_ROM_QSTR(MP_QSTR_X2), MP_ROM_INT(antialias_t::X2)},
       { MP_ROM_QSTR(MP_QSTR_OFF), MP_ROM_INT(antialias_t::OFF)},
+      { MP_ROM_QSTR(MP_QSTR_EVEN_ODD), MP_ROM_INT(fill_rule_t::EVEN_ODD)},
+      { MP_ROM_QSTR(MP_QSTR_NON_ZERO), MP_ROM_INT(fill_rule_t::NON_ZERO)},
 )
 
   MP_DEFINE_CONST_OBJ_TYPE(

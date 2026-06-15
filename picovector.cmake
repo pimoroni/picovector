@@ -23,6 +23,9 @@ list(APPEND SOURCES
   ${CMAKE_CURRENT_LIST_DIR}/brushes/color.cpp
   ${CMAKE_CURRENT_LIST_DIR}/brushes/image.cpp
   ${CMAKE_CURRENT_LIST_DIR}/brushes/gradient.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/brushes/pixelate.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/brushes/blur.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/brushes/brightness.cpp
   ${CMAKE_CURRENT_LIST_DIR}/filters/blur.cpp
   ${CMAKE_CURRENT_LIST_DIR}/filters/dither.cpp
   ${CMAKE_CURRENT_LIST_DIR}/filters/monochrome.cpp

@@ -130,6 +130,44 @@ extern "C" {
   })
 
 
+  MPY_BIND_STATICMETHOD_VAR(1, pixelate, {
+    // pixelate(size): mosaic the shape's area from the target, block size in px
+    int size = mp_obj_get_int(args[0]);
+    if(size < 1) size = 1;
+    brush_obj_t *brush = mp_obj_malloc(brush_obj_t, &type_brush);
+    brush->brush = m_new_class(pixelate_brush_t, size);
+    return MP_OBJ_FROM_PTR(brush);
+  })
+
+
+  MPY_BIND_STATICMETHOD_VAR(1, blur, {
+    // blur(radius): box-blur the shape's area from the target
+    int radius = mp_obj_get_int(args[0]);
+    if(radius < 1) radius = 1;
+    brush_obj_t *brush = mp_obj_malloc(brush_obj_t, &type_brush);
+    brush->brush = m_new_class(blur_brush_t, radius);
+    return MP_OBJ_FROM_PTR(brush);
+  })
+
+
+  MPY_BIND_STATICMETHOD_VAR(1, lighten, {
+    // lighten(amount): add `amount` (0..255) to each channel of the backdrop
+    int amount = mp_obj_get_int(args[0]);
+    brush_obj_t *brush = mp_obj_malloc(brush_obj_t, &type_brush);
+    brush->brush = m_new_class(brightness_brush_t, amount);
+    return MP_OBJ_FROM_PTR(brush);
+  })
+
+
+  MPY_BIND_STATICMETHOD_VAR(1, darken, {
+    // darken(amount): subtract `amount` (0..255) from each channel of the backdrop
+    int amount = mp_obj_get_int(args[0]);
+    brush_obj_t *brush = mp_obj_malloc(brush_obj_t, &type_brush);
+    brush->brush = m_new_class(brightness_brush_t, -amount);
+    return MP_OBJ_FROM_PTR(brush);
+  })
+
+
   MPY_BIND_LOCALS_DICT(brush,
     // MPY_BIND_ROM_PTR_DEL(brush),
     // MPY_BIND_ROM_PTR_STATIC(xor),
@@ -139,6 +177,10 @@ extern "C" {
     MPY_BIND_ROM_PTR_STATIC(pattern),
     MPY_BIND_ROM_PTR_STATIC(image),
     MPY_BIND_ROM_PTR_STATIC(gradient),
+    MPY_BIND_ROM_PTR_STATIC(pixelate),
+    MPY_BIND_ROM_PTR_STATIC(blur),
+    MPY_BIND_ROM_PTR_STATIC(lighten),
+    MPY_BIND_ROM_PTR_STATIC(darken),
   )
 
 

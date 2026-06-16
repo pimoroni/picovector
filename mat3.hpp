@@ -5,6 +5,10 @@
 
 namespace picovector {
 
+  // Single-precision pi. Defined here (the lowest-level header) so every module
+  // can use it instead of the double-precision M_PI from <cmath>.
+  constexpr float PV_PI = 3.14159265358979f;
+
   class mat3_t {
   public:
     float v00, v10, v20, v01, v11, v21, v02, v12, v22;
@@ -15,7 +19,7 @@ namespace picovector {
     }
 
     mat3_t& rotate(float a) {
-      return this->rotate_radians(a * M_PI / 180.0f);
+      return this->rotate_radians(a * PV_PI / 180.0f);
     }
 
     mat3_t& rotate_radians(float a) {

@@ -67,7 +67,7 @@ namespace picovector {
     float C = t * OKLCH_MAX_CHROMA;
 
     // Wrap hue and convert to radians
-    float hs = (float)((h * 360) / 255) * (float)M_PI / 180.0f;
+    float hs = (float)((h * 360) / 255) * PV_PI / 180.0f;
 
     // OKLCH → OKLab
     float a_ = C * cosf(hs);
@@ -127,7 +127,7 @@ inline uint32_t oklch(int l_in, int c_in, int h_in, uint8_t a_in = 255) {
     if (h_in < 0) h_in += 360;
   }
   h_in %= 360;
-  float h = (float)h_in * (float)M_PI / 180.0f;
+  float h = (float)h_in * PV_PI / 180.0f;
 
   // OKLCH → OKLab
   float a = C * cosf(h);

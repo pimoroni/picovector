@@ -2,7 +2,7 @@
 #include <cfloat>
 
 // Set to 1 to enable rasteriser phase profiling (prints phase timings to the REPL).
-#define PV_PROFILE 1
+#define PV_PROFILE 0
 
 // Set to 1 to use the second core (core1) for rasterisation. Always available on
 // Badgeware; other projects that need core1 for something else can set this to 0.

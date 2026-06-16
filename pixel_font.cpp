@@ -54,7 +54,8 @@ namespace picovector {
         b.x = min(caret.x, b.x);
         b.w = max(caret.x, b.w);
       }
-      text++;
+
+      text += utf8_seq_len(*text);
     }
     return b;
   }

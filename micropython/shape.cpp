@@ -197,6 +197,15 @@ extern "C" {
     return MP_OBJ_FROM_PTR(self);
   })
 
+  MPY_BIND_VAR(1, bounds, {
+    // bounds(): the shape's device-space bounding box (its local geometry bbox
+    // run through the current `transform`), returned as a rect.
+    const shape_obj_t *self = (shape_obj_t *)MP_OBJ_TO_PTR(args[0]);
+    rect_obj_t *result = mp_obj_malloc(rect_obj_t, &type_rect);
+    result->r = self->shape->bounds();
+    return MP_OBJ_FROM_PTR(result);
+  })
+
   static void shape_attr(mp_obj_t self_in, qstr attr, mp_obj_t *dest) {
     self(self_in, shape_obj_t);
 
@@ -245,6 +254,7 @@ extern "C" {
     { MP_ROM_QSTR(MP_QSTR_CAP_ROUND), MP_ROM_INT(CAP_ROUND) },
     { MP_ROM_QSTR(MP_QSTR_CAP_SQUARE), MP_ROM_INT(CAP_SQUARE) },
     MPY_BIND_ROM_PTR(stroke),
+    MPY_BIND_ROM_PTR(bounds),
     MPY_BIND_ROM_PTR_STATIC(custom),
     MPY_BIND_ROM_PTR_STATIC(regular_polygon),
     MPY_BIND_ROM_PTR_STATIC(squircle),

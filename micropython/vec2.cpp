@@ -80,6 +80,71 @@ extern "C" {
     return MP_OBJ_FROM_PTR(result);
   }
 
+  // --- common vector operations -------------------------------------------
+  // scalar results
+  MPY_BIND_VAR(1, length, {
+    vec2_obj_t *self = (vec2_obj_t *)MP_OBJ_TO_PTR(args[0]);
+    return mp_obj_new_float(self->v.length());
+  })
+  MPY_BIND_VAR(1, length_squared, {
+    vec2_obj_t *self = (vec2_obj_t *)MP_OBJ_TO_PTR(args[0]);
+    return mp_obj_new_float(self->v.length_squared());
+  })
+  MPY_BIND_VAR(2, dot, {
+    vec2_obj_t *self = (vec2_obj_t *)MP_OBJ_TO_PTR(args[0]);
+    return mp_obj_new_float(self->v.dot(mp_obj_get_vec2(args[1])));
+  })
+  MPY_BIND_VAR(2, cross, {
+    vec2_obj_t *self = (vec2_obj_t *)MP_OBJ_TO_PTR(args[0]);
+    return mp_obj_new_float(self->v.cross(mp_obj_get_vec2(args[1])));
+  })
+  MPY_BIND_VAR(2, distance, {
+    vec2_obj_t *self = (vec2_obj_t *)MP_OBJ_TO_PTR(args[0]);
+    return mp_obj_new_float(self->v.distance(mp_obj_get_vec2(args[1])));
+  })
+  MPY_BIND_VAR(2, distance_squared, {
+    vec2_obj_t *self = (vec2_obj_t *)MP_OBJ_TO_PTR(args[0]);
+    return mp_obj_new_float(self->v.distance_squared(mp_obj_get_vec2(args[1])));
+  })
+  MPY_BIND_VAR(1, angle, {
+    vec2_obj_t *self = (vec2_obj_t *)MP_OBJ_TO_PTR(args[0]);
+    return mp_obj_new_float(self->v.angle());
+  })
+  MPY_BIND_VAR(2, angle_to, {
+    vec2_obj_t *self = (vec2_obj_t *)MP_OBJ_TO_PTR(args[0]);
+    return mp_obj_new_float(self->v.angle_to(mp_obj_get_vec2(args[1])));
+  })
+
+  // vector results (return a new vec2; the original is unchanged)
+  MPY_BIND_VAR(1, normalized, {
+    vec2_obj_t *self = (vec2_obj_t *)MP_OBJ_TO_PTR(args[0]);
+    return make_vec2(self->v.normalized());
+  })
+  MPY_BIND_VAR(1, perpendicular, {
+    vec2_obj_t *self = (vec2_obj_t *)MP_OBJ_TO_PTR(args[0]);
+    return make_vec2(self->v.perpendicular());
+  })
+  MPY_BIND_VAR(1, abs, {
+    vec2_obj_t *self = (vec2_obj_t *)MP_OBJ_TO_PTR(args[0]);
+    return make_vec2(self->v.abs());
+  })
+  MPY_BIND_VAR(2, rotated, {
+    vec2_obj_t *self = (vec2_obj_t *)MP_OBJ_TO_PTR(args[0]);
+    return make_vec2(self->v.rotated(mp_obj_get_float(args[1])));
+  })
+  MPY_BIND_VAR(3, lerp, {
+    vec2_obj_t *self = (vec2_obj_t *)MP_OBJ_TO_PTR(args[0]);
+    return make_vec2(self->v.lerp(mp_obj_get_vec2(args[1]), mp_obj_get_float(args[2])));
+  })
+  MPY_BIND_VAR(2, reflect, {
+    vec2_obj_t *self = (vec2_obj_t *)MP_OBJ_TO_PTR(args[0]);
+    return make_vec2(self->v.reflect(mp_obj_get_vec2(args[1])));
+  })
+  MPY_BIND_VAR(2, clamp_length, {
+    vec2_obj_t *self = (vec2_obj_t *)MP_OBJ_TO_PTR(args[0]);
+    return make_vec2(self->v.clamp_length(mp_obj_get_float(args[1])));
+  })
+
   static mp_obj_t vec2_binary_op(mp_binary_op_t op, mp_obj_t lhs_in, mp_obj_t rhs_in) {
     vec2_obj_t *lhs = (vec2_obj_t*)MP_OBJ_TO_PTR(lhs_in);
 
@@ -151,6 +216,21 @@ extern "C" {
 
   MPY_BIND_LOCALS_DICT(vec2,
     MPY_BIND_ROM_PTR(transform),
+    MPY_BIND_ROM_PTR(length),
+    MPY_BIND_ROM_PTR(length_squared),
+    MPY_BIND_ROM_PTR(dot),
+    MPY_BIND_ROM_PTR(cross),
+    MPY_BIND_ROM_PTR(distance),
+    MPY_BIND_ROM_PTR(distance_squared),
+    MPY_BIND_ROM_PTR(angle),
+    MPY_BIND_ROM_PTR(angle_to),
+    MPY_BIND_ROM_PTR(normalized),
+    MPY_BIND_ROM_PTR(perpendicular),
+    MPY_BIND_ROM_PTR(abs),
+    MPY_BIND_ROM_PTR(rotated),
+    MPY_BIND_ROM_PTR(lerp),
+    MPY_BIND_ROM_PTR(reflect),
+    MPY_BIND_ROM_PTR(clamp_length),
   )
 
   MP_DEFINE_CONST_OBJ_TYPE(

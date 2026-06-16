@@ -334,7 +334,7 @@ namespace picovector {
   }
 
   void render_flush(image_t *target, brush_t *brush) {
-    if(edge_count == 0) return;
+    if(edge_count == 0 || brush == nullptr) return;
 
     rect_t clip = target->clip();
     rect_t sb = rect_t(floorf(acc_minx), floorf(acc_miny),
@@ -345,8 +345,8 @@ namespace picovector {
 
     bool aa       = (target->antialias() != OFF);
     bool even_odd = (target->fill_rule() == EVEN_ODD);
-    span_func_t        sfn = target->_span_func;
-    masked_span_func_t mfn = target->_masked_span_func;
+    span_func_t        sfn = brush->span_func();        // authoritative brush (see picovector.cpp)
+    masked_span_func_t mfn = brush->masked_span_func();
 
 #if !PV_DUAL_CORE
     memset(accB, 0, ACC_CELLS * sizeof(acc_t)); // single core never writes accB
@@ -416,6 +416,8 @@ namespace picovector {
   void render(shape_t *shape, image_t *target, mat3_t *transform, brush_t *brush) {
     if(shape->paths.empty()) return;
     if(shape->bounds().round().intersection(target->clip()).empty()) return; // pre-transform cull
+
+    if(brush) brush->set_render_transform(transform); // gradients track the shape
 
     render_begin();
     for(auto &path : shape->paths)

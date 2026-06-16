@@ -62,4 +62,11 @@ namespace picovector {
     return color_brush_masked_span_func;
   }
 
+  // A colour brush fills with one constant word. Force the alpha byte to 255 so
+  // the cleared background is opaque (premultiplied layout is 0xAABBGGRR).
+  bool color_brush_t::solid_fill(uint32_t &out) {
+    out = c._p | 0xff000000;
+    return true;
+  }
+
 }

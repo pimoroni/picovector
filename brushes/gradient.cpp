@@ -75,10 +75,21 @@ namespace picovector {
                                      mat3_t *transform)
     : type(type), p1(x1, y1), p2(x2, y2) {
     if(transform) {
-      inverse_transform = *transform;
-      inverse_transform.inverse();
+      base_inverse = *transform;
+      base_inverse.inverse();
     }
+    inverse_transform = base_inverse; // no shape transform applied yet
     build_lut(lut, positions, premul_colors, stop_count);
+  }
+
+  // Fold the shape's transform into the gradient so it moves/scales/rotates with
+  // the shape: device->gradient = (brush's own inverse) * inverse(shape transform).
+  void gradient_brush_t::set_render_transform(mat3_t *transform) {
+    if(!transform) { inverse_transform = base_inverse; return; }
+    mat3_t inv = *transform;
+    inv.inverse();
+    inverse_transform = base_inverse;
+    inverse_transform.multiply(inv); // base_inverse * inverse(shape)
   }
 
   // --- linear ---------------------------------------------------------------

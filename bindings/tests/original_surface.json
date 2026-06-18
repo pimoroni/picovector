@@ -1,0 +1,225 @@
+{
+  "vec2": {
+    "members": [
+      "abs",
+      "angle",
+      "angle_to",
+      "clamp_length",
+      "cross",
+      "distance",
+      "distance_squared",
+      "dot",
+      "length",
+      "length_squared",
+      "lerp",
+      "normalized",
+      "perpendicular",
+      "reflect",
+      "rotated",
+      "transform",
+      "x",
+      "y"
+    ],
+    "features": [
+      "attr",
+      "binary_op",
+      "make_new",
+      "print"
+    ]
+  },
+  "rect": {
+    "members": [
+      "b",
+      "contains",
+      "deflate",
+      "empty",
+      "h",
+      "inflate",
+      "intersection",
+      "intersects",
+      "l",
+      "offset",
+      "r",
+      "t",
+      "w",
+      "x",
+      "y"
+    ],
+    "features": [
+      "attr",
+      "make_new",
+      "print"
+    ]
+  },
+  "mat3": {
+    "members": [
+      "inverse",
+      "multiply",
+      "rotate",
+      "rotate_radians",
+      "scale",
+      "translate"
+    ],
+    "features": [
+      "binary_op",
+      "make_new"
+    ]
+  },
+  "color": {
+    "members": [
+      "black",
+      "blue",
+      "brown",
+      "cyan",
+      "dark_grey",
+      "grape",
+      "green",
+      "grey",
+      "hsv",
+      "latte",
+      "light_grey",
+      "lime",
+      "navy",
+      "oklch",
+      "orange",
+      "p",
+      "red",
+      "rgb",
+      "smoke",
+      "taupe",
+      "transparent",
+      "white",
+      "yellow"
+    ],
+    "features": [
+      "attr"
+    ]
+  },
+  "brush": {
+    "members": [
+      "LINEAR",
+      "RADIAL",
+      "blur",
+      "darken",
+      "gradient",
+      "image",
+      "lighten",
+      "pattern",
+      "pixelate"
+    ],
+    "features": []
+  },
+  "shape": {
+    "members": [
+      "ALIGN_CENTER",
+      "ALIGN_INNER",
+      "ALIGN_OUTER",
+      "CAP_BUTT",
+      "CAP_ROUND",
+      "CAP_SQUARE",
+      "JOIN_BEVEL",
+      "JOIN_MITER",
+      "JOIN_ROUND",
+      "PATH_CLOSED",
+      "PATH_OPEN",
+      "__del__",
+      "arc",
+      "bounds",
+      "circle",
+      "custom",
+      "ellipse",
+      "line",
+      "pie",
+      "rectangle",
+      "regular_polygon",
+      "rounded_rectangle",
+      "squircle",
+      "star",
+      "stroke",
+      "transform"
+    ],
+    "features": [
+      "attr"
+    ]
+  },
+  "image": {
+    "members": [
+      "BICUBIC",
+      "BILINEAR",
+      "EVEN_ODD",
+      "NEAREST",
+      "NON_ZERO",
+      "OFF",
+      "X2",
+      "X4",
+      "__del__",
+      "alpha",
+      "antialias",
+      "batch",
+      "blit",
+      "blit_hspan",
+      "blit_vspan",
+      "blur",
+      "circle",
+      "clear",
+      "clip",
+      "dither",
+      "fill_rule",
+      "font",
+      "get",
+      "has_palette",
+      "height",
+      "line",
+      "load",
+      "load_into",
+      "measure_text",
+      "monochrome",
+      "onebit",
+      "pen",
+      "put",
+      "raw",
+      "rectangle",
+      "shape",
+      "shapes",
+      "text",
+      "triangle",
+      "width",
+      "window"
+    ],
+    "features": [
+      "attr",
+      "buffer",
+      "make_new",
+      "print"
+    ]
+  },
+  "font": {
+    "members": [
+      "__del__",
+      "load"
+    ],
+    "features": [
+      "print"
+    ]
+  },
+  "pixel_font": {
+    "members": [
+      "__del__",
+      "height",
+      "load",
+      "name"
+    ],
+    "features": [
+      "attr",
+      "print"
+    ]
+  },
+  "algorithm": {
+    "members": [
+      "clip_line",
+      "dda",
+      "raycast"
+    ],
+    "features": []
+  }
+}

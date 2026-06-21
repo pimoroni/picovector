@@ -1,6 +1,6 @@
 #ifndef NO_QSTR
 #include <algorithm>
-#include "mp_tracked_allocator.hpp"
+#include "mp_allocator.hpp"
 
 #include "picovector.hpp"
 #include "primitive.hpp"

@@ -51,10 +51,12 @@ extern "C" {
     uint32_t bpr = floor((glyph_width + 7) / 8);
     uint32_t glyph_data_size = bpr * glyph_height;
 
+    // glyph table (codepoint+width) and raw pixel data are pointer-free, so
+    // their buffers need no GC scanning.
     result->glyph_buffer_size = sizeof(pixel_font_glyph_t) * glyph_count;
-    result->glyph_buffer = (uint8_t *)m_malloc(result->glyph_buffer_size);
+    result->glyph_buffer = (uint8_t *)m_malloc_no_scan(result->glyph_buffer_size);
     result->glyph_data_buffer_size = glyph_data_size * glyph_count;
-    result->glyph_data_buffer = (uint8_t *)m_malloc(result->glyph_data_buffer_size);
+    result->glyph_data_buffer = (uint8_t *)m_malloc_no_scan(result->glyph_data_buffer_size);
     if (!result->glyph_buffer || !result->glyph_data_buffer) {
       mp_raise_msg_varg(&mp_type_OSError,
                         MP_ERROR_TEXT("couldn't allocate buffer for font data"));

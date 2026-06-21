@@ -49,7 +49,10 @@ extern "C" {
     size_t point_buffer_size = sizeof(glyph_path_point_t) * point_count;
 
     result->buffer_size = glyph_buffer_size + path_buffer_size + point_buffer_size;
-    result->buffer = (uint8_t *)m_malloc(result->buffer_size);
+    // one self-contained block: its internal glyph->paths / path->points
+    // pointers stay within itself, and the whole block is kept alive by the
+    // scanned font_obj, so it needs no GC scanning.
+    result->buffer = (uint8_t *)m_malloc_no_scan(result->buffer_size);
     if (!result->buffer) {
       mp_raise_msg_varg(&mp_type_OSError,
                         MP_ERROR_TEXT("couldn't allocate buffer for font data"));

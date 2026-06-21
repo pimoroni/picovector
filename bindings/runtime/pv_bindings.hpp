@@ -131,17 +131,19 @@ namespace pv {
     return MP_OBJ_FROM_PTR(o);
   }
 
-  static inline mp_obj_t box_color(color_t *c) {
+  // Box a colour by value. The argument is typically a freshly-constructed
+  // subclass temporary (rgb_color_t/hsv_color_t/oklch_color_t); it is sliced
+  // into the obj's embedded base color_t, which carries the premultiplied `_p`
+  // everything downstream actually reads. No separate (leaky) `new`.
+  static inline mp_obj_t box_color(const color_t &c) {
     color_obj_t *o = mp_obj_malloc(color_obj_t, &type_color);
-    o->c = c;
+    new (&o->c) color_t(c);   // placement-construct the embedded value (slice)
     return MP_OBJ_FROM_PTR(o);
   }
 
   // box a colour read back from a framebuffer word (image.get)
   static inline mp_obj_t box_color_packed(uint32_t c) {
-    color_obj_t *o = mp_obj_malloc(color_obj_t, &type_color);
-    o->c = new rgb_color_t(_r(c), _g(c), _b(c), _a(c));
-    return MP_OBJ_FROM_PTR(o);
+    return box_color(rgb_color_t(_r(c), _g(c), _b(c), _a(c)));
   }
 
   static inline mp_obj_t box_brush(brush_t *b) {

@@ -154,7 +154,7 @@ def _emit_stops(o, p, indent):
     o("if (_sl != 2 || !mp_obj_is_type(_stop[1], &type_color)) mp_raise_msg_varg("
       '&mp_type_TypeError, MP_ERROR_TEXT("each stop must be (position, color)"));', indent + 1)
     o(f"{n}_positions[_s] = mp_obj_get_float(_stop[0]);", indent + 1)
-    o(f"{n}_colors[_s] = ((color_obj_t *)MP_OBJ_TO_PTR(_stop[1]))->c->_p;", indent + 1)
+    o(f"{n}_colors[_s] = ((color_obj_t *)MP_OBJ_TO_PTR(_stop[1]))->c._p;", indent + 1)
     o("}", indent)
 
 
@@ -481,20 +481,26 @@ def emit_buffer(o, t):
 def emit_palette(o, t):
     def rgba(v):
         return ", ".join(f"0x{c:02x}" for c in v)
-    for pc in t.palette:
-        var = f"_color_{pc.name}"
-        if pc.tufty:
-            o("#ifdef TUFTY")
-            o(f"static rgb_color_t {var}({rgba(pc.tufty)});")
-            o("#else")
-            o(f"static rgb_color_t {var}({rgba(pc.rgba)});")
-            o("#endif")
-        else:
-            o(f"static rgb_color_t {var}({rgba(pc.rgba)});")
+    # Build each palette entry by value (the colour is embedded in color_obj_t).
+    # _pv_pal slices an rgb_color_t into the obj's base color_t (carrying _p).
+    # These are dynamically initialised at startup (the rgb_color_t ctor isn't
+    # constexpr), same as the original palette globals were.
+    o("static color_obj_t _pv_pal(const color_t &c) {")
+    o("color_obj_t o{};", 1)
+    o("o.base.type = &type_color;", 1)
+    o("o.c = c;", 1)
+    o("return o;", 1)
+    o("}")
     o("")
     for pc in t.palette:
-        o(f"static const color_obj_t color_{pc.name}_obj = "
-          f"{{.base = {{.type = &type_color}}, .c = &_color_{pc.name}}};")
+        if pc.tufty:
+            o("#ifdef TUFTY")
+            o(f"static const color_obj_t color_{pc.name}_obj = _pv_pal(rgb_color_t({rgba(pc.tufty)}));")
+            o("#else")
+            o(f"static const color_obj_t color_{pc.name}_obj = _pv_pal(rgb_color_t({rgba(pc.rgba)}));")
+            o("#endif")
+        else:
+            o(f"static const color_obj_t color_{pc.name}_obj = _pv_pal(rgb_color_t({rgba(pc.rgba)}));")
     o("")
 
 

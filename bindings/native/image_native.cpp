@@ -157,7 +157,7 @@ extern "C" {
             b = ((brush_obj_t *)MP_OBJ_TO_PTR(t[1]))->brush;
           } else if (mp_obj_is_type(t[1], &type_color)) {
             color_obj_t *col = (color_obj_t *)MP_OBJ_TO_PTR(t[1]);
-            b = new (cbuf) color_brush_t(*col->c);
+            b = new (cbuf) color_brush_t(col->c);
           } else {
             mp_raise_TypeError(MP_ERROR_TEXT("entry brush must be a brush or color"));
           }

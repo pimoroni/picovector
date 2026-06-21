@@ -31,9 +31,9 @@ CHECKS = {
         "pv::box_shape(paths_shape)",
     ],
     "color": [
-        # optional alpha defaults to 255; new-constructed colour is boxed
+        # optional alpha defaults to 255; colour boxed by value (no leaky `new`)
         "int a = 255;",
-        "pv::box_color(new rgb_color_t(r, g, b, a))",
+        "pv::box_color(rgb_color_t(r, g, b, a))",
     ],
     "image": [
         # blit overloads: n_args checked first, then arg types; receiver is `src`

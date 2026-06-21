@@ -31,7 +31,7 @@ runtime/
   pv_bindings.hpp lean inline helpers that replace the MPY_BIND_* macros
   pv_support.cpp  shared glue (attr action, file readers, vec2/rect/brush helpers)
   pv_objs.hpp     picovector MicroPython obj structs + type_* externs
-  mp_tracked_allocator.hpp  GC-tracked allocator used by the library + bindings
+  mp_allocator.hpp  std::vector allocator: scan vs no-scan by element type
 native/*.cpp     hand-written bodies for the few irreducibly-procedural members,
                  plus the companion PNG/JPEG decoders (image_png/jpeg.cpp)
 generated/       emitted output: <type>.cpp, types.h, picovector_bindings.c
@@ -83,9 +83,29 @@ Things convention can't express, declared with `@cpp`/pseudo-types:
   `Range(1, None, clamp=True)` (clamp).
 * **return semantics** → `-> Self` (return self for chaining) vs `-> vec2`
   (return a new boxed object); `@cpp(emit="mutate")` for in-place writes.
-* **special callees** → `@cpp(call="rgb_color_t", emit="new")`,
-  `emit="mnew"` (GC `m_new_class`), `emit="free"`, `recv="src"` (call on an
-  argument, e.g. `image.blit`).
+* **special callees** → `@cpp(call="rgb_color_t", emit="free")` (a plain
+  temporary, e.g. boxed by value), `emit="mnew"` (GC `m_new_class`),
+  `emit="new"` (raw `new` — **not** GC-tracked, avoid for owned heap),
+  `recv="src"` (call on an argument, e.g. `image.blit`).
+
+## Memory & GC
+
+Boxed values are kept lean and GC-safe:
+
+* **colour is stored by value** in `color_obj_t` (only its premultiplied `_p` is
+  used downstream), so `color.rgb(...)` is a single GC-managed allocation — no
+  pointer indirection and no `new`-allocated `color_t` leaking off the GC heap.
+* The `std::vector` allocator (`runtime/mp_allocator.hpp`) routes backing
+  buffers by element type via the **fail-safe** `mp_no_scan<T>` trait: provably
+  pointer-free elements skip GC scanning (`m_malloc_no_scan`), everything else is
+  scanned (`m_malloc`). "Provably pointer-free" is `is_arithmetic || is_enum`
+  (so `uint32_t` palettes/LUTs are automatic), plus audited POD aggregates that
+  opt in with `MP_POINTER_FREE(T)` (currently `vec2_t`). It deliberately does
+  **not** use `std::is_trivially_copyable`, which is true for raw pointers and
+  pointer-bearing PODs and would route them to no-scan — letting the GC free the
+  pointee. So `vector<path_t>` (which embeds a nested `std::vector` pointer)
+  stays scanned, and the GC can't free a shape's point buffers out from under
+  it. Pointer-free font/pixel-font glyph buffers also use `m_malloc_no_scan`.
 
 ## Generate
 

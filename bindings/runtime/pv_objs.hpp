@@ -52,7 +52,12 @@ extern "C" {
 
   typedef struct _color_obj_t {
     mp_obj_base_t base;
-    color_t *c;
+    // The colour is stored *by value* (only its premultiplied `_p` is used
+    // downstream; the rgb/hsv/oklch subclass is just a construction strategy).
+    // Embedding avoids a second heap allocation + pointer indirection, and —
+    // crucially — avoids leaking a `new`-allocated color_t that lived off the
+    // MicroPython GC heap.
+    color_t c;
   } color_obj_t;
 
   typedef struct _pixel_font_obj_t {

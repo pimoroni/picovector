@@ -30,28 +30,28 @@ PALETTE = [
 ]
 
 
-@api("color_t", field="c", ptr=True, box="pv::box_color({0})",
-     arg_read="(*((color_obj_t *)MP_OBJ_TO_PTR({0}))->c)", arg_type="color_t",
+@api("color_t", field="c", box="pv::box_color({0})",
+     arg_read="(((color_obj_t *)MP_OBJ_TO_PTR({0}))->c)", arg_type="color_t",
      includes=("blend.hpp",), palette=PALETTE)
 class color:
     """An RGBA / HSV / OKLCH colour with a built-in palette."""
 
     @staticmethod
-    @cpp(call="rgb_color_t", emit="new")
+    @cpp(call="rgb_color_t", emit="free")
     def rgb(r: int, g: int, b: int, a: int = 255) -> color:
         "Create a colour from RGB values (0–255 each). Optional alpha (0–255)."
 
     @staticmethod
-    @cpp(call="hsv_color_t", emit="new", args="(int)fmod((float)h,360.0f) s v a")
+    @cpp(call="hsv_color_t", emit="free", args="(int)fmod((float)h,360.0f) s v a")
     def hsv(h: int, s: int, v: int, a: int = 255) -> color:
         "Create a colour from HSV components."
 
     @staticmethod
-    @cpp(call="oklch_color_t", emit="new")
+    @cpp(call="oklch_color_t", emit="free")
     def oklch(l: int, c: int, h: int, a: int = 255) -> color:
         "Create a colour from OKLCH components."
 
     @property
-    @cpp(get="self->c->_p")
+    @cpp(get="self->c._p")
     def p(self) -> int:
         "Premultiplied packed RGBA word (read-only)."

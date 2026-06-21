@@ -8,16 +8,16 @@ extern "C" {
 mp_obj_t mpy_brush_pattern(size_t n_args, const mp_obj_t *args) {
   if (n_args == 3 && mp_obj_is_type(args[0], &type_color) && mp_obj_is_type(args[1], &type_color) && mp_obj_is_int(args[2])) {
     size_t _i = 0;
-    color_t c1 = (*((color_obj_t *)MP_OBJ_TO_PTR(args[_i]))->c); _i++;
-    color_t c2 = (*((color_obj_t *)MP_OBJ_TO_PTR(args[_i]))->c); _i++;
+    color_t c1 = (((color_obj_t *)MP_OBJ_TO_PTR(args[_i]))->c); _i++;
+    color_t c2 = (((color_obj_t *)MP_OBJ_TO_PTR(args[_i]))->c); _i++;
     int index = (int)mp_obj_get_float(args[_i]); _i++;
     if (index < 0 || index > 37) mp_raise_msg_varg(&mp_type_ValueError, MP_ERROR_TEXT("index out of range"));
     return pv::box_brush(m_new_class(pattern_brush_t, c1, c2, index));
   }
   if (n_args == 3 && mp_obj_is_type(args[0], &type_color) && mp_obj_is_type(args[1], &type_color) && mp_obj_is_type(args[2], &mp_type_tuple)) {
     size_t _i = 0;
-    color_t c1 = (*((color_obj_t *)MP_OBJ_TO_PTR(args[_i]))->c); _i++;
-    color_t c2 = (*((color_obj_t *)MP_OBJ_TO_PTR(args[_i]))->c); _i++;
+    color_t c1 = (((color_obj_t *)MP_OBJ_TO_PTR(args[_i]))->c); _i++;
+    color_t c2 = (((color_obj_t *)MP_OBJ_TO_PTR(args[_i]))->c); _i++;
     size_t pattern_len; mp_obj_t *pattern_items;
     mp_obj_get_array(args[_i], &pattern_len, &pattern_items); _i++;
     if (pattern_len != 8) mp_raise_msg_varg(&mp_type_TypeError, MP_ERROR_TEXT("custom pattern must be a tuple with 8 elements"));
@@ -60,7 +60,7 @@ mp_obj_t mpy_brush_gradient(size_t n_args, const mp_obj_t *args) {
     size_t _sl; mp_obj_t *_stop; mp_obj_get_array(stops_items[_s], &_sl, &_stop);
     if (_sl != 2 || !mp_obj_is_type(_stop[1], &type_color)) mp_raise_msg_varg(&mp_type_TypeError, MP_ERROR_TEXT("each stop must be (position, color)"));
     stops_positions[_s] = mp_obj_get_float(_stop[0]);
-    stops_colors[_s] = ((color_obj_t *)MP_OBJ_TO_PTR(_stop[1]))->c->_p;
+    stops_colors[_s] = ((color_obj_t *)MP_OBJ_TO_PTR(_stop[1]))->c._p;
   }
   mat3_t * transform = nullptr;
   if (n_args > _i && mp_obj_is_type(args[_i], &type_mat3)) { transform = &((mat3_obj_t *)MP_OBJ_TO_PTR(args[_i]))->m; _i++; }

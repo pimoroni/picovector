@@ -197,6 +197,40 @@ extern "C" {
     return MP_OBJ_FROM_PTR(self);
   })
 
+  MPY_BIND_VAR(1, grow, {
+    // grow(amount, join=JOIN_MITER, miter_limit=4.0): outset every path by
+    // `amount` along its normals; convex corners use `join`.
+    const shape_obj_t *self = (shape_obj_t *)MP_OBJ_TO_PTR(args[0]);
+    float amount = mp_obj_get_float(args[1]);
+    uint32_t join = JOIN_MITER;
+    if(n_args >= 3) {
+      join = (uint32_t)mp_obj_get_int(args[2]);
+    }
+    float miter_limit = 4.0f;
+    if(n_args >= 4) {
+      miter_limit = mp_obj_get_float(args[3]);
+    }
+    self->shape->grow(amount, join, miter_limit);
+    return MP_OBJ_FROM_PTR(self);
+  })
+
+  MPY_BIND_VAR(1, shrink, {
+    // shrink(amount, join=JOIN_MITER, miter_limit=4.0): inset every path by
+    // `amount` along its normals; convex corners use `join`.
+    const shape_obj_t *self = (shape_obj_t *)MP_OBJ_TO_PTR(args[0]);
+    float amount = mp_obj_get_float(args[1]);
+    uint32_t join = JOIN_MITER;
+    if(n_args >= 3) {
+      join = (uint32_t)mp_obj_get_int(args[2]);
+    }
+    float miter_limit = 4.0f;
+    if(n_args >= 4) {
+      miter_limit = mp_obj_get_float(args[3]);
+    }
+    self->shape->shrink(amount, join, miter_limit);
+    return MP_OBJ_FROM_PTR(self);
+  })
+
   MPY_BIND_VAR(1, bounds, {
     // bounds(): the shape's device-space bounding box (its local geometry bbox
     // run through the current `transform`), returned as a rect.
@@ -254,6 +288,8 @@ extern "C" {
     { MP_ROM_QSTR(MP_QSTR_CAP_ROUND), MP_ROM_INT(CAP_ROUND) },
     { MP_ROM_QSTR(MP_QSTR_CAP_SQUARE), MP_ROM_INT(CAP_SQUARE) },
     MPY_BIND_ROM_PTR(stroke),
+    MPY_BIND_ROM_PTR(grow),
+    MPY_BIND_ROM_PTR(shrink),
     MPY_BIND_ROM_PTR(bounds),
     MPY_BIND_ROM_PTR_STATIC(custom),
     MPY_BIND_ROM_PTR_STATIC(regular_polygon),

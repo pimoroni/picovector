@@ -2,7 +2,7 @@
 #include <cfloat>
 
 // Set to 1 to enable rasteriser phase profiling (prints phase timings to the REPL).
-#define PV_PROFILE 1
+#define PV_PROFILE 0
 
 // Set to 1 to use the second core (core1) for rasterisation. Always available on
 // Badgeware; other projects that need core1 for something else can set this to 0.
@@ -463,6 +463,11 @@ namespace picovector {
   static volatile uint32_t pv_built_0 = 0;   // core0 sets when its build half is done
   static volatile uint32_t pv_built_1 = 0;   // core1 sets when its build half is done
   static volatile uint32_t pv_done = 0;      // core1 sets when its fill is done
+  // Generic core1 dispatch, shared with pico3d (a separate ticket from the fill path
+  // above): core0 sets pv_gen_fn, bumps pv_gen_go + sev; core1 runs it, bumps pv_gen_done.
+  static void (* volatile pv_gen_fn)() = nullptr;       // volatile POINTER to a void() fn
+  static volatile uint32_t pv_gen_go = 0;
+  static volatile uint32_t pv_gen_done = 0;
   static bool pv_core1_running = false;
   static uint32_t __attribute__((aligned(8))) pv_core1_stack[1024]; // 4kB core1 stack
 
@@ -473,9 +478,18 @@ namespace picovector {
     __asm volatile("dsb");
     __asm volatile("isb");
 
-    uint32_t served = 0;
+    uint32_t served = 0, gen_served = 0;
     while(true) {
-      while(pv_go == served) { __asm volatile("wfe"); } // sleep until a job (no bus contention)
+      while(pv_go == served && pv_gen_go == gen_served) { __asm volatile("wfe"); } // sleep until a job
+      if(pv_gen_go != gen_served) {           // generic job (e.g. pico3d band) — run + signal
+        gen_served = pv_gen_go;
+        __sync_synchronize();
+        void (*fn)() = pv_gen_fn;
+        if(fn) fn();
+        __sync_synchronize();
+        pv_gen_done = gen_served; __asm volatile("sev");
+        continue;
+      }
       served = pv_go;
       __sync_synchronize();                  // observe pv_job (written before pv_go)
 
@@ -509,6 +523,20 @@ namespace picovector {
     multicore_launch_core1_with_stack(pv_core1_entry, pv_core1_stack, sizeof(pv_core1_stack));
     irq_set_enabled(PV_SIO_FIFO_IRQ, true);
     pv_core1_running = true;
+  }
+
+  // Exposed to other engines (pico3d) sharing core1: ensure it's launched, then run fn
+  // on it asynchronously. Pair every pv_core1_run() with one pv_core1_join().
+  extern "C" void pv_core1_run(void (*fn)()) {
+    pv_core1_launch();
+    pv_gen_fn = fn;
+    __sync_synchronize();
+    pv_gen_go++;
+    __asm volatile("sev");
+  }
+  extern "C" void pv_core1_join() {
+    while(pv_gen_done != pv_gen_go) { __asm volatile("wfe"); }
+    __sync_synchronize();
   }
 #endif
 

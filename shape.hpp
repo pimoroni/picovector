@@ -48,6 +48,10 @@ namespace picovector {
     std::vector<vec2_t, PV_STD_ALLOCATOR<vec2_t>> offset_ring(float offset, bool closed = true, uint32_t join = JOIN_MITER, float miter_limit = 4.0f);
     void stroke(float thickness, uint32_t flags = 0, float miter_limit = 4.0f);
     void inflate(float offset);
+    // Replace this ring with one offset outward (amount > 0) or inward (< 0)
+    // along the edge normals, joining convex corners per `join` (miter clamped
+    // to `miter_limit`). Treats the path as a closed ring.
+    void grow(float amount, uint32_t join = JOIN_MITER, float miter_limit = 4.0f);
   };
 
   class shape_t {
@@ -70,6 +74,12 @@ namespace picovector {
     rect_t bounds();
     /*void draw(image &img); // methods should be on image perhaps? with style/brush and transform passed in?*/
     void stroke(float thickness, uint32_t flags = 0, float miter_limit = 4.0f);
+    // Outset (grow) / inset (shrink) every path by `amount` along its normals.
+    // `amount` is always positive; convex corners use `join` (miter clamped to
+    // `miter_limit`). Quality offset built on offset_ring (handles concave
+    // corners and clamps miter spikes), not the vertex-preserving inflate().
+    void grow(float amount, uint32_t join = JOIN_MITER, float miter_limit = 4.0f);
+    void shrink(float amount, uint32_t join = JOIN_MITER, float miter_limit = 4.0f);
     void brush(brush_t *brush);
   };
 

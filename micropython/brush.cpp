@@ -86,12 +86,59 @@ extern "C" {
   })
 
 
+  MPY_BIND_STATICMETHOD_VAR(6, gradient, {
+    // gradient(type, x1, y1, x2, y2, stops, [transform])
+    //   type:   brush.LINEAR or brush.RADIAL
+    //   x1..y2: gradient geometry in the gradient's coordinate space (0..1 for SVG)
+    //   stops:  sequence of (position, color), position 0..1, up to 16 stops
+    //   transform: optional mat3 mapping gradient space onto device pixels
+    int gtype = mp_obj_get_int(args[0]);
+    float x1 = mp_obj_get_float(args[1]);
+    float y1 = mp_obj_get_float(args[2]);
+    float x2 = mp_obj_get_float(args[3]);
+    float y2 = mp_obj_get_float(args[4]);
+
+    size_t n;
+    mp_obj_t *items;
+    mp_obj_get_array(args[5], &n, &items);
+    if(n < 1 || n > (size_t)gradient_brush_t::max_stops) {
+      mp_raise_msg_varg(&mp_type_ValueError, MP_ERROR_TEXT("invalid parameter, gradient expects 1 to 16 colour stops"));
+    }
+
+    float positions[gradient_brush_t::max_stops];
+    uint32_t colors[gradient_brush_t::max_stops];
+    for(size_t i = 0; i < n; i++) {
+      size_t sl;
+      mp_obj_t *stop;
+      mp_obj_get_array(items[i], &sl, &stop);
+      if(sl != 2 || !mp_obj_is_type(stop[1], &type_color)) {
+        mp_raise_msg_varg(&mp_type_TypeError, MP_ERROR_TEXT("invalid parameter, each stop must be (position, color)"));
+      }
+      positions[i] = mp_obj_get_float(stop[0]);
+      colors[i] = ((color_obj_t *)MP_OBJ_TO_PTR(stop[1]))->c->_p;
+    }
+
+    mat3_t *m = nullptr;
+    if(n_args >= 7 && mp_obj_is_type(args[6], &type_mat3)) {
+      m = &((mat3_obj_t *)MP_OBJ_TO_PTR(args[6]))->m;
+    }
+
+    brush_obj_t *brush = mp_obj_malloc(brush_obj_t, &type_brush);
+    brush->brush = m_new_class(gradient_brush_t, (gradient_type_t)gtype, x1, y1, x2, y2,
+                               positions, colors, (int)n, m);
+    return MP_OBJ_FROM_PTR(brush);
+  })
+
+
   MPY_BIND_LOCALS_DICT(brush,
     // MPY_BIND_ROM_PTR_DEL(brush),
     // MPY_BIND_ROM_PTR_STATIC(xor),
     // MPY_BIND_ROM_PTR_STATIC(brighten),
+    { MP_ROM_QSTR(MP_QSTR_LINEAR), MP_ROM_INT(GRADIENT_LINEAR) },
+    { MP_ROM_QSTR(MP_QSTR_RADIAL), MP_ROM_INT(GRADIENT_RADIAL) },
     MPY_BIND_ROM_PTR_STATIC(pattern),
     MPY_BIND_ROM_PTR_STATIC(image),
+    MPY_BIND_ROM_PTR_STATIC(gradient),
   )
 
 

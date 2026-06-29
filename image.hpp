@@ -168,6 +168,12 @@ namespace picovector {
       void blit(image_t *t, rect_t sr, rect_t tr, filter_t filter = NEAREST);
       void blit_hspan(image_t *target, vec2_t p, int c, vec2_t uv0, vec2_t uv1, filter_t filter = NEAREST);
       void blit_vspan(image_t *target, vec2_t p, int c, vec2_t uv0, vec2_t uv1, filter_t filter = NEAREST);
+
+    private:
+      // shared body for blit_hspan / blit_vspan: walks `c` texels sampling the
+      // source along uv0->uv1. `vertical` selects the travel axis (y for vspan,
+      // x for hspan), which drives both the clip and the destination step.
+      void blit_span(image_t *target, vec2_t p, int c, vec2_t uv0, vec2_t uv1, filter_t filter, bool vertical);
   };
 
 }

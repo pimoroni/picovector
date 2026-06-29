@@ -343,11 +343,12 @@ namespace picovector {
   }
 
   /*
-    blits a horizontal span of pixels onto the target image using interpolated
-    samples from the source image along a line starting at uv1 and ending at
-    uv2
+    blits a span of pixels onto the target image using interpolated samples from
+    the source image along a line starting at uv0 and ending at uv1. `vertical`
+    picks the travel axis: horizontal (stepping one pixel across a row) or
+    vertical (stepping one row down a column). Shared by blit_hspan/blit_vspan.
   */
-  void image_t::blit_hspan(image_t *target, vec2_t p, int c, vec2_t uv0, vec2_t uv1, filter_t filter) {
+  void image_t::blit_span(image_t *target, vec2_t p, int c, vec2_t uv0, vec2_t uv1, filter_t filter, bool vertical) {
     rect_t b = target->_clip;
     if(p.x < b.x || p.x > b.x + b.w) {
       return;
@@ -359,19 +360,29 @@ namespace picovector {
     fx16_t ud = f_to_fx16(uv1.x - uv0.x) / c;
     fx16_t vd = f_to_fx16(uv1.y - uv0.y) / c;
 
-    if(p.x < b.x) {
-      u += ud * (b.x - p.x);
-      v += vd * (b.x - p.x);
-      c -= int(b.x - p.x);
-      p.x = b.x;
+    // clip against the travel axis (y for a vertical span, x for a horizontal one)
+    float pp = vertical ? p.y : p.x;
+    float bo = vertical ? b.y : b.x;
+    float bs = vertical ? b.h : b.w;
+
+    if(pp < bo) {
+      u += ud * (bo - pp);
+      v += vd * (bo - pp);
+      c -= int(bo - pp);
+      pp = bo;
     }
 
-    if(p.x + c > b.x + b.w) {
-      c = b.w - p.x;
+    if(pp + c > bo + bs) {
+      c = bs - pp;
     }
+
+    if(vertical) p.y = pp; else p.x = pp;
 
     uint32_t tw = int(this->_bounds.w - 1);
     uint32_t th = int(this->_bounds.h - 1);
+
+    // one pixel across a row, or one row (stride) down a column
+    int dst_step = vertical ? (target->_row_stride >> 2) : 1;
 
     uint32_t *dst = (uint32_t *)target->ptr(p.x, p.y);
     for(int i = 0; i < c; i++) {
@@ -388,60 +399,16 @@ namespace picovector {
       }
 
       *dst = target->_blend_func(*dst, _r(col), _g(col), _b(col), _a(col));
-      dst++;
+      dst += dst_step;
     }
   }
 
-  /*
-    blits a vertical span of pixels onto the target image using interpolated
-    samples from the source image along a line starting at uv1 and ending at
-    uv2
-  */
+  void image_t::blit_hspan(image_t *target, vec2_t p, int c, vec2_t uv0, vec2_t uv1, filter_t filter) {
+    blit_span(target, p, c, uv0, uv1, filter, false);
+  }
+
   void image_t::blit_vspan(image_t *target, vec2_t p, int c, vec2_t uv0, vec2_t uv1, filter_t filter) {
-    rect_t b = target->_clip;
-    if(p.x < b.x || p.x > b.x + b.w) {
-      return;
-    }
-
-    fx16_t u = f_to_fx16(uv0.x);
-    fx16_t v = f_to_fx16(uv0.y);
-
-    fx16_t ud = f_to_fx16(uv1.x - uv0.x) / c;
-    fx16_t vd = f_to_fx16(uv1.y - uv0.y) / c;
-
-    if(p.y < b.y) {
-      u += ud * (b.y - p.y);
-      v += vd * (b.y - p.y);
-      c -= int(b.y - p.y);
-      p.y = b.y;
-    }
-
-    if(p.y + c > b.y + b.h) {
-      c = b.h - p.y;
-    }
-
-    uint32_t tw = int(this->_bounds.w - 1);
-    uint32_t th = int(this->_bounds.h - 1);
-
-    uint32_t *dst = (uint32_t *)target->ptr(p.x, p.y);
-
-    uint32_t stride = target->_row_stride >> 2;
-    for(int i = 0; i < c; i++) {
-      u += ud;
-      v += vd;
-
-      // fixed-point 16.16 source coordinates (fractional uv scaled to texels)
-      fx16_t sx = (fx16_t)((u & 0xffffu) * tw);
-      fx16_t sy = (fx16_t)((v & 0xffffu) * th);
-      uint32_t col = this->sample(sx, sy, filter);
-
-      if(this->_alpha != 255) {
-        col = _premul_mul_alpha(col, this->_alpha);
-      }
-
-      *dst = target->_blend_func(*dst, _r(col), _g(col), _b(col), _a(col));
-      dst += stride;
-    }
+    blit_span(target, p, c, uv0, uv1, filter, true);
   }
 
 

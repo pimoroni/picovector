@@ -1,5 +1,12 @@
 #include <algorithm>
 
+// Set to 1 to enable rasteriser phase profiling (prints phase timings to the REPL).
+#define PV_PROFILE 0
+
+#if PV_PROFILE
+#include <cstdio>
+#endif
+
 #include "picovector.hpp"
 #include "brush.hpp"
 #include "image.hpp"
@@ -30,6 +37,20 @@ uint8_t *tile_buffer = (uint8_t *)&PicoVector_working_buffer[0];
 int16_t *node_buffer = (int16_t *)&PicoVector_working_buffer[TILE_BUFFER_SIZE];
 uint8_t *node_count_buffer = (uint8_t *)&PicoVector_working_buffer[TILE_BUFFER_SIZE + NODE_BUFFER_SIZE];
 
+// --- rasteriser phase profiling (toggle with PV_PROFILE above) ---
+#if PV_PROFILE
+extern "C" uint64_t time_us_64(void);
+extern "C" void mp_hal_stdout_tx_strn_cooked(const char *str, size_t len); // MicroPython REPL output
+static uint64_t pv_us_bounds = 0, pv_us_build = 0, pv_us_raster = 0;
+static int pv_calls = 0;
+#define PV_PROF_DECL(v) uint64_t v = time_us_64()
+#define PV_PROF_ACC(acc, v) (acc) += time_us_64() - (v)
+#else
+#define PV_PROF_DECL(v)
+#define PV_PROF_ACC(acc, v)
+#endif
+// -----------------------------------------------------------------
+
 static inline void insertion_sort_i16(int16_t* a, int n) {
   for (int i = 1; i < n; ++i) {
     int16_t key = a[i];
@@ -47,8 +68,11 @@ namespace picovector {
   int sign(int v) {return (v > 0) - (v < 0);}
 
   void add_line_segment_to_nodes(vec2_t start, vec2_t end, rect_t *tb) {
+    // winding direction: downward edges wind +1, upward (swapped) edges -1
+    int dir_bit = 0;
     if(end.y < start.y) {
       vec2_t tmp = start; start = end; end = tmp;
+      dir_bit = 1;
     }
 
     if (end.y < 0.0f || start.y > tb->h || end.y == start.y) return;
@@ -74,7 +98,8 @@ namespace picovector {
     for(int iy = sy; iy < ey; iy++) {
       int ix = max(min(int(x), maxx), minx);
 
-      node_buffer[(iy * MAX_NODES_PER_SCANLINE) + node_count_buffer[iy]] = ix;
+      // pack: x in the high bits, winding direction in bit 0 (tile-local x fits)
+      node_buffer[(iy * MAX_NODES_PER_SCANLINE) + node_count_buffer[iy]] = (ix << 1) | dir_bit;
       node_count_buffer[iy]++;
 
       x += dx;
@@ -82,19 +107,33 @@ namespace picovector {
   }
 
   void build_nodes(path_t *path, rect_t *tb, mat3_t *transform, uint aa) {
+    const auto &pts = path->points;
+    size_t count = pts.size();
+    if(count == 0) return;
+
     vec2_t offset = tb->tl();
-    // start with the last point to close the loop, transform it, scale for antialiasing, and offset to tile origin
-    vec2_t last = path->points[path->points.size() - 1];
-    if(transform) last = last.transform(transform);
-    last *= (1 << aa);
-    last -= offset;
+    float scale = float(1 << aa);
 
-    for(auto next : path->points) {
-      if(transform) next = next.transform(transform);
-      next *= (1 << aa);
-      next -= offset;
+    // fold the transform, antialias scale, and tile offset into one affine
+    // applied per point:  x' = a00*x + a01*y + bx,  y' = a10*x + a11*y + by
+    float a00, a01, a10, a11, bx, by;
+    if(transform) {
+      a00 = transform->v00 * scale; a01 = transform->v01 * scale;
+      a10 = transform->v10 * scale; a11 = transform->v11 * scale;
+      bx  = transform->v02 * scale - offset.x;
+      by  = transform->v12 * scale - offset.y;
+    } else {
+      a00 = scale; a01 = 0.0f; a10 = 0.0f; a11 = scale;
+      bx  = -offset.x; by = -offset.y;
+    }
 
-      //printf("   - add line segment %d, %d -> %d, %d\n", int(last.x), int(last.y), int(next.x), int(next.y));
+    const vec2_t &lp = pts[count - 1];
+    vec2_t last(a00 * lp.x + a01 * lp.y + bx, a10 * lp.x + a11 * lp.y + by);
+
+    for(size_t i = 0; i < count; i++) {
+      const vec2_t &p = pts[i];
+      vec2_t next(a00 * p.x + a01 * p.y + bx, a10 * p.x + a11 * p.y + by);
+
       add_line_segment_to_nodes(last, next, tb);
       last = next;
     }
@@ -108,47 +147,64 @@ namespace picovector {
   uint8_t alpha_map_x4[5] = {0, 63, 127, 190, 255};
   uint8_t alpha_map_x16[17] = {0, 16, 32, 48, 64, 80, 96, 112, 128, 144, 160, 176, 192, 208, 224, 240, 255};
 
-  rect_t render_nodes(rect_t *tb, uint aa) {
+  rect_t render_nodes(rect_t *tb, uint aa, fill_rule_t fill_rule) {
     int minx = tb->w;
     int miny = tb->h;
     int maxx = 0;
     int maxy = 0;
 
+    // supersample factor and sub-pixel mask for this antialias level
+    int ss = 1 << aa;
+    int mask = ss - 1;
+
     for(int y = 0; y < int(tb->h); y++) {
-      if(node_count_buffer[y] == 0) {
+      int n = node_count_buffer[y];
+      if(n == 0) {
         continue; // no nodes on this raster line
       }
 
       miny = min(miny, y);
       maxy = max(maxy, y);
 
-      // sort scanline nodes
+      // sort scanline nodes (by packed value, i.e. by x)
       int16_t *nodes = &node_buffer[(y * MAX_NODES_PER_SCANLINE)];
-      insertion_sort_i16(nodes, node_count_buffer[y]);
+      insertion_sort_i16(nodes, n);
 
       uint8_t *row_data = &tile_buffer[(y >> aa) * TILE_WIDTH];
 
-      for(uint32_t i = 0; i < node_count_buffer[y]; i += 2) {
-        int sx = *nodes++;
-        int ex = *nodes++;
-
-        if(sx == ex) { // empty span, nothing to do
-          continue;
+      // accumulate one filled span [sx, ex) of coverage into the output row,
+      // distributing partial sub-pixel coverage at the two ends.
+      auto fill_span = [&](int sx, int ex) {
+        if(sx >= ex) return;
+        if(sx < minx) minx = sx;
+        if(ex > maxx) maxx = ex;
+        int o0 = sx >> aa;
+        int o1 = (ex - 1) >> aa;
+        if(o0 == o1) {
+          row_data[o0] += (ex - sx);
+        } else {
+          row_data[o0] += ss - (sx & mask);
+          for(int ox = o0 + 1; ox < o1; ox++) row_data[ox] += ss;
+          row_data[o1] += ((ex - 1) & mask) + 1;
         }
+      };
 
-        minx = min(minx, sx);
-        maxx = max(maxx, ex);
-
-        do {
-          row_data[sx >> aa]++;
-        } while(++sx < ex);
+      if(fill_rule == NON_ZERO) {
+        // fill where the running winding number is non-zero
+        int winding = 0, span_start = 0;
+        for(int i = 0; i < n; i++) {
+          int nx = nodes[i] >> 1;
+          int prev = winding;
+          winding += (nodes[i] & 1) ? -1 : 1;
+          if(prev == 0 && winding != 0) span_start = nx;
+          else if(prev != 0 && winding == 0) fill_span(span_start, nx);
+        }
+      } else {
+        // even-odd: each consecutive pair of crossings is a filled span
+        for(int i = 0; i + 1 < n; i += 2) {
+          fill_span(nodes[i] >> 1, nodes[i + 1] >> 1);
+        }
       }
-
-      // for(int i = 0; i < TILE_WIDTH; i++) {
-      //   row_data[i] = 1;
-      // }
-
-
     }
 
     if(minx > maxx || miny > maxy) {
@@ -165,9 +221,11 @@ namespace picovector {
               (out_maxy - out_miny) + 1);
   }
 
-  void render(shape_t *shape, image_t *target, mat3_t *transform, brush_t *brush) {
-
-    if(shape->paths.empty()) return;
+  // Shared tile loop for shapes and glyphs. The only per-caller difference is
+  // how nodes are built for each tile, passed in as `build_tile_nodes(tb, aa)`.
+  template<typename BuildFn>
+  void render_tiles(image_t *target, brush_t *brush, rect_t sb, BuildFn build_tile_nodes) {
+    if(sb.empty()) return;
 
     // antialias level of target image
     uint aa = (uint)target->antialias();
@@ -176,33 +234,18 @@ namespace picovector {
     if(aa == 1) p_alpha_map = alpha_map_x4;
     if(aa == 2) p_alpha_map = alpha_map_x16;
 
-    //mask_span_func_t sf = target->_mask_span_func;
-    //printf("render shape\n");
-
-    // determine bounds of shape to be rendered
-    rect_t sb = shape->bounds().round();
-
     rect_t clip = target->clip();
-
     masked_span_func_t fn = target->_masked_span_func;
-
-    //printf("- shape bounds %d, %d (%d x %d)\n", sbx, sby, sbw, sbh);
-    //printf("- clip bounds %d, %d (%d x %d)\n", int(clip.x), int(clip.y), int(clip.w), int(clip.h));
+    span_func_t sfn = target->_span_func; // unmasked span for the aa == 0 fast path
+    fill_rule_t fill_rule = target->fill_rule();
 
     // iterate over tiles
-    //printf("> processing tiles\n");
     for(int y = sb.y; y < sb.y + sb.h; y += TILE_HEIGHT) {
       for(int x = sb.x; x < sb.x + sb.w; x += TILE_WIDTH) {
-        //printf(" > tile %d x %d\n", x, y);
-        rect_t tb = rect_t(x, y, TILE_WIDTH, TILE_HEIGHT);
-
-        //printf("  - tile bounds %d, %d (%d x %d)\n", int(tb.x), int(tb.y), int(tb.w), int(tb.h));
-
-        tb = clip.intersection(tb).intersection(sb).round();
+        rect_t tb = clip.intersection(rect_t(x, y, TILE_WIDTH, TILE_HEIGHT)).intersection(sb).round();
         if(tb.empty()) { continue; } // if tile empty, skip it
 
-        //printf("  - clipped tile bounds %d, %d (%d x %d)\n", int(tb.x), int(tb.y), int(tb.w), int(tb.h));
-        // screen coordinates for clipped tile
+        // screen coordinates for clipped tile (before antialias scaling)
         int sx = tb.x;
         int sy = tb.y;
         int sw = tb.w;
@@ -213,24 +256,60 @@ namespace picovector {
         tb.w *= (1 << aa);
         tb.h *= (1 << aa);
 
-        //printf("  - clipped and scaled tile bounds %d, %d (%d x %d)\n", int(tb.x), int(tb.y), int(tb.w), int(tb.h));
-
-        // clear existing tile data and nodes
+        // clear node counts (needed by both the aa and aa == 0 paths)
         memset(node_count_buffer, 0, NODE_COUNT_BUFFER_SIZE);
-        for (int row = 0; row <= sh; ++row) {
-          memset(&tile_buffer[row * TILE_WIDTH], 0, sw);
+
+        // the aa == 0 fast path emits spans directly and never reads the tile
+        // coverage buffer, so only bother clearing it when antialiasing
+        if(aa != 0) {
+          for(int row = 0; row <= sh; ++row) {
+            memset(&tile_buffer[row * TILE_WIDTH], 0, sw);
+          }
         }
 
-        //memset(tile_buffer, 0, TILE_WIDTH * TILE_HEIGHT);
+        // build the nodes for this tile (paths or glyph contours)
+        PV_PROF_DECL(_t_build);
+        build_tile_nodes(&tb, aa);
+        PV_PROF_ACC(pv_us_build, _t_build);
 
-        // build the nodes for each path
-        for(auto &path : shape->paths) {
-          build_nodes(&path, &tb, transform, aa);
+        if(aa == 0) {
+          // no antialiasing: every covered pixel is fully opaque, so emit spans
+          // straight to the unmasked span function. this skips the coverage
+          // buffer, the alpha-map pass, and the per-pixel mask multiplies in the
+          // masked blend.
+          PV_PROF_DECL(_t_raster);
+          for(int y = 0; y < int(tb.h); y++) {
+            int n = node_count_buffer[y];
+            if(n == 0) { continue; }
+
+            int16_t *nodes = &node_buffer[y * MAX_NODES_PER_SCANLINE];
+            insertion_sort_i16(nodes, n);
+
+            if(fill_rule == NON_ZERO) {
+              int winding = 0, span_start = 0;
+              for(int i = 0; i < n; i++) {
+                int nx = nodes[i] >> 1;
+                int prev = winding;
+                winding += (nodes[i] & 1) ? -1 : 1;
+                if(prev == 0 && winding != 0) span_start = nx;
+                else if(prev != 0 && winding == 0 && span_start < nx) {
+                  sfn(target, brush, sx + span_start, sy + y, nx - span_start);
+                }
+              }
+            } else {
+              for(int i = 0; i + 1 < n; i += 2) {
+                int nsx = nodes[i] >> 1;
+                int nex = nodes[i + 1] >> 1;
+                if(nsx < nex) sfn(target, brush, sx + nsx, sy + y, nex - nsx);
+              }
+            }
+          }
+          PV_PROF_ACC(pv_us_raster, _t_raster);
+          continue;
         }
 
-        rect_t rb = render_nodes(&tb, aa).round();
-
-        if(tb.empty()) { continue; }
+        rect_t rb = render_nodes(&tb, aa, fill_rule).round();
+        if(rb.empty()) { continue; }
 
         int rbx = rb.x;
         int rby = rb.y;
@@ -238,24 +317,42 @@ namespace picovector {
         int rbh = rb.h;
 
         for(int ty = rby; ty < rby + rbh; ty++) {
-          uint8_t* p;
-
-          // scale tile buffer values to alpha values
-          p = &tile_buffer[ty * TILE_WIDTH + rbx];
-          int c = rbw;
-          while(c--) {
-            *p = p_alpha_map[*p];
-            p++;
-          }
+          // scale tile buffer coverage to alpha values
+          uint8_t *p = &tile_buffer[ty * TILE_WIDTH + rbx];
+          for(int c = rbw; c--; p++) *p = p_alpha_map[*p];
 
           // render tile span
           p = &tile_buffer[ty * TILE_WIDTH + rbx];
-
           fn(target, brush, sx + rbx, sy + ty, rbw, p);
-          //sf(target, brush, sx + rbx, sy + ty, rbw, (uint8_t*)p);
         }
       }
     }
+  }
+
+  void render(shape_t *shape, image_t *target, mat3_t *transform, brush_t *brush) {
+    if(shape->paths.empty()) return;
+
+    PV_PROF_DECL(_t_bounds);
+    rect_t sb = shape->bounds().round();
+    PV_PROF_ACC(pv_us_bounds, _t_bounds);
+
+    render_tiles(target, brush, sb, [&](rect_t *tb, uint aa) {
+      for(auto &path : shape->paths) build_nodes(&path, tb, transform, aa);
+    });
+
+#if PV_PROFILE
+    // report cumulative phase times every 2880 shapes (~10 world.py frames)
+    if(++pv_calls >= 2880) {
+      char buf[128];
+      int n = snprintf(buf, sizeof(buf),
+                       "[pv] %d shapes: bounds=%luus build=%luus raster=%luus\n",
+                       pv_calls, (unsigned long)pv_us_bounds, (unsigned long)pv_us_build,
+                       (unsigned long)pv_us_raster);
+      mp_hal_stdout_tx_strn_cooked(buf, n);
+      pv_calls = 0;
+      pv_us_bounds = pv_us_build = pv_us_raster = 0;
+    }
+#endif
   }
 
 
@@ -302,94 +399,10 @@ namespace picovector {
   }
 
   void render_glyph(glyph_t *glyph, image_t *target, mat3_t *transform, brush_t *brush) {
-
     if(!glyph->path_count) return;
 
-    // antialias level of target image
-    uint aa = (uint)target->antialias();
-
-
-    uint8_t *p_alpha_map = alpha_map_none;
-    if(aa == 1) p_alpha_map = alpha_map_x4;
-    if(aa == 2) p_alpha_map = alpha_map_x16;
-
-    //printf("render shape\n");
-
-    // determine bounds of shape to be rendered
-    rect_t sb = glyph->bounds(transform).round();
-
-    rect_t clip = target->clip();
-
-    masked_span_func_t fn = target->_masked_span_func;
-
-    //printf("- shape bounds %d, %d (%d x %d)\n", sbx, sby, sbw, sbh);
-    //printf("- clip bounds %d, %d (%d x %d)\n", int(clip.x), int(clip.y), int(clip.w), int(clip.h));
-
-    // iterate over tiles
-    //printf("> processing tiles\n");
-    for(int y = sb.y; y < sb.y + sb.h; y += TILE_HEIGHT) {
-      for(int x = sb.x; x < sb.x + sb.w; x += TILE_WIDTH) {
-        //printf(" > tile %d x %d\n", x, y);
-        rect_t tb = rect_t(x, y, TILE_WIDTH, TILE_HEIGHT);
-
-        //printf("  - tile bounds %d, %d (%d x %d)\n", int(tb.x), int(tb.y), int(tb.w), int(tb.h));
-
-        tb = clip.intersection(tb).intersection(sb).round();
-        if(tb.empty()) { continue; } // if tile empty, skip it
-
-        //printf("  - clipped tile bounds %d, %d (%d x %d)\n", int(tb.x), int(tb.y), int(tb.w), int(tb.h));
-        // screen coordinates for clipped tile
-        int sx = tb.x;
-        int sy = tb.y;
-        int sw = tb.w;
-        int sh = tb.h;
-
-        tb.x *= (1 << aa);
-        tb.y *= (1 << aa);
-        tb.w *= (1 << aa);
-        tb.h *= (1 << aa);
-
-        //printf("  - clipped and scaled tile bounds %d, %d (%d x %d)\n", int(tb.x), int(tb.y), int(tb.w), int(tb.h));
-
-        // clear existing tile data and nodes
-        memset(node_count_buffer, 0, NODE_COUNT_BUFFER_SIZE);
-        for (int row = 0; row <= sh; ++row) {
-          memset(&tile_buffer[row * TILE_WIDTH], 0, sw);
-        }
-
-        //memset(tile_buffer, 0, TILE_WIDTH * TILE_HEIGHT);
-
-        // build the nodes for each path
-        for(int i = 0; i < glyph->path_count; i++) {
-          glyph_path_t *p = &glyph->paths[i];
-          build_glyph_nodes(p, &tb, transform, aa);
-        }
-
-        rect_t rb = render_nodes(&tb, aa).round();
-
-        if(tb.empty()) { continue; }
-
-        int rbx = rb.x;
-        int rby = rb.y;
-        int rbw = rb.w;
-        int rbh = rb.h;
-
-        for(int ty = rby; ty < rby + rbh; ty++) {
-          uint8_t* p;
-
-          // scale tile buffer values to alpha values
-          p = &tile_buffer[ty * TILE_WIDTH + rbx];
-          int c = rbw;
-          while(c--) {
-            *p = p_alpha_map[*p];
-            p++;
-          }
-
-          // render tile span
-          p = &tile_buffer[ty * TILE_WIDTH + rbx];
-          fn(target, brush, sx + rbx, sy + ty, rbw, p);
-        }
-      }
-    }
+    render_tiles(target, brush, glyph->bounds(transform).round(), [&](rect_t *tb, uint aa) {
+      for(int i = 0; i < glyph->path_count; i++) build_glyph_nodes(&glyph->paths[i], tb, transform, aa);
+    });
   }
 }

@@ -35,6 +35,8 @@ namespace picovector {
 
   #define debug_printf(fmt, ...) fprintf(stdout, fmt, ##__VA_ARGS__)
 
+  constexpr float PV_PI = 3.14159265358979f;
+
   class brush_t;
   class image_t;
   class shape_t;

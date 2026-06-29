@@ -132,6 +132,14 @@ namespace picovector {
     this->_antialias = antialias;
   }
 
+  fill_rule_t image_t::fill_rule() {
+    return this->_fill_rule;
+  }
+
+  void image_t::fill_rule(fill_rule_t fill_rule) {
+    this->_fill_rule = fill_rule;
+  }
+
   pixel_format_t image_t::pixel_format() {
     return this->_pixel_format;
   }

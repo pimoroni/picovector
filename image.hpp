@@ -30,6 +30,11 @@ namespace picovector {
     X4    = 2
   } antialias_t;
 
+  typedef enum fill_rule_t {
+    EVEN_ODD = 0, // default: inside toggles at every edge crossing
+    NON_ZERO = 1  // inside where the accumulated winding number is non-zero
+  } fill_rule_t;
+
   typedef enum pixel_format_t {
     RGBA8888 = 1,
     RGBA4444 = 2,
@@ -56,6 +61,7 @@ namespace picovector {
       rect_t             _clip;
       uint8_t            _alpha = 255;
       antialias_t        _antialias = OFF;
+      fill_rule_t        _fill_rule = EVEN_ODD;
       pixel_format_t     _pixel_format = RGBA8888;
       bool               _has_palette = false;
       brush_t           *_brush = nullptr;
@@ -98,6 +104,9 @@ namespace picovector {
 
       antialias_t antialias();
       void antialias(antialias_t antialias);
+
+      fill_rule_t fill_rule();
+      void fill_rule(fill_rule_t fill_rule);
 
       pixel_format_t pixel_format();
       void pixel_format(pixel_format_t pixel_format);

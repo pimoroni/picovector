@@ -58,6 +58,15 @@ extern "C" {
     return MP_OBJ_FROM_PTR(shape);
 })
 
+  MPY_BIND_STATICMETHOD_VAR(3, ellipse, {
+    MPY_GET_XY_OR_VEC2(0, x, y)
+    float rx = mp_obj_get_float(args[0]);
+    float ry = mp_obj_get_float(args[1]);
+    shape_obj_t *shape = mp_obj_malloc_with_finaliser(shape_obj_t, &type_shape);
+    shape->shape = ellipse(x, y, rx, ry);
+    return MP_OBJ_FROM_PTR(shape);
+})
+
   MPY_BIND_STATICMETHOD_VAR(1, rectangle, {
     if(n_args == 4) {
       float x = mp_obj_get_float(args[0]);
@@ -171,9 +180,20 @@ extern "C" {
   })
 
   MPY_BIND_VAR(1, stroke, {
+    // stroke(width, flags=0, miter_limit=4.0)
+    //   flags: OR of OUTER/INNER/CENTER, OPEN, MITER/ROUND_JOIN/BEVEL,
+    //          BUTT/ROUND_CAP/SQUARE (each default is the 0 value)
     const shape_obj_t *self = (shape_obj_t *)MP_OBJ_TO_PTR(args[0]);
     float width = mp_obj_get_float(args[1]);
-    self->shape->stroke(width);
+    uint32_t flags = 0;
+    if(n_args >= 3) {
+      flags = (uint32_t)mp_obj_get_int(args[2]);
+    }
+    float miter_limit = 4.0f;
+    if(n_args >= 4) {
+      miter_limit = mp_obj_get_float(args[3]);
+    }
+    self->shape->stroke(width, flags, miter_limit);
     return MP_OBJ_FROM_PTR(self);
   })
 
@@ -212,11 +232,24 @@ extern "C" {
 
   MPY_BIND_LOCALS_DICT(shape,
     { MP_ROM_QSTR(MP_QSTR___del__), MP_ROM_PTR(&shape__del___obj) },
+    // stroke() flags — OR one value per group; defaults are the 0 values
+    { MP_ROM_QSTR(MP_QSTR_ALIGN_OUTER), MP_ROM_INT(ALIGN_OUTER) },
+    { MP_ROM_QSTR(MP_QSTR_ALIGN_INNER), MP_ROM_INT(ALIGN_INNER) },
+    { MP_ROM_QSTR(MP_QSTR_ALIGN_CENTER), MP_ROM_INT(ALIGN_CENTER) },
+    { MP_ROM_QSTR(MP_QSTR_PATH_CLOSED), MP_ROM_INT(PATH_CLOSED) },
+    { MP_ROM_QSTR(MP_QSTR_PATH_OPEN), MP_ROM_INT(PATH_OPEN) },
+    { MP_ROM_QSTR(MP_QSTR_JOIN_MITER), MP_ROM_INT(JOIN_MITER) },
+    { MP_ROM_QSTR(MP_QSTR_JOIN_ROUND), MP_ROM_INT(JOIN_ROUND) },
+    { MP_ROM_QSTR(MP_QSTR_JOIN_BEVEL), MP_ROM_INT(JOIN_BEVEL) },
+    { MP_ROM_QSTR(MP_QSTR_CAP_BUTT), MP_ROM_INT(CAP_BUTT) },
+    { MP_ROM_QSTR(MP_QSTR_CAP_ROUND), MP_ROM_INT(CAP_ROUND) },
+    { MP_ROM_QSTR(MP_QSTR_CAP_SQUARE), MP_ROM_INT(CAP_SQUARE) },
     MPY_BIND_ROM_PTR(stroke),
     MPY_BIND_ROM_PTR_STATIC(custom),
     MPY_BIND_ROM_PTR_STATIC(regular_polygon),
     MPY_BIND_ROM_PTR_STATIC(squircle),
     MPY_BIND_ROM_PTR_STATIC(circle),
+    MPY_BIND_ROM_PTR_STATIC(ellipse),
     MPY_BIND_ROM_PTR_STATIC(rectangle),
     MPY_BIND_ROM_PTR_STATIC(rounded_rectangle),
     MPY_BIND_ROM_PTR_STATIC(arc),

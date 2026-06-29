@@ -6,6 +6,7 @@ namespace picovector {
 
   shape_t* regular_polygon(float x, float y, float sides, float radius);
   shape_t* circle(float x, float y, float radius);
+  shape_t* ellipse(float x, float y, float x_radius, float y_radius);
   shape_t* rectangle(float x, float y, float w, float h);
   shape_t* rounded_rectangle(float x, float y, float w, float h, float r1, float r2, float r3, float r4);
   shape_t* squircle(float x, float y, float size, float n=4.0f);

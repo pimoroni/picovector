@@ -40,6 +40,9 @@ CHECKS = {
         "if (n_args == 3 && mp_obj_is_type(args[1], &type_image) "
         "&& mp_obj_is_type(args[2], &type_vec2)) {",
         "src->blit(self->image, source, dst, filter)",
+        # optional metrics guard injected (compiled away unless PV_METRICS)
+        "#if PV_METRICS",
+        "pv::metric_scope _pvm(PV_M_image_circle);",
     ],
     "brush": [
         # pixelate clamps size at 1 (Range(1, None, clamp=True))

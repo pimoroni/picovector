@@ -6,6 +6,9 @@ extern "C" {
 
 // shape.custom: Custom shape from one or more lists of vec2 points (extra lists = holes).
 mp_obj_t mpy_shape_custom(size_t n_args, const mp_obj_t *args) {
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_shape_custom);
+#endif
   shape_t *paths_shape = new (PV_MALLOC(sizeof(shape_t))) shape_t(n_args);
   for (size_t _p = 0; _p < n_args; _p++) {
     if (!mp_obj_is_type(args[_p], &mp_type_list)) mp_raise_msg_varg(&mp_type_TypeError, MP_ERROR_TEXT("expected a list of vec2 points"));
@@ -22,6 +25,9 @@ mp_obj_t mpy_shape_custom(size_t n_args, const mp_obj_t *args) {
 
 // shape.regular_polygon: Regular polygon. Args: centre, radius, number of sides.
 mp_obj_t mpy_shape_regular_polygon(size_t n_args, const mp_obj_t *args) {
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_shape_regular_polygon);
+#endif
   size_t _i = 0;
   vec2_t c = pv::get_xy(args, &_i, n_args);
   pv::need(n_args, _i + 2);
@@ -32,6 +38,9 @@ mp_obj_t mpy_shape_regular_polygon(size_t n_args, const mp_obj_t *args) {
 
 // shape.circle: Circle. Args: centre (vec2 or x, y), radius.
 mp_obj_t mpy_shape_circle(size_t n_args, const mp_obj_t *args) {
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_shape_circle);
+#endif
   size_t _i = 0;
   vec2_t c = pv::get_xy(args, &_i, n_args);
   pv::need(n_args, _i + 1);
@@ -41,6 +50,9 @@ mp_obj_t mpy_shape_circle(size_t n_args, const mp_obj_t *args) {
 
 // shape.ellipse: Ellipse. Args: centre, x-radius, y-radius.
 mp_obj_t mpy_shape_ellipse(size_t n_args, const mp_obj_t *args) {
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_shape_ellipse);
+#endif
   size_t _i = 0;
   vec2_t c = pv::get_xy(args, &_i, n_args);
   pv::need(n_args, _i + 2);
@@ -51,6 +63,9 @@ mp_obj_t mpy_shape_ellipse(size_t n_args, const mp_obj_t *args) {
 
 // shape.rectangle: Rectangle. Args: a rect, or x, y, w, h.
 mp_obj_t mpy_shape_rectangle(size_t n_args, const mp_obj_t *args) {
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_shape_rectangle);
+#endif
   size_t _i = 0;
   rect_t r = pv::get_xywh(args, &_i, n_args);
   return pv::box_shape(rectangle(r.x, r.y, r.w, r.h));
@@ -58,6 +73,9 @@ mp_obj_t mpy_shape_rectangle(size_t n_args, const mp_obj_t *args) {
 
 // shape.rounded_rectangle: Rounded rectangle. Corner radii (TL, TR, BR, BL) default to r1.
 mp_obj_t mpy_shape_rounded_rectangle(size_t n_args, const mp_obj_t *args) {
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_shape_rounded_rectangle);
+#endif
   size_t _i = 0;
   rect_t r = pv::get_xywh(args, &_i, n_args);
   pv::need(n_args, _i + 1);
@@ -73,6 +91,9 @@ mp_obj_t mpy_shape_rounded_rectangle(size_t n_args, const mp_obj_t *args) {
 
 // shape.squircle: Squircle (super-ellipse). Args: centre, size; n is the exponent (default 4).
 mp_obj_t mpy_shape_squircle(size_t n_args, const mp_obj_t *args) {
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_shape_squircle);
+#endif
   size_t _i = 0;
   vec2_t c = pv::get_xy(args, &_i, n_args);
   pv::need(n_args, _i + 1);
@@ -85,6 +106,9 @@ mp_obj_t mpy_shape_squircle(size_t n_args, const mp_obj_t *args) {
 
 // shape.arc: Annular sector / arc. Args: centre, inner & outer radius, from/to angle (degrees).
 mp_obj_t mpy_shape_arc(size_t n_args, const mp_obj_t *args) {
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_shape_arc);
+#endif
   size_t _i = 0;
   vec2_t c = pv::get_xy(args, &_i, n_args);
   pv::need(n_args, _i + 4);
@@ -97,6 +121,9 @@ mp_obj_t mpy_shape_arc(size_t n_args, const mp_obj_t *args) {
 
 // shape.pie: Pie / sector slice. Args: centre, radius, from/to angle (degrees).
 mp_obj_t mpy_shape_pie(size_t n_args, const mp_obj_t *args) {
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_shape_pie);
+#endif
   size_t _i = 0;
   vec2_t c = pv::get_xy(args, &_i, n_args);
   pv::need(n_args, _i + 3);
@@ -108,6 +135,9 @@ mp_obj_t mpy_shape_pie(size_t n_args, const mp_obj_t *args) {
 
 // shape.star: Star polygon. Args: centre, point count, outer & inner radius.
 mp_obj_t mpy_shape_star(size_t n_args, const mp_obj_t *args) {
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_shape_star);
+#endif
   size_t _i = 0;
   vec2_t c = pv::get_xy(args, &_i, n_args);
   pv::need(n_args, _i + 3);
@@ -119,6 +149,9 @@ mp_obj_t mpy_shape_star(size_t n_args, const mp_obj_t *args) {
 
 // shape.line: Stroked line shape of width w between two points.
 mp_obj_t mpy_shape_line(size_t n_args, const mp_obj_t *args) {
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_shape_line);
+#endif
   size_t _i = 0;
   vec2_t p1 = pv::get_xy(args, &_i, n_args);
   vec2_t p2 = pv::get_xy(args, &_i, n_args);
@@ -130,6 +163,9 @@ mp_obj_t mpy_shape_line(size_t n_args, const mp_obj_t *args) {
 // shape.stroke: Replace this shape with its stroked outline. flags: OR of
 mp_obj_t mpy_shape_stroke(size_t n_args, const mp_obj_t *args) {
   self(args[0], shape_obj_t);
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_shape_stroke);
+#endif
   size_t _i = 1;
   float width = mp_obj_get_float(args[_i]); _i++;
   int flags = 0;
@@ -143,6 +179,9 @@ mp_obj_t mpy_shape_stroke(size_t n_args, const mp_obj_t *args) {
 // shape.bounds: Device-space bounding box (local bbox run through the current transform).
 mp_obj_t mpy_shape_bounds(size_t n_args, const mp_obj_t *args) {
   self(args[0], shape_obj_t);
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_shape_bounds);
+#endif
   return pv::box_rect(self->shape->bounds());
 }
 

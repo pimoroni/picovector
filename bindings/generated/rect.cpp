@@ -7,6 +7,9 @@ extern "C" {
 // rect.deflate: Shrink by amount on each side, in place. deflate(a) or deflate(x, y).
 mp_obj_t mpy_rect_deflate(size_t n_args, const mp_obj_t *args) {
   self(args[0], rect_obj_t);
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_rect_deflate);
+#endif
   size_t _i = 1;
   float a1 = mp_obj_get_float(args[_i]); _i++;
   float a2 = a1;
@@ -18,6 +21,9 @@ mp_obj_t mpy_rect_deflate(size_t n_args, const mp_obj_t *args) {
 // rect.inflate: Grow by amount on each side, in place. inflate(a) or inflate(x, y).
 mp_obj_t mpy_rect_inflate(size_t n_args, const mp_obj_t *args) {
   self(args[0], rect_obj_t);
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_rect_inflate);
+#endif
   size_t _i = 1;
   float a1 = mp_obj_get_float(args[_i]); _i++;
   float a2 = a1;
@@ -29,6 +35,9 @@ mp_obj_t mpy_rect_inflate(size_t n_args, const mp_obj_t *args) {
 // rect.intersection: Return the intersection with another rect (empty if disjoint).
 mp_obj_t mpy_rect_intersection(size_t n_args, const mp_obj_t *args) {
   self(args[0], rect_obj_t);
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_rect_intersection);
+#endif
   size_t _i = 1;
   rect_t other = mp_obj_get_rect(args[_i]); _i++;
   return pv::box_rect(self->r.intersection(other));
@@ -37,6 +46,9 @@ mp_obj_t mpy_rect_intersection(size_t n_args, const mp_obj_t *args) {
 // rect.intersects: True if this rect overlaps with other.
 mp_obj_t mpy_rect_intersects(size_t n_args, const mp_obj_t *args) {
   self(args[0], rect_obj_t);
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_rect_intersects);
+#endif
   size_t _i = 1;
   rect_t other = mp_obj_get_rect(args[_i]); _i++;
   return mp_obj_new_bool(self->r.intersects(other));
@@ -45,12 +57,18 @@ mp_obj_t mpy_rect_intersects(size_t n_args, const mp_obj_t *args) {
 // rect.empty: True if this rect has zero area.
 mp_obj_t mpy_rect_empty(size_t n_args, const mp_obj_t *args) {
   self(args[0], rect_obj_t);
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_rect_empty);
+#endif
   return mp_obj_new_bool(self->r.empty());
 }
 
 // rect.offset: Shift by (x, y), in place. Also accepts a single vec2.
 mp_obj_t mpy_rect_offset(size_t n_args, const mp_obj_t *args) {
   self(args[0], rect_obj_t);
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_rect_offset);
+#endif
   size_t _i = 1;
   vec2_t p = pv::get_xy(args, &_i, n_args);
   self->r.offset(p.x, p.y);
@@ -60,6 +78,9 @@ mp_obj_t mpy_rect_offset(size_t n_args, const mp_obj_t *args) {
 // rect.contains: True if this rect fully contains another rect or a point (vec2).
 mp_obj_t mpy_rect_contains(size_t n_args, const mp_obj_t *args) {
   self(args[0], rect_obj_t);
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_rect_contains);
+#endif
   if (n_args == 2 && mp_obj_is_type(args[1], &type_rect)) {
     size_t _i = 1;
     rect_t other = mp_obj_get_rect(args[_i]); _i++;

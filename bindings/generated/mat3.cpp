@@ -7,6 +7,9 @@ extern "C" {
 // mat3.rotate: Rotate by degrees. Returns a new mat3.
 mp_obj_t mpy_mat3_rotate(size_t n_args, const mp_obj_t *args) {
   self(args[0], mat3_obj_t);
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_mat3_rotate);
+#endif
   size_t _i = 1;
   float degrees = mp_obj_get_float(args[_i]); _i++;
   return pv::box_mat3(self->m.rotate(degrees));
@@ -15,6 +18,9 @@ mp_obj_t mpy_mat3_rotate(size_t n_args, const mp_obj_t *args) {
 // mat3.rotate_radians: Rotate by radians. Returns a new mat3.
 mp_obj_t mpy_mat3_rotate_radians(size_t n_args, const mp_obj_t *args) {
   self(args[0], mat3_obj_t);
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_mat3_rotate_radians);
+#endif
   size_t _i = 1;
   float radians = mp_obj_get_float(args[_i]); _i++;
   return pv::box_mat3(self->m.rotate_radians(radians));
@@ -23,6 +29,9 @@ mp_obj_t mpy_mat3_rotate_radians(size_t n_args, const mp_obj_t *args) {
 // mat3.translate: Translate by (x, y). Also accepts a single vec2. Returns a new mat3.
 mp_obj_t mpy_mat3_translate(size_t n_args, const mp_obj_t *args) {
   self(args[0], mat3_obj_t);
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_mat3_translate);
+#endif
   size_t _i = 1;
   vec2_t p = pv::get_xy(args, &_i, n_args);
   return pv::box_mat3(self->m.translate(p.x, p.y));
@@ -31,6 +40,9 @@ mp_obj_t mpy_mat3_translate(size_t n_args, const mp_obj_t *args) {
 // mat3.scale: Scale by (x, y). Pass one value to scale uniformly. Returns a new mat3.
 mp_obj_t mpy_mat3_scale(size_t n_args, const mp_obj_t *args) {
   self(args[0], mat3_obj_t);
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_mat3_scale);
+#endif
   size_t _i = 1;
   float x = mp_obj_get_float(args[_i]); _i++;
   float y = x;
@@ -41,6 +53,9 @@ mp_obj_t mpy_mat3_scale(size_t n_args, const mp_obj_t *args) {
 // mat3.multiply: Multiply this matrix by another mat3. Returns a new mat3.
 mp_obj_t mpy_mat3_multiply(size_t n_args, const mp_obj_t *args) {
   self(args[0], mat3_obj_t);
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_mat3_multiply);
+#endif
   size_t _i = 1;
   mat3_t other = ((mat3_obj_t *)MP_OBJ_TO_PTR(args[_i]))->m; _i++;
   return pv::box_mat3(self->m.multiply(other));
@@ -49,6 +64,9 @@ mp_obj_t mpy_mat3_multiply(size_t n_args, const mp_obj_t *args) {
 // mat3.inverse: Return the inverse of this matrix.
 mp_obj_t mpy_mat3_inverse(size_t n_args, const mp_obj_t *args) {
   self(args[0], mat3_obj_t);
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_mat3_inverse);
+#endif
   return pv::box_mat3(self->m.inverse());
 }
 

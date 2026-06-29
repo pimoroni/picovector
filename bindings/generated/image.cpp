@@ -7,6 +7,9 @@ extern "C" {
 // image.clear: Fill the whole image with the current pen.
 mp_obj_t mpy_image_clear(size_t n_args, const mp_obj_t *args) {
   self(args[0], image_obj_t);
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_image_clear);
+#endif
   self->image->clear();
   return mp_const_none;
 }
@@ -14,6 +17,9 @@ mp_obj_t mpy_image_clear(size_t n_args, const mp_obj_t *args) {
 // image.rectangle: Filled rectangle (rect, or x, y, w, h).
 mp_obj_t mpy_image_rectangle(size_t n_args, const mp_obj_t *args) {
   self(args[0], image_obj_t);
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_image_rectangle);
+#endif
   size_t _i = 1;
   rect_t r = pv::get_xywh(args, &_i, n_args);
   self->image->rectangle(r);
@@ -23,6 +29,9 @@ mp_obj_t mpy_image_rectangle(size_t n_args, const mp_obj_t *args) {
 // image.line: Line between two points.
 mp_obj_t mpy_image_line(size_t n_args, const mp_obj_t *args) {
   self(args[0], image_obj_t);
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_image_line);
+#endif
   size_t _i = 1;
   vec2_t a = pv::get_xy(args, &_i, n_args);
   vec2_t b = pv::get_xy(args, &_i, n_args);
@@ -33,6 +42,9 @@ mp_obj_t mpy_image_line(size_t n_args, const mp_obj_t *args) {
 // image.circle: Filled circle at c with radius r.
 mp_obj_t mpy_image_circle(size_t n_args, const mp_obj_t *args) {
   self(args[0], image_obj_t);
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_image_circle);
+#endif
   size_t _i = 1;
   vec2_t c = pv::get_xy(args, &_i, n_args);
   pv::need(n_args, _i + 1);
@@ -44,6 +56,9 @@ mp_obj_t mpy_image_circle(size_t n_args, const mp_obj_t *args) {
 // image.triangle: Filled triangle.
 mp_obj_t mpy_image_triangle(size_t n_args, const mp_obj_t *args) {
   self(args[0], image_obj_t);
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_image_triangle);
+#endif
   size_t _i = 1;
   vec2_t a = pv::get_xy(args, &_i, n_args);
   vec2_t b = pv::get_xy(args, &_i, n_args);
@@ -55,6 +70,9 @@ mp_obj_t mpy_image_triangle(size_t n_args, const mp_obj_t *args) {
 // image.blur: Box-blur the whole image in place.
 mp_obj_t mpy_image_blur(size_t n_args, const mp_obj_t *args) {
   self(args[0], image_obj_t);
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_image_blur);
+#endif
   size_t _i = 1;
   float radius = mp_obj_get_float(args[_i]); _i++;
   self->image->blur(radius);
@@ -64,6 +82,9 @@ mp_obj_t mpy_image_blur(size_t n_args, const mp_obj_t *args) {
 // image.dither: Dither the whole image in place.
 mp_obj_t mpy_image_dither(size_t n_args, const mp_obj_t *args) {
   self(args[0], image_obj_t);
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_image_dither);
+#endif
   self->image->dither();
   return mp_const_none;
 }
@@ -71,6 +92,9 @@ mp_obj_t mpy_image_dither(size_t n_args, const mp_obj_t *args) {
 // image.onebit: Convert to 1-bit black/white in place.
 mp_obj_t mpy_image_onebit(size_t n_args, const mp_obj_t *args) {
   self(args[0], image_obj_t);
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_image_onebit);
+#endif
   self->image->onebit();
   return mp_const_none;
 }
@@ -78,6 +102,9 @@ mp_obj_t mpy_image_onebit(size_t n_args, const mp_obj_t *args) {
 // image.monochrome: Convert to monochrome in place.
 mp_obj_t mpy_image_monochrome(size_t n_args, const mp_obj_t *args) {
   self(args[0], image_obj_t);
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_image_monochrome);
+#endif
   self->image->monochrome();
   return mp_const_none;
 }
@@ -85,6 +112,9 @@ mp_obj_t mpy_image_monochrome(size_t n_args, const mp_obj_t *args) {
 // image.get: Read the pixel colour at p.
 mp_obj_t mpy_image_get(size_t n_args, const mp_obj_t *args) {
   self(args[0], image_obj_t);
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_image_get);
+#endif
   size_t _i = 1;
   vec2_t p = pv::get_xy(args, &_i, n_args);
   return pv::box_color_packed(self->image->get(p.x, p.y));
@@ -93,6 +123,9 @@ mp_obj_t mpy_image_get(size_t n_args, const mp_obj_t *args) {
 // image.put: Set the pixel at p to the current pen.
 mp_obj_t mpy_image_put(size_t n_args, const mp_obj_t *args) {
   self(args[0], image_obj_t);
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_image_put);
+#endif
   size_t _i = 1;
   vec2_t p = pv::get_xy(args, &_i, n_args);
   self->image->put(p.x, p.y);
@@ -102,6 +135,9 @@ mp_obj_t mpy_image_put(size_t n_args, const mp_obj_t *args) {
 // image.shape: Draw a shape, or a list of shapes.
 mp_obj_t mpy_image_shape(size_t n_args, const mp_obj_t *args) {
   self(args[0], image_obj_t);
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_image_shape);
+#endif
   mp_obj_t _arg = args[1];
   if (mp_obj_is_type(_arg, &type_shape)) {
     self->image->shape(((shape_obj_t *)MP_OBJ_TO_PTR(_arg))->shape);
@@ -118,6 +154,9 @@ mp_obj_t mpy_image_shape(size_t n_args, const mp_obj_t *args) {
 // image.blit: Blit another image onto this one (point, rect, or src-rect → dst-rect).
 mp_obj_t mpy_image_blit(size_t n_args, const mp_obj_t *args) {
   self(args[0], image_obj_t);
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_image_blit);
+#endif
   if (n_args == 3 && mp_obj_is_type(args[1], &type_image) && mp_obj_is_type(args[2], &type_vec2)) {
     size_t _i = 1;
     image_t * src = ((image_obj_t *)MP_OBJ_TO_PTR(args[_i]))->image; _i++;
@@ -158,6 +197,9 @@ mp_obj_t mpy_image_blit(size_t n_args, const mp_obj_t *args) {
 // image.blit_vspan: Blit a vertical texture span (advanced; used by raycasters).
 mp_obj_t mpy_image_blit_vspan(size_t n_args, const mp_obj_t *args) {
   self(args[0], image_obj_t);
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_image_blit_vspan);
+#endif
   size_t _i = 1;
   image_t * src = ((image_obj_t *)MP_OBJ_TO_PTR(args[_i]))->image; _i++;
   vec2_t p = pv::get_xy(args, &_i, n_args);
@@ -174,6 +216,9 @@ mp_obj_t mpy_image_blit_vspan(size_t n_args, const mp_obj_t *args) {
 // image.blit_hspan: Blit a horizontal texture span (advanced).
 mp_obj_t mpy_image_blit_hspan(size_t n_args, const mp_obj_t *args) {
   self(args[0], image_obj_t);
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_image_blit_hspan);
+#endif
   size_t _i = 1;
   image_t * src = ((image_obj_t *)MP_OBJ_TO_PTR(args[_i]))->image; _i++;
   vec2_t p = pv::get_xy(args, &_i, n_args);

@@ -42,6 +42,9 @@ static const color_obj_t color_dark_grey_obj = _pv_pal(rgb_color_t(0x40, 0x40, 0
 
 // color.rgb: Create a colour from RGB values (0–255 each). Optional alpha (0–255).
 mp_obj_t mpy_color_rgb(size_t n_args, const mp_obj_t *args) {
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_color_rgb);
+#endif
   size_t _i = 0;
   int r = (int)mp_obj_get_float(args[_i]); _i++;
   int g = (int)mp_obj_get_float(args[_i]); _i++;
@@ -53,6 +56,9 @@ mp_obj_t mpy_color_rgb(size_t n_args, const mp_obj_t *args) {
 
 // color.hsv: Create a colour from HSV components.
 mp_obj_t mpy_color_hsv(size_t n_args, const mp_obj_t *args) {
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_color_hsv);
+#endif
   size_t _i = 0;
   int h = (int)mp_obj_get_float(args[_i]); _i++;
   int s = (int)mp_obj_get_float(args[_i]); _i++;
@@ -64,6 +70,9 @@ mp_obj_t mpy_color_hsv(size_t n_args, const mp_obj_t *args) {
 
 // color.oklch: Create a colour from OKLCH components.
 mp_obj_t mpy_color_oklch(size_t n_args, const mp_obj_t *args) {
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_color_oklch);
+#endif
   size_t _i = 0;
   int l = (int)mp_obj_get_float(args[_i]); _i++;
   int c = (int)mp_obj_get_float(args[_i]); _i++;

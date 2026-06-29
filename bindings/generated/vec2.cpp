@@ -7,18 +7,27 @@ extern "C" {
 // vec2.length: Magnitude (Euclidean length) of this vector.
 mp_obj_t mpy_vec2_length(size_t n_args, const mp_obj_t *args) {
   self(args[0], vec2_obj_t);
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_vec2_length);
+#endif
   return mp_obj_new_float(self->v.length());
 }
 
 // vec2.length_squared: Squared magnitude (faster than length() — no square root).
 mp_obj_t mpy_vec2_length_squared(size_t n_args, const mp_obj_t *args) {
   self(args[0], vec2_obj_t);
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_vec2_length_squared);
+#endif
   return mp_obj_new_float(self->v.length_squared());
 }
 
 // vec2.dot: Dot product with another vec2.
 mp_obj_t mpy_vec2_dot(size_t n_args, const mp_obj_t *args) {
   self(args[0], vec2_obj_t);
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_vec2_dot);
+#endif
   size_t _i = 1;
   vec2_t other = mp_obj_get_vec2(args[_i]); _i++;
   return mp_obj_new_float(self->v.dot(other));
@@ -27,6 +36,9 @@ mp_obj_t mpy_vec2_dot(size_t n_args, const mp_obj_t *args) {
 // vec2.cross: Cross product (scalar z-component) with another vec2.
 mp_obj_t mpy_vec2_cross(size_t n_args, const mp_obj_t *args) {
   self(args[0], vec2_obj_t);
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_vec2_cross);
+#endif
   size_t _i = 1;
   vec2_t other = mp_obj_get_vec2(args[_i]); _i++;
   return mp_obj_new_float(self->v.cross(other));
@@ -35,6 +47,9 @@ mp_obj_t mpy_vec2_cross(size_t n_args, const mp_obj_t *args) {
 // vec2.distance: Euclidean distance to another vec2.
 mp_obj_t mpy_vec2_distance(size_t n_args, const mp_obj_t *args) {
   self(args[0], vec2_obj_t);
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_vec2_distance);
+#endif
   size_t _i = 1;
   vec2_t other = mp_obj_get_vec2(args[_i]); _i++;
   return mp_obj_new_float(self->v.distance(other));
@@ -43,6 +58,9 @@ mp_obj_t mpy_vec2_distance(size_t n_args, const mp_obj_t *args) {
 // vec2.distance_squared: Squared distance to another vec2 (faster than distance()).
 mp_obj_t mpy_vec2_distance_squared(size_t n_args, const mp_obj_t *args) {
   self(args[0], vec2_obj_t);
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_vec2_distance_squared);
+#endif
   size_t _i = 1;
   vec2_t other = mp_obj_get_vec2(args[_i]); _i++;
   return mp_obj_new_float(self->v.distance_squared(other));
@@ -51,12 +69,18 @@ mp_obj_t mpy_vec2_distance_squared(size_t n_args, const mp_obj_t *args) {
 // vec2.angle: Angle of this vector in radians (atan2(y, x)).
 mp_obj_t mpy_vec2_angle(size_t n_args, const mp_obj_t *args) {
   self(args[0], vec2_obj_t);
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_vec2_angle);
+#endif
   return mp_obj_new_float(self->v.angle());
 }
 
 // vec2.angle_to: Angle from this vector to another, in radians.
 mp_obj_t mpy_vec2_angle_to(size_t n_args, const mp_obj_t *args) {
   self(args[0], vec2_obj_t);
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_vec2_angle_to);
+#endif
   size_t _i = 1;
   vec2_t other = mp_obj_get_vec2(args[_i]); _i++;
   return mp_obj_new_float(self->v.angle_to(other));
@@ -65,24 +89,36 @@ mp_obj_t mpy_vec2_angle_to(size_t n_args, const mp_obj_t *args) {
 // vec2.normalized: Return a unit vector in the same direction.
 mp_obj_t mpy_vec2_normalized(size_t n_args, const mp_obj_t *args) {
   self(args[0], vec2_obj_t);
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_vec2_normalized);
+#endif
   return pv::box_vec2(self->v.normalized());
 }
 
 // vec2.perpendicular: Return a vector perpendicular to this one (rotated 90°).
 mp_obj_t mpy_vec2_perpendicular(size_t n_args, const mp_obj_t *args) {
   self(args[0], vec2_obj_t);
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_vec2_perpendicular);
+#endif
   return pv::box_vec2(self->v.perpendicular());
 }
 
 // vec2.abs: Return component-wise absolute value.
 mp_obj_t mpy_vec2_abs(size_t n_args, const mp_obj_t *args) {
   self(args[0], vec2_obj_t);
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_vec2_abs);
+#endif
   return pv::box_vec2(self->v.abs());
 }
 
 // vec2.rotated: Return this vector rotated by angle (radians).
 mp_obj_t mpy_vec2_rotated(size_t n_args, const mp_obj_t *args) {
   self(args[0], vec2_obj_t);
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_vec2_rotated);
+#endif
   size_t _i = 1;
   float angle = mp_obj_get_float(args[_i]); _i++;
   return pv::box_vec2(self->v.rotated(angle));
@@ -91,6 +127,9 @@ mp_obj_t mpy_vec2_rotated(size_t n_args, const mp_obj_t *args) {
 // vec2.lerp: Linear interpolation toward other. t=0 returns self, t=1 returns other.
 mp_obj_t mpy_vec2_lerp(size_t n_args, const mp_obj_t *args) {
   self(args[0], vec2_obj_t);
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_vec2_lerp);
+#endif
   size_t _i = 1;
   vec2_t other = mp_obj_get_vec2(args[_i]); _i++;
   float t = mp_obj_get_float(args[_i]); _i++;
@@ -100,6 +139,9 @@ mp_obj_t mpy_vec2_lerp(size_t n_args, const mp_obj_t *args) {
 // vec2.reflect: Reflect this vector around the given normal vec2.
 mp_obj_t mpy_vec2_reflect(size_t n_args, const mp_obj_t *args) {
   self(args[0], vec2_obj_t);
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_vec2_reflect);
+#endif
   size_t _i = 1;
   vec2_t normal = mp_obj_get_vec2(args[_i]); _i++;
   return pv::box_vec2(self->v.reflect(normal));
@@ -108,6 +150,9 @@ mp_obj_t mpy_vec2_reflect(size_t n_args, const mp_obj_t *args) {
 // vec2.clamp_length: Return this vector clamped to at most max_length magnitude.
 mp_obj_t mpy_vec2_clamp_length(size_t n_args, const mp_obj_t *args) {
   self(args[0], vec2_obj_t);
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_vec2_clamp_length);
+#endif
   size_t _i = 1;
   float max_length = mp_obj_get_float(args[_i]); _i++;
   return pv::box_vec2(self->v.clamp_length(max_length));
@@ -116,6 +161,9 @@ mp_obj_t mpy_vec2_clamp_length(size_t n_args, const mp_obj_t *args) {
 // vec2.transform: Apply a mat3 transformation to this vector, in place.
 mp_obj_t mpy_vec2_transform(size_t n_args, const mp_obj_t *args) {
   self(args[0], vec2_obj_t);
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_vec2_transform);
+#endif
   size_t _i = 1;
   mat3_t m = ((mat3_obj_t *)MP_OBJ_TO_PTR(args[_i]))->m; _i++;
   self->v = self->v.transform(m);

@@ -6,6 +6,9 @@ extern "C" {
 
 // brush.pattern: Checkerboard pattern brush. Args: c1, c2 (colors), index (0–37) or 8-tuple.
 mp_obj_t mpy_brush_pattern(size_t n_args, const mp_obj_t *args) {
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_brush_pattern);
+#endif
   if (n_args == 3 && mp_obj_is_type(args[0], &type_color) && mp_obj_is_type(args[1], &type_color) && mp_obj_is_int(args[2])) {
     size_t _i = 0;
     color_t c1 = (((color_obj_t *)MP_OBJ_TO_PTR(args[_i]))->c); _i++;
@@ -30,6 +33,9 @@ mp_obj_t mpy_brush_pattern(size_t n_args, const mp_obj_t *args) {
 
 // brush.image: Image brush. Args: img (image). Optional: transform (mat3).
 mp_obj_t mpy_brush_image(size_t n_args, const mp_obj_t *args) {
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_brush_image);
+#endif
   if (n_args == 1 && mp_obj_is_type(args[0], &type_image)) {
     size_t _i = 0;
     image_t * img = ((image_obj_t *)MP_OBJ_TO_PTR(args[_i]))->image; _i++;
@@ -46,6 +52,9 @@ mp_obj_t mpy_brush_image(size_t n_args, const mp_obj_t *args) {
 
 // brush.gradient: Gradient brush. type: brush.LINEAR or brush.RADIAL; stops: list of
 mp_obj_t mpy_brush_gradient(size_t n_args, const mp_obj_t *args) {
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_brush_gradient);
+#endif
   size_t _i = 0;
   int type = (int)mp_obj_get_float(args[_i]); _i++;
   float x1 = mp_obj_get_float(args[_i]); _i++;
@@ -69,6 +78,9 @@ mp_obj_t mpy_brush_gradient(size_t n_args, const mp_obj_t *args) {
 
 // brush.pixelate: Mosaic the shape's area, block size in pixels.
 mp_obj_t mpy_brush_pixelate(size_t n_args, const mp_obj_t *args) {
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_brush_pixelate);
+#endif
   size_t _i = 0;
   int size = (int)mp_obj_get_float(args[_i]); _i++;
   if (size < 1) size = 1;
@@ -77,6 +89,9 @@ mp_obj_t mpy_brush_pixelate(size_t n_args, const mp_obj_t *args) {
 
 // brush.blur: Box-blur the shape's area from the target.
 mp_obj_t mpy_brush_blur(size_t n_args, const mp_obj_t *args) {
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_brush_blur);
+#endif
   size_t _i = 0;
   int radius = (int)mp_obj_get_float(args[_i]); _i++;
   if (radius < 1) radius = 1;
@@ -85,6 +100,9 @@ mp_obj_t mpy_brush_blur(size_t n_args, const mp_obj_t *args) {
 
 // brush.lighten: Add amount (0–255) to each channel of the backdrop.
 mp_obj_t mpy_brush_lighten(size_t n_args, const mp_obj_t *args) {
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_brush_lighten);
+#endif
   size_t _i = 0;
   int amount = (int)mp_obj_get_float(args[_i]); _i++;
   return pv::box_brush(m_new_class(brightness_brush_t, amount));
@@ -92,6 +110,9 @@ mp_obj_t mpy_brush_lighten(size_t n_args, const mp_obj_t *args) {
 
 // brush.darken: Subtract amount (0–255) from each channel of the backdrop.
 mp_obj_t mpy_brush_darken(size_t n_args, const mp_obj_t *args) {
+#if PV_METRICS
+  pv::metric_scope _pvm(PV_M_brush_darken);
+#endif
   size_t _i = 0;
   int amount = (int)mp_obj_get_float(args[_i]); _i++;
   return pv::box_brush(m_new_class(brightness_brush_t, -amount));

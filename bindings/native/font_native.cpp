@@ -24,6 +24,9 @@ extern "C" {
   }
 
   mp_obj_t font_load(size_t n_args, const mp_obj_t *args) {
+#if PV_METRICS
+    pv::metric_scope _pvm(PV_M_font_load);
+#endif
     mp_obj_t path = args[0];
     font_obj_t *result = mp_obj_malloc_with_finaliser(font_obj_t, &type_font);
 

@@ -2,7 +2,7 @@
 #include <cfloat>
 
 // Set to 1 to enable rasteriser phase profiling (prints phase timings to the REPL).
-#define PV_PROFILE 1
+#define PV_PROFILE 0
 
 // Set to 1 to use the second core (core1) for rasterisation. Always available on
 // Badgeware; other projects that need core1 for something else can set this to 0.
@@ -39,7 +39,10 @@ using std::sort, std::min, std::max;
 // memory pool for rasterisation, png decoding, and other memory intensive
 // tasks (sized to fit PNGDEC state) - on pico it *must* be 32bit aligned (i
 // found out the hard way.)
-char __attribute__((aligned(4))) PicoVector_working_buffer[working_buffer_size];
+extern "C" {
+  constexpr size_t working_buffer_size = (60 + 20) * 1024;
+  char __attribute__((aligned(4))) PicoVector_working_buffer[working_buffer_size];
+}
 
 #define TILE_WIDTH 64
 #define TILE_HEIGHT 64

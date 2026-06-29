@@ -205,6 +205,7 @@ namespace picovector {
   // }
 
   void image_t::clear() {
+    pv_profile_frame(); // once-per-frame profiling sample (no-op unless PV_PROFILE)
     rectangle(_clip);
   }
 

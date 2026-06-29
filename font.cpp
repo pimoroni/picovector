@@ -81,6 +81,30 @@ namespace picovector {
     return 0; // invalid
   }
 
+  // Scratch for converting one glyph contour's compact int8 points to vec2_t
+  // before handing them to the geometry-agnostic renderer.
+  static vec2_t glyph_point_buf[256];
+
+  // Draw a single glyph through the retained renderer (begin / add_path / flush).
+  // This is the old render_glyph, hoisted out of picovector so the renderer
+  // stays agnostic of the font's point representation.
+  static void draw_glyph(glyph_t *glyph, image_t *target, mat3_t *transform, brush_t *brush) {
+    if(!glyph->path_count) return;
+
+    render_begin();
+    for(int i = 0; i < glyph->path_count; i++) {
+      glyph_path_t &path = glyph->paths[i];
+      int count = path.point_count;
+      if(count < 2) continue;
+      if(count > (int)(sizeof(glyph_point_buf) / sizeof(glyph_point_buf[0]))) continue; // too detailed to fit
+      for(int k = 0; k < count; k++) {
+        glyph_point_buf[k] = vec2_t((float)path.points[k].x, (float)path.points[k].y);
+      }
+      render_add_path(glyph_point_buf, count, transform);
+    }
+    render_flush(target, brush);
+  }
+
   void font_t::draw(image_t *target, const char *text, float x, float y, float size) {
     vec2_t caret(x, y);
 
@@ -98,7 +122,7 @@ namespace picovector {
       // find the glyph
       for(int j = 0; j < this->glyph_count; j++) {
         if(this->glyphs[j].codepoint == codepoint) {
-          render_glyph(&this->glyphs[j], target, &transform, target->brush());
+          draw_glyph(&this->glyphs[j], target, &transform, target->brush());
           float a = this->glyphs[j].advance;
           transform = transform.translate(a, 0);
           break;

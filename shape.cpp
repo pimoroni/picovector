@@ -11,7 +11,7 @@ namespace picovector {
     // calculate normal of edge
     float nx = -(e.y - s.y);
     float ny = e.x - s.x;
-    float l = sqrt(nx * nx + ny * ny);
+    float l = sqrtf(nx * nx + ny * ny);
     nx /= l;
     ny /= l;
 
@@ -94,7 +94,7 @@ namespace picovector {
     float maxx = max(max(c[0].x, c[1].x), max(c[2].x, c[3].x));
     float maxy = max(max(c[0].y, c[1].y), max(c[2].y, c[3].y));
 
-    return rect_t(minx, miny, ceil(maxx) - minx, ceil(maxy) - miny);
+    return rect_t(minx, miny, ceilf(maxx) - minx, ceilf(maxy) - miny);
   }
 
   // these should be methods on image maybe?
@@ -142,9 +142,9 @@ namespace picovector {
     float a0 = atan2f(from.y - center.y, from.x - center.x);
     float a1 = atan2f(to.y - center.y, to.x - center.x);
     float da = a1 - a0;
-    while(da >  (float)M_PI) da -= 2.0f * (float)M_PI;
-    while(da < -(float)M_PI) da += 2.0f * (float)M_PI;
-    int n = (int)ceilf(fabsf(da) / ((float)M_PI / 8.0f)); // ~22.5 deg per segment
+    while(da >  PV_PI) da -= 2.0f * PV_PI;
+    while(da < -PV_PI) da += 2.0f * PV_PI;
+    int n = (int)ceilf(fabsf(da) / (PV_PI / 8.0f)); // ~22.5 deg per segment
     for(int s = 1; s < n; s++) {
       float a = a0 + da * (float)s / (float)n;
       ring.push_back(vec2_t(center.x + cosf(a) * radius, center.y + sinf(a) * radius));
@@ -229,7 +229,7 @@ namespace picovector {
       float ux = a.x - mid.x, uy = a.y - mid.y; // length == half_width
       int n = 8;
       for(int s = 1; s < n; s++) {
-        float ang = (float)M_PI * (float)s / (float)n;
+        float ang = PV_PI * (float)s / (float)n;
         float ca = cosf(ang), sa = sinf(ang);
         ring.push_back(vec2_t(mid.x + ux * ca + dir.x * half_width * sa,
                               mid.y + uy * ca + dir.y * half_width * sa));

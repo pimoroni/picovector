@@ -11,6 +11,9 @@ extern "C" {
   #include "py/runtime.h"
 
   mp_obj_t algorithm_clip_line(size_t n_args, const mp_obj_t *args) {
+#if PV_METRICS
+    pv::metric_scope _pvm(PV_M_algorithm_clip_line);
+#endif
     vec2_obj_t *p1 = (vec2_obj_t *)MP_OBJ_TO_PTR(args[0]);
     vec2_obj_t *p2 = (vec2_obj_t *)MP_OBJ_TO_PTR(args[1]);
     const rect_obj_t *r = (rect_obj_t *)MP_OBJ_TO_PTR(args[2]);
@@ -19,6 +22,9 @@ extern "C" {
   }
 
   mp_obj_t algorithm_dda(size_t n_args, const mp_obj_t *args) {
+#if PV_METRICS
+    pv::metric_scope _pvm(PV_M_algorithm_dda);
+#endif
     vec2_t point = mp_obj_get_vec2(args[0]);
     float angle = mp_obj_get_float(args[1]);
     float depth = mp_obj_get_float(args[2]);
@@ -43,6 +49,9 @@ extern "C" {
   }
 
   mp_obj_t algorithm_raycast(size_t n_args, const mp_obj_t *args) {
+#if PV_METRICS
+    pv::metric_scope _pvm(PV_M_algorithm_raycast);
+#endif
     vec2_obj_t *p = (vec2_obj_t *)MP_OBJ_TO_PTR(args[0]);
     float angle = mp_obj_get_float(args[1]);
     float fov = mp_obj_get_float(args[2]);

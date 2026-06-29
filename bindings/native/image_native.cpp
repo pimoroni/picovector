@@ -58,6 +58,9 @@ extern "C" {
   }
 
   mp_obj_t image_load(size_t n_args, const mp_obj_t *args) {
+#if PV_METRICS
+    pv::metric_scope _pvm(PV_M_image_load);
+#endif
     image_obj_t *result = mp_obj_malloc_with_finaliser(image_obj_t, &type_image);
     result->image = nullptr;
     int target_width  = n_args >= 2 ? (int)mp_obj_get_float(args[1]) : 0;
@@ -68,12 +71,18 @@ extern "C" {
 
   mp_obj_t image_load_into(size_t n_args, const mp_obj_t *args) {
     self(args[0], image_obj_t);
+#if PV_METRICS
+    pv::metric_scope _pvm(PV_M_image_load_into);
+#endif
     image_open_helper(*self, args[1], 0, 0);
     return mp_const_none;
   }
 
   mp_obj_t image_window(size_t n_args, const mp_obj_t *args) {
     self(args[0], image_obj_t);
+#if PV_METRICS
+    pv::metric_scope _pvm(PV_M_image_window);
+#endif
     int x, y, w, h;
     if (mp_obj_is_rect(args[1])) {
       rect_t r = mp_obj_get_rect(args[1]);
@@ -90,6 +99,9 @@ extern "C" {
 
   mp_obj_t image_text(size_t n_args, const mp_obj_t *args) {
     self(args[0], image_obj_t);
+#if PV_METRICS
+    pv::metric_scope _pvm(PV_M_image_text);
+#endif
     const char *text = mp_obj_str_get_str(args[1]);
     if (!self->font && !self->pixel_font) {
       mp_raise_msg_varg(&mp_type_OSError, MP_ERROR_TEXT("target image has no font"));
@@ -108,6 +120,9 @@ extern "C" {
 
   mp_obj_t image_measure_text(size_t n_args, const mp_obj_t *args) {
     self(args[0], image_obj_t);
+#if PV_METRICS
+    pv::metric_scope _pvm(PV_M_image_measure_text);
+#endif
     const char *text = mp_obj_str_get_str(args[1]);
     if (!self->font && !self->pixel_font) {
       mp_raise_msg_varg(&mp_type_OSError, MP_ERROR_TEXT("target image has no font"));
@@ -132,6 +147,9 @@ extern "C" {
   // iteration, so it costs no per-shape heap allocation.
   mp_obj_t image_shapes(size_t n_args, const mp_obj_t *args) {
     self(args[0], image_obj_t);
+#if PV_METRICS
+    pv::metric_scope _pvm(PV_M_image_shapes);
+#endif
     size_t len; mp_obj_t *items;
     mp_obj_get_array(args[1], &len, &items);
     brush_t *default_brush = self->image->brush();
@@ -175,6 +193,9 @@ extern "C" {
   // command first tries to set an attribute (pen, clip, …); otherwise the
   // command name selects a generated drawing function.
   mp_obj_t image_batch(size_t n_args, const mp_obj_t *args) {
+#if PV_METRICS
+    pv::metric_scope _pvm(PV_M_image_batch);
+#endif
     if (!mp_obj_is_type(args[1], &mp_type_list)) {
       mp_raise_TypeError(MP_ERROR_TEXT("invalid parameters, expected list of draw commands"));
     }

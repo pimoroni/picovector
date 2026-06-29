@@ -17,6 +17,7 @@ extern "C" {
 }
 
 #include "pv_objs.hpp"   // picovector MicroPython obj structs + type_* externs
+#include "pv_metrics.hpp" // optional per-binding metrics (no-op unless PV_METRICS)
 
 using namespace picovector;
 

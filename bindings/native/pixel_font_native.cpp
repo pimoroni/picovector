@@ -23,6 +23,9 @@ extern "C" {
   }
 
   mp_obj_t pixel_font_load(size_t n_args, const mp_obj_t *args) {
+#if PV_METRICS
+    pv::metric_scope _pvm(PV_M_pixel_font_load);
+#endif
     mp_obj_t path = args[0];
     pixel_font_obj_t *result =
         mp_obj_malloc_with_finaliser(pixel_font_obj_t, &type_pixel_font);

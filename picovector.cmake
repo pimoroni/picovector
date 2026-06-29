@@ -41,8 +41,10 @@ list(APPEND SOURCES
   ${CMAKE_CURRENT_LIST_DIR}/bindings/generated/font.cpp
   ${CMAKE_CURRENT_LIST_DIR}/bindings/generated/pixel_font.cpp
   ${CMAKE_CURRENT_LIST_DIR}/bindings/generated/algorithm.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/bindings/generated/pv_metrics_names.cpp
   # shared glue + hand-written (native) bodies + companion image decoders
   ${CMAKE_CURRENT_LIST_DIR}/bindings/runtime/pv_support.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/bindings/runtime/pv_metrics.cpp
   ${CMAKE_CURRENT_LIST_DIR}/bindings/native/font_native.cpp
   ${CMAKE_CURRENT_LIST_DIR}/bindings/native/pixel_font_native.cpp
   ${CMAKE_CURRENT_LIST_DIR}/bindings/native/image_native.cpp
@@ -62,6 +64,15 @@ target_include_directories(usermod_picovector INTERFACE
 )
 
 target_link_libraries(usermod INTERFACE usermod_picovector pngdec jpegdec)
+
+# Optional per-binding call-count + timing metrics. Off by default (zero cost):
+#   cmake -DPV_METRICS=ON ...   (or set in the board/port config)
+# When enabled, every generated binding (and the opted-in native bodies) is
+# wrapped in a pv::metric_scope; query via the `picovector.metrics` module.
+option(PV_METRICS "Instrument picovector bindings with call/time metrics" OFF)
+if(PV_METRICS)
+  target_compile_definitions(usermod_picovector INTERFACE PV_METRICS=1)
+endif()
 
 set_source_files_properties(
   ${SOURCES}

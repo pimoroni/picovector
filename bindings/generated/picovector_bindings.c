@@ -5,9 +5,14 @@
 extern mp_obj_t modpicovector___init__(void);
 static MP_DEFINE_CONST_FUN_OBJ_0(modpicovector___init___obj, modpicovector___init__);
 
+// picovector.metrics submodule (runtime/pv_metrics.cpp). Always present;
+// reports metrics.enabled == False and zeros when built without PV_METRICS.
+extern const mp_obj_module_t modpicovector_metrics;
+
 static const mp_rom_map_elem_t modpicovector_globals_table[] = {
   { MP_ROM_QSTR(MP_QSTR___name__), MP_ROM_QSTR(MP_QSTR_modpicovector) },
   { MP_ROM_QSTR(MP_QSTR___init__), MP_ROM_PTR(&modpicovector___init___obj) },
+  { MP_ROM_QSTR(MP_QSTR_metrics), MP_ROM_PTR(&modpicovector_metrics) },
   { MP_ROM_QSTR(MP_QSTR_mat3), MP_ROM_PTR(&type_mat3) },
   { MP_ROM_QSTR(MP_QSTR_vec2), MP_ROM_PTR(&type_vec2) },
   { MP_ROM_QSTR(MP_QSTR_rect), MP_ROM_PTR(&type_rect) },

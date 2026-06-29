@@ -57,6 +57,36 @@ namespace picovector {
         t.v10 * x + t.v11 * y + t.v12
       );
     }
+
+    // --- common vector operations (single precision; angles in radians) -------
+    float length() const { return sqrtf(x * x + y * y); }
+    float length_squared() const { return x * x + y * y; }
+    float dot(const vec2_t &o) const { return x * o.x + y * o.y; }
+    float cross(const vec2_t &o) const { return x * o.y - y * o.x; } // 2D scalar (z of the 3D cross)
+    float distance(const vec2_t &o) const { float dx = x - o.x, dy = y - o.y; return sqrtf(dx * dx + dy * dy); }
+    float distance_squared(const vec2_t &o) const { float dx = x - o.x, dy = y - o.y; return dx * dx + dy * dy; }
+    float angle() const { return atan2f(y, x); }                  // angle from the +x axis
+    float angle_to(const vec2_t &o) const { return atan2f(cross(o), dot(o)); } // signed angle this -> o
+
+    vec2_t normalized() const { float l = length(); return l > 0.0f ? vec2_t(x / l, y / l) : vec2_t(0.0f, 0.0f); }
+    vec2_t perpendicular() const { return vec2_t(-y, x); }        // rotated +90 degrees (CCW)
+    vec2_t abs() const { return vec2_t(fabsf(x), fabsf(y)); }
+    vec2_t rotated(float a) const {                               // rotate CCW by `a` radians
+      float c = cosf(a), s = sinf(a);
+      return vec2_t(x * c - y * s, x * s + y * c);
+    }
+    vec2_t lerp(const vec2_t &o, float t) const {                 // linear interpolate this..o by t
+      return vec2_t(x + (o.x - x) * t, y + (o.y - y) * t);
+    }
+    vec2_t reflect(const vec2_t &n) const {                       // reflect about unit normal n
+      float d = 2.0f * dot(n);
+      return vec2_t(x - n.x * d, y - n.y * d);
+    }
+    vec2_t clamp_length(float max_length) const {                 // shrink to max_length, keep direction
+      float l = length();
+      if(l > max_length && l > 0.0f) { float k = max_length / l; return vec2_t(x * k, y * k); }
+      return *this;
+    }
   };
 
   static inline fx16_t f_to_fx16(float v) {

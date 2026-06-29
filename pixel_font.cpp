@@ -11,6 +11,8 @@ using std::max;
 
 namespace picovector {
 
+  static inline uint8_t utf8_seq_len(uint8_t b0); // defined below; used by measure() above its definition
+
   int pixel_font_t::glyph_index(int codepoint) {
 
     uint32_t low = 0;
@@ -54,7 +56,8 @@ namespace picovector {
         b.x = min(caret.x, b.x);
         b.w = max(caret.x, b.w);
       }
-      text++;
+
+      text += utf8_seq_len(*text);
     }
     return b;
   }

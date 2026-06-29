@@ -72,9 +72,20 @@ namespace picovector {
 
   image_brush_t::image_brush_t(image_t *src, mat3_t *transform) : src(src) {
     if(transform) {
-      inverse_transform = *transform;
-      inverse_transform.inverse();
+      base_inverse = *transform;
+      base_inverse.inverse();
     }
+    inverse_transform = base_inverse; // no shape transform applied yet
+  }
+
+  // Fold the shape's transform into the texture mapping so the image tracks the
+  // shape: device->image = (brush's own inverse) * inverse(shape transform).
+  void image_brush_t::set_render_transform(mat3_t *transform) {
+    if(!transform) { inverse_transform = base_inverse; return; }
+    mat3_t inv = *transform;
+    inv.inverse();
+    inverse_transform = base_inverse;
+    inverse_transform.multiply(inv);
   }
 
   span_func_t image_brush_t::span_func() {

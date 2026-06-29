@@ -514,7 +514,7 @@ namespace picovector {
 
   // Rasterise the whole accumulated batch in one tile pass.
   void render_flush(image_t *target, brush_t *brush) {
-    if(edge_count == 0) return;
+    if(edge_count == 0 || brush == nullptr) return;
 
     // device-space bounds of everything added, clipped to the target. Bail if
     // off-screen; the tile loop is tightened to the visible region.
@@ -532,8 +532,11 @@ namespace picovector {
     if(aa == 1) p_alpha_map = alpha_map_x4;
     if(aa == 2) p_alpha_map = alpha_map_x16;
 
-    masked_span_func_t fn = target->_masked_span_func;
-    span_func_t sfn = target->_span_func; // unmasked span for the aa == 0 fast path
+    // Span functions come from the brush we were handed (authoritative), not the
+    // image's last-set pen — so callers can draw any shape with any brush without
+    // first syncing it onto the image.
+    masked_span_func_t fn = brush->masked_span_func();
+    span_func_t sfn = brush->span_func(); // unmasked span for the aa == 0 fast path
     fill_rule_t fill_rule = target->fill_rule();
 
     // For the dual-core build split each core needs its own node region of
@@ -627,6 +630,9 @@ namespace picovector {
     // its points. This is what lets `transform` fall as you zoom in and most
     // shapes leave the clip region.
     if(shape->bounds().round().intersection(target->clip()).empty()) return;
+
+    // let the brush fold in the shape's transform (gradients track the shape)
+    if(brush) brush->set_render_transform(transform);
 
     render_begin();
     for(auto &path : shape->paths) {

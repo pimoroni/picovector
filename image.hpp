@@ -40,6 +40,13 @@ namespace picovector {
     RGBA4444 = 2,
   } pixel_format_t;
 
+  // texture sampling quality for the blit* functions
+  typedef enum filter_t {
+    NEAREST  = 0, // single nearest texel (fastest, default)
+    BILINEAR = 1, // 2x2 linear blend
+    BICUBIC  = 2  // 4x4 cubic (Catmull-Rom) blend
+  } filter_t;
+
   typedef std::vector<uint32_t, PV_STD_ALLOCATOR<uint32_t>> palette_t;
 
   class mat3_t;
@@ -144,6 +151,11 @@ namespace picovector {
       uint32_t get(int x, int y);
       uint32_t get_unsafe(int x, int y);
 
+      // sample a (premultiplied) texel at fixed-point 16.16 source coordinates
+      // using the requested filter; edge-clamped. Palette images always sample
+      // NEAREST (indices can't be interpolated).
+      uint32_t sample(fx16_t sx, fx16_t sy, filter_t filter);
+
       // filters
       void blur(float radius);
       void dither();
@@ -152,10 +164,10 @@ namespace picovector {
 
       // blitting
       void blit(image_t *t, const vec2_t p);
-      void blit(image_t *t, rect_t tr);
-      void blit(image_t *t, rect_t sr, rect_t tr);
-      void blit_hspan(image_t *target, vec2_t p, int c, vec2_t uv0, vec2_t uv1);
-      void blit_vspan(image_t *target, vec2_t p, int c, vec2_t uv0, vec2_t uv1);
+      void blit(image_t *t, rect_t tr, filter_t filter = NEAREST);
+      void blit(image_t *t, rect_t sr, rect_t tr, filter_t filter = NEAREST);
+      void blit_hspan(image_t *target, vec2_t p, int c, vec2_t uv0, vec2_t uv1, filter_t filter = NEAREST);
+      void blit_vspan(image_t *target, vec2_t p, int c, vec2_t uv0, vec2_t uv1, filter_t filter = NEAREST);
   };
 
 }

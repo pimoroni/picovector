@@ -123,6 +123,58 @@ MPY_BIND_VAR(2, window, {
     mp_raise_msg_varg(&mp_type_ValueError, MP_ERROR_TEXT("invalid parameters, expected either shape(s) or shape([s1, s2, s3, ...])"));
   })
 
+  MPY_BIND_VAR(2, shapes, {
+    // Batched draw: shapes([entry, ...]) renders many shapes in one C loop, with
+    // no per-shape Python overhead. Each entry is a bare shape, or (shape, brush).
+    // The transform always comes from each shape's own .transform property; brush
+    // defaults to the image's current pen. The brush slot may be a brush or a
+    // color (None = the default). A color is wrapped in a stack-allocated colour
+    // brush reused each iteration, so colour entries cost NO per-shape heap
+    // allocation (unlike passing colours through the pen one at a time).
+    const image_obj_t *self = (image_obj_t *)MP_OBJ_TO_PTR(args[0]);
+
+    size_t len; mp_obj_t *items;
+    mp_obj_get_array(args[1], &len, &items);
+
+    brush_t *default_brush = self->image->brush(); // the image's current pen (may be null)
+
+    for(size_t i = 0; i < len; i++) {
+      mp_obj_t entry = items[i];
+      shape_obj_t *shape;
+      brush_t *b = default_brush;
+      alignas(color_brush_t) char cbuf[sizeof(color_brush_t)]; // stack slot for a colour brush
+
+      if(mp_obj_is_type(entry, &type_shape)) {
+        shape = (shape_obj_t *)MP_OBJ_TO_PTR(entry);
+      } else {
+        size_t tlen; mp_obj_t *t;
+        mp_obj_get_array(entry, &tlen, &t);
+        if(tlen < 1 || !mp_obj_is_type(t[0], &type_shape)) {
+          mp_raise_msg_varg(&mp_type_ValueError, MP_ERROR_TEXT("entry must be a shape or (shape, brush)"));
+        }
+        shape = (shape_obj_t *)MP_OBJ_TO_PTR(t[0]);
+        if(tlen >= 2 && t[1] != mp_const_none) {
+          if(mp_obj_is_type(t[1], &type_brush)) {
+            b = ((brush_obj_t *)MP_OBJ_TO_PTR(t[1]))->brush;
+          } else if(mp_obj_is_type(t[1], &type_color)) {
+            color_obj_t *col = (color_obj_t *)MP_OBJ_TO_PTR(t[1]);
+            b = new(cbuf) color_brush_t(*col->c); // stack-constructed, no heap allocation
+          } else {
+            mp_raise_TypeError(MP_ERROR_TEXT("entry brush must be a brush or color"));
+          }
+        }
+      }
+
+      if(!b) mp_raise_msg_varg(&mp_type_ValueError, MP_ERROR_TEXT("no pen set; supply a brush/color in the entry or set screen.pen first"));
+
+      // render_flush takes its span functions from the brush argument, so there's
+      // no need to set it on the image first.
+      picovector::render(shape->shape, self->image, &shape->shape->transform, b);
+    }
+
+    return mp_const_none;
+  })
+
 
   MPY_BIND_VAR(2, rectangle, {
     const image_obj_t *self = (image_obj_t *)MP_OBJ_TO_PTR(args[0]);
@@ -333,13 +385,15 @@ MPY_BIND_VAR(2, measure_text, {
     int c; // height of span
     vec2_t uv0; // start uv coordinate
     vec2_t uv1; // end uv coordinate
+    filter_t filter = NEAREST; // optional trailing sampling mode
 
-    if(n_args == 6) {
+    if(n_args == 6 || n_args == 7) {
       p = mp_obj_get_vec2(args[2]);
       c = mp_obj_get_float(args[3]);
       uv0 = mp_obj_get_vec2(args[4]);
       uv1 = mp_obj_get_vec2(args[5]);
-    } else if(n_args == 9) {
+      if(n_args == 7) filter = (filter_t)mp_obj_get_int(args[6]);
+    } else if(n_args == 9 || n_args == 10) {
       p.x = mp_obj_get_float(args[2]);
       p.y = mp_obj_get_float(args[3]);
       c = mp_obj_get_float(args[4]);
@@ -347,11 +401,12 @@ MPY_BIND_VAR(2, measure_text, {
       uv0.y = mp_obj_get_float(args[6]);
       uv1.x = mp_obj_get_float(args[7]);
       uv1.y = mp_obj_get_float(args[8]);
+      if(n_args == 10) filter = (filter_t)mp_obj_get_int(args[9]);
     } else {
       mp_raise_msg_varg(&mp_type_ValueError, MP_ERROR_TEXT("invalid parameters, expected either blit_vspan(p, c, uvs, uve) or blit_vspan(x, y, x, uvsx, uvsy, uvex, uvey)"));
     }
 
-    src->image->blit_vspan(self->image, p, c, uv0, uv1);
+    src->image->blit_vspan(self->image, p, c, uv0, uv1, filter);
 
     return mp_const_none;
   })
@@ -364,13 +419,15 @@ MPY_BIND_VAR(2, measure_text, {
     int c; // height of span
     vec2_t uvs; // start uv coordinate
     vec2_t uve; // end uv coordinate
+    filter_t filter = NEAREST; // optional trailing sampling mode
 
-    if(n_args == 6) {
+    if(n_args == 6 || n_args == 7) {
       p = mp_obj_get_vec2(args[2]);
       c = mp_obj_get_float(args[3]);
       uvs = mp_obj_get_vec2(args[4]);
       uve = mp_obj_get_vec2(args[5]);
-    } else if(n_args == 9) {
+      if(n_args == 7) filter = (filter_t)mp_obj_get_int(args[6]);
+    } else if(n_args == 9 || n_args == 10) {
       p.x = mp_obj_get_float(args[2]);
       p.y = mp_obj_get_float(args[3]);
       c = mp_obj_get_float(args[4]);
@@ -378,11 +435,12 @@ MPY_BIND_VAR(2, measure_text, {
       uvs.y = mp_obj_get_float(args[6]);
       uve.x = mp_obj_get_float(args[7]);
       uve.y = mp_obj_get_float(args[8]);
+      if(n_args == 10) filter = (filter_t)mp_obj_get_int(args[9]);
     } else {
       mp_raise_msg_varg(&mp_type_ValueError, MP_ERROR_TEXT("invalid parameters, expected either blit_hspan(p, c, uvs, uve) or blit_hspan(x, y, x, uvsx, uvsy, uvex, uvey)"));
     }
 
-    src->image->blit_hspan(self->image, p, c, uvs, uve);
+    src->image->blit_hspan(self->image, p, c, uvs, uve, filter);
 
     return mp_const_none;
   })
@@ -405,13 +463,17 @@ MPY_BIND_VAR(3, blit, {
         return mp_const_none;
       }
 
-      if(n_args == 3 && mp_obj_is_rect(args[2])) {
-        src->image->blit(self->image, mp_obj_get_rect(args[2]));
+      // blit(image, dest_rect[, filter])
+      if(mp_obj_is_rect(args[2]) && !(n_args >= 4 && mp_obj_is_rect(args[3]))) {
+        filter_t filter = (n_args == 4) ? (filter_t)mp_obj_get_int(args[3]) : NEAREST;
+        src->image->blit(self->image, mp_obj_get_rect(args[2]), filter);
         return mp_const_none;
       }
 
-      if(n_args == 4 && mp_obj_is_rect(args[2]) && mp_obj_is_rect(args[3])) {
-        src->image->blit(self->image, mp_obj_get_rect(args[2]), mp_obj_get_rect(args[3]));
+      // blit(image, source_rect, dest_rect[, filter])
+      if(n_args >= 4 && mp_obj_is_rect(args[2]) && mp_obj_is_rect(args[3])) {
+        filter_t filter = (n_args == 5) ? (filter_t)mp_obj_get_int(args[4]) : NEAREST;
+        src->image->blit(self->image, mp_obj_get_rect(args[2]), mp_obj_get_rect(args[3]), filter);
         return mp_const_none;
       }
 
@@ -726,6 +788,7 @@ MPY_BIND_LOCALS_DICT(image,
 
       // vector
       MPY_BIND_ROM_PTR(shape),
+      MPY_BIND_ROM_PTR(shapes),
 
       // text
       MPY_BIND_ROM_PTR(text),
@@ -744,6 +807,9 @@ MPY_BIND_LOCALS_DICT(image,
       { MP_ROM_QSTR(MP_QSTR_OFF), MP_ROM_INT(antialias_t::OFF)},
       { MP_ROM_QSTR(MP_QSTR_EVEN_ODD), MP_ROM_INT(fill_rule_t::EVEN_ODD)},
       { MP_ROM_QSTR(MP_QSTR_NON_ZERO), MP_ROM_INT(fill_rule_t::NON_ZERO)},
+      { MP_ROM_QSTR(MP_QSTR_NEAREST), MP_ROM_INT(filter_t::NEAREST)},
+      { MP_ROM_QSTR(MP_QSTR_BILINEAR), MP_ROM_INT(filter_t::BILINEAR)},
+      { MP_ROM_QSTR(MP_QSTR_BICUBIC), MP_ROM_INT(filter_t::BICUBIC)},
 )
 
   MP_DEFINE_CONST_OBJ_TYPE(

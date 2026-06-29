@@ -206,6 +206,20 @@ namespace picovector {
 
   void image_t::clear() {
     pv_profile_frame(); // once-per-frame profiling sample (no-op unless PV_PROFILE)
+
+    // Fast path: an opaque solid-colour brush on a 32bpp target fills directly
+    // with a constant word, skipping the per-pixel blend in the span function.
+    uint32_t word;
+    if(_brush && _bytes_per_pixel == 4 && _brush->solid_fill(word)) {
+      int x0 = (int)_clip.x, y0 = (int)_clip.y;
+      int w = (int)_clip.w, h = (int)_clip.h;
+      for(int y = 0; y < h; y++) {
+        uint32_t *p = (uint32_t *)ptr(x0, y0 + y);
+        for(int i = 0; i < w; i++) p[i] = word;
+      }
+      return;
+    }
+
     rectangle(_clip);
   }
 
@@ -269,7 +283,7 @@ namespace picovector {
 
 
   // blit from source rectangle into target rectangle
-  void image_t::blit(image_t *target, rect_t sr, rect_t tr) {
+  void image_t::blit(image_t *target, rect_t sr, rect_t tr, filter_t filter) {
     bool flip_h = tr.w < 0;
     bool flip_v = tr.h < 0;
 
@@ -279,7 +293,10 @@ namespace picovector {
     // printf("- tr = %.2f, %.2f (%.2f x %.2f)\n", tr.x, tr.y, tr.w, tr.h);
     tr.w = fabs(tr.w);
     tr.h = fabs(tr.h);
-    sr = sr.round();
+    // keep the source rect fractional so sub-texel pan/zoom stays smooth under
+    // BILINEAR/BICUBIC (rounding it here snaps the sampled region to whole
+    // texels, which steps visibly when magnifying a small source). The dest
+    // rect is still snapped to whole pixels — that's the integer span loop.
     tr = tr.round();
     clip_blit_rect(sr, _bounds, tr);
     clip_blit_rect(tr, target->_bounds, sr);
@@ -311,9 +328,9 @@ namespace picovector {
 
     for(int y = tr.y; y < tr.y + tr.h; y++) {
       if(this->_has_palette) {
-        span_blit_scale(this, target, bf, srcx, srcstepx, srcy, tr.x, y, tr.w, _palette);
+        span_blit_scale(this, target, bf, srcx, srcstepx, srcy, tr.x, y, tr.w, _palette, filter);
       }else{
-        span_blit_scale(this, target, bf, srcx, srcstepx, srcy, tr.x, y, tr.w);
+        span_blit_scale(this, target, bf, srcx, srcstepx, srcy, tr.x, y, tr.w, filter);
       }
 
       srcy += srcstepy;
@@ -321,8 +338,8 @@ namespace picovector {
   }
 
 
-  void image_t::blit(image_t *target, rect_t tr) {
-    blit(target, _bounds, tr);
+  void image_t::blit(image_t *target, rect_t tr, filter_t filter) {
+    blit(target, _bounds, tr, filter);
   }
 
   /*
@@ -330,7 +347,7 @@ namespace picovector {
     samples from the source image along a line starting at uv1 and ending at
     uv2
   */
-  void image_t::blit_hspan(image_t *target, vec2_t p, int c, vec2_t uv0, vec2_t uv1) {
+  void image_t::blit_hspan(image_t *target, vec2_t p, int c, vec2_t uv0, vec2_t uv1, filter_t filter) {
     rect_t b = target->_clip;
     if(p.x < b.x || p.x > b.x + b.w) {
       return;
@@ -361,16 +378,10 @@ namespace picovector {
       u += ud;
       v += vd;
 
-      // get fractional part of u, v coordinates and scale to source image
-      uint32_t cu = ((u & 0xffffu) * tw) >> 16;
-      uint32_t cv = ((v & 0xffffu) * th) >> 16;
-
-      //uint32_t col = *(uint32_t *)this->ptr((u + 32768) >> 16, (v + 32768) >> 16);
-      uint32_t col = *(uint32_t *)this->ptr(cu, cv);
-
-      if(this->_has_palette) {
-        col = this->_palette[col];
-      }
+      // fixed-point 16.16 source coordinates (fractional uv scaled to texels)
+      fx16_t sx = (fx16_t)((u & 0xffffu) * tw);
+      fx16_t sy = (fx16_t)((v & 0xffffu) * th);
+      uint32_t col = this->sample(sx, sy, filter);
 
       if(this->_alpha != 255) {
         col = _premul_mul_alpha(col, this->_alpha);
@@ -386,7 +397,7 @@ namespace picovector {
     samples from the source image along a line starting at uv1 and ending at
     uv2
   */
-  void image_t::blit_vspan(image_t *target, vec2_t p, int c, vec2_t uv0, vec2_t uv1) {
+  void image_t::blit_vspan(image_t *target, vec2_t p, int c, vec2_t uv0, vec2_t uv1, filter_t filter) {
     rect_t b = target->_clip;
     if(p.x < b.x || p.x > b.x + b.w) {
       return;
@@ -419,18 +430,10 @@ namespace picovector {
       u += ud;
       v += vd;
 
-      // get fractional part of u, v coordinates and scale to source image
-      uint32_t cu = ((u & 0xffffu) * tw) >> 16;
-      uint32_t cv = ((v & 0xffffu) * th) >> 16;
-
-      //uint32_t col = *(uint32_t *)this->ptr((u + 32768) >> 16, (v + 32768) >> 16);
-      uint32_t col;
-
-      if(this->_has_palette) {
-        col = this->_palette[*(uint8_t*)this->ptr(cu, cv)];
-      } else {
-        col = *(uint32_t *)this->ptr(cu, cv);
-      }
+      // fixed-point 16.16 source coordinates (fractional uv scaled to texels)
+      fx16_t sx = (fx16_t)((u & 0xffffu) * tw);
+      fx16_t sy = (fx16_t)((v & 0xffffu) * th);
+      uint32_t col = this->sample(sx, sy, filter);
 
       if(this->_alpha != 255) {
         col = _premul_mul_alpha(col, this->_alpha);
@@ -651,5 +654,104 @@ namespace picovector {
       return this->_palette[pi];
     }
     return *((uint32_t *)ptr(x, y));
+  }
+
+  // Catmull-Rom (a = -0.5) cubic convolution weights for the four taps either
+  // side of a sample point at fractional offset t. Fixed-point: t and the
+  // returned weights are Q12; the weights sum to 1.0 (4096). Integer MACs are
+  // cheaper than float on the M33 and skip the per-channel int<->float casts.
+  static inline void _cubic_weights_fx(int t, int w[4]) {
+    int t2 = (t * t) >> 12;
+    int t3 = (t2 * t) >> 12;
+    w[0] = (-t3 + 2 * t2 - t) >> 1;
+    w[1] = (3 * t3 - 5 * t2 + 8192) >> 1;  // 8192 == 2.0 in Q12
+    w[2] = (-3 * t3 + 4 * t2 + t) >> 1;
+    w[3] = (t3 - t2) >> 1;
+  }
+
+  uint32_t image_t::sample(fx16_t sx, fx16_t sy, filter_t filter) {
+    int w = (int)this->_bounds.w;
+    int h = (int)this->_bounds.h;
+    int ix = sx >> 16;
+    int iy = sy >> 16;
+
+    // palette indices can't be interpolated, so always sample nearest for them
+    if(filter == NEAREST || this->_has_palette) {
+      if(ix < 0) ix = 0; else if(ix >= w) ix = w - 1;
+      if(iy < 0) iy = 0; else if(iy >= h) iy = h - 1;
+      return get_unsafe(ix, iy);
+    }
+
+    if(filter == BILINEAR) {
+      uint32_t fx = (sx >> 8) & 0xffu;  // sub-texel fraction 0..255
+      uint32_t fy = (sy >> 8) & 0xffu;
+      int x0 = ix, x1 = ix + 1;
+      int y0 = iy, y1 = iy + 1;
+      if(x0 < 0) x0 = 0; else if(x0 >= w) x0 = w - 1;
+      if(x1 < 0) x1 = 0; else if(x1 >= w) x1 = w - 1;
+      if(y0 < 0) y0 = 0; else if(y0 >= h) y0 = h - 1;
+      if(y1 < 0) y1 = 0; else if(y1 >= h) y1 = h - 1;
+      uint32_t c00 = get_unsafe(x0, y0), c10 = get_unsafe(x1, y0);
+      uint32_t c01 = get_unsafe(x0, y1), c11 = get_unsafe(x1, y1);
+      uint32_t out = 0;
+      for(int s = 0; s < 32; s += 8) {
+        int a = (c00 >> s) & 0xff, b = (c10 >> s) & 0xff;
+        int c = (c01 >> s) & 0xff, d = (c11 >> s) & 0xff;
+        int top = a + (((b - a) * (int)fx) >> 8);
+        int bot = c + (((d - c) * (int)fx) >> 8);
+        int val = top + (((bot - top) * (int)fy) >> 8);
+        out |= ((uint32_t)val) << s;
+      }
+      return out;
+    }
+
+    // BICUBIC: separable 4x4 Catmull-Rom over premultiplied channels. Only
+    // reached for non-palette images, so we read framebuffer words directly via
+    // per-row pointers (skips get_unsafe's palette branch + per-texel address
+    // maths) and accumulate in fixed-point.
+    int wx[4], wy[4];
+    _cubic_weights_fx((sx >> 4) & 0xfff, wx);  // sx/sy fraction (Q16) -> Q12
+    _cubic_weights_fx((sy >> 4) & 0xfff, wy);
+
+    // clamp the four source columns once; reused for every row
+    int xs[4];
+    for(int k = 0; k < 4; k++) {
+      int x = ix - 1 + k;
+      xs[k] = x < 0 ? 0 : (x >= w ? w - 1 : x);
+    }
+
+    int ar = 0, ag = 0, ab = 0, aa = 0;  // vertical accumulators, Q18
+    for(int j = 0; j < 4; j++) {
+      int y = iy - 1 + j;
+      if(y < 0) y = 0; else if(y >= h) y = h - 1;
+      const uint32_t *row = (const uint32_t *)ptr(0, y);
+
+      int hr = 0, hg = 0, hb = 0, ha = 0;  // horizontal sums, Q12
+      for(int i = 0; i < 4; i++) {
+        uint32_t c = row[xs[i]];
+        int wi = wx[i];
+        hr += wi * (int)(c & 0xff);
+        hg += wi * (int)((c >> 8) & 0xff);
+        hb += wi * (int)((c >> 16) & 0xff);
+        ha += wi * (int)((c >> 24) & 0xff);
+      }
+      // >>6 drops Q12->Q6 so the Q12 vertical weight can't overflow int32
+      int wj = wy[j];
+      ar += wj * (hr >> 6);
+      ag += wj * (hg >> 6);
+      ab += wj * (hb >> 6);
+      aa += wj * (ha >> 6);
+    }
+
+    // accumulators are Q18 (Q12 vertical * Q6 horizontal); round and clamp
+    int rr = (ar + (1 << 17)) >> 18;
+    int gg = (ag + (1 << 17)) >> 18;
+    int bb = (ab + (1 << 17)) >> 18;
+    int av = (aa + (1 << 17)) >> 18;
+    if(rr < 0) rr = 0; else if(rr > 255) rr = 255;
+    if(gg < 0) gg = 0; else if(gg > 255) gg = 255;
+    if(bb < 0) bb = 0; else if(bb > 255) bb = 255;
+    if(av < 0) av = 0; else if(av > 255) av = 255;
+    return (uint32_t)rr | ((uint32_t)gg << 8) | ((uint32_t)bb << 16) | ((uint32_t)av << 24);
   }
 }

@@ -12,6 +12,16 @@ namespace picovector {
   public:
     virtual span_func_t span_func() = 0;
     virtual masked_span_func_t masked_span_func() = 0;
+
+    // Fold the shape's transform into the brush's own coordinate space, so a
+    // brush with geometry (e.g. a gradient) moves with the shape it fills.
+    // Called by render() before flushing; no-op for brushes without geometry.
+    virtual void set_render_transform(mat3_t *transform) { (void)transform; }
+
+    // If this brush paints a single opaque colour, return true and the 32bpp
+    // framebuffer word for it — lets clear() fill directly instead of per-pixel
+    // blending. False for any brush that varies or blends.
+    virtual bool solid_fill(uint32_t &out) { (void)out; return false; }
   };
 
   void color_brush_span_func(image_t *target, brush_t *brush, int x, int y, int w);
@@ -23,6 +33,7 @@ namespace picovector {
     color_brush_t(const color_t& c);
     span_func_t span_func();
     masked_span_func_t masked_span_func();
+    bool solid_fill(uint32_t &out) override;
   };
 
   class pattern_brush_t : public brush_t {
@@ -40,12 +51,14 @@ namespace picovector {
   class image_brush_t : public brush_t {
   public:
     image_t *src;
-    mat3_t inverse_transform;
+    mat3_t inverse_transform;  // device pixels -> image space (incl. shape transform)
+    mat3_t base_inverse;       // device -> image for the brush's own transform only
 
     image_brush_t(image_t *src);
     image_brush_t(image_t *src, mat3_t *transform);
     span_func_t span_func();
     masked_span_func_t masked_span_func();
+    void set_render_transform(mat3_t *transform) override;
   };
 
   enum gradient_type_t {
@@ -110,7 +123,8 @@ namespace picovector {
 
     gradient_type_t type;
     vec2_t p1, p2;             // gradient endpoints in gradient coordinate space
-    mat3_t inverse_transform;  // device pixels -> gradient coordinate space
+    mat3_t inverse_transform;  // device pixels -> gradient coordinate space (incl. shape transform)
+    mat3_t base_inverse;       // device -> gradient for the brush's own transform only
     uint32_t lut[256];         // pre-multiplied packed colours sampled along the gradient
 
     // positions are 0..1 stop offsets, premul_colors are color_t::_p values
@@ -119,6 +133,7 @@ namespace picovector {
                      mat3_t *transform);
     span_func_t span_func();
     masked_span_func_t masked_span_func();
+    void set_render_transform(mat3_t *transform) override;
   };
 
 }

@@ -58,6 +58,49 @@ namespace picovector {
   void gradient_brush_linear_masked_span_func(image_t *target, brush_t *brush, int x, int y, int w, uint8_t *mask);
   void gradient_brush_radial_masked_span_func(image_t *target, brush_t *brush, int x, int y, int w, uint8_t *mask);
 
+  void pixelate_brush_span_func(image_t *target, brush_t *brush, int x, int y, int w);
+  void pixelate_brush_masked_span_func(image_t *target, brush_t *brush, int x, int y, int w, uint8_t *mask);
+
+  // Mosaic brush: replaces the shape's area with the target content sampled at
+  // an integer block grid (top-left of each `size`x`size` block).
+  class pixelate_brush_t : public brush_t {
+  public:
+    int size;
+
+    pixelate_brush_t(int size);
+    span_func_t span_func();
+    masked_span_func_t masked_span_func();
+  };
+
+  void blur_brush_span_func(image_t *target, brush_t *brush, int x, int y, int w);
+  void blur_brush_masked_span_func(image_t *target, brush_t *brush, int x, int y, int w, uint8_t *mask);
+
+  // Box-blur brush: replaces the shape's area with a (2*radius+1) box average of
+  // the target content behind it. Single-pass in place, so it reads some
+  // already-written pixels (mild vertical softening); keep radius small.
+  class blur_brush_t : public brush_t {
+  public:
+    int radius;
+
+    blur_brush_t(int radius);
+    span_func_t span_func();
+    masked_span_func_t masked_span_func();
+  };
+
+  void brightness_brush_span_func(image_t *target, brush_t *brush, int x, int y, int w);
+  void brightness_brush_masked_span_func(image_t *target, brush_t *brush, int x, int y, int w, uint8_t *mask);
+
+  // Lighten/darken brush: adds a signed amount to each RGB channel of the target
+  // content behind the shape (positive lightens, negative darkens), clamped.
+  class brightness_brush_t : public brush_t {
+  public:
+    int amount;
+
+    brightness_brush_t(int amount);
+    span_func_t span_func();
+    masked_span_func_t masked_span_func();
+  };
+
   // SVG-style linear/radial gradient. Geometry (p1, p2) lives in the gradient's
   // own coordinate space; `transform` maps that space onto device pixels (for
   // SVG objectBoundingBox the caller maps the unit square onto the shape bbox).

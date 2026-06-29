@@ -227,6 +227,13 @@ namespace picovector {
   void render_tiles(image_t *target, brush_t *brush, rect_t sb, BuildFn build_tile_nodes) {
     if(sb.empty()) return;
 
+    // Clip the shape bounds to the target's clip region up front: bail entirely
+    // if the shape is off-screen, and tighten the tile loop to the visible part
+    // for partially-clipped shapes.
+    rect_t clip = target->clip();
+    sb = sb.intersection(clip);
+    if(sb.empty()) return;
+
     // antialias level of target image
     uint aa = (uint)target->antialias();
 
@@ -234,7 +241,6 @@ namespace picovector {
     if(aa == 1) p_alpha_map = alpha_map_x4;
     if(aa == 2) p_alpha_map = alpha_map_x16;
 
-    rect_t clip = target->clip();
     masked_span_func_t fn = target->_masked_span_func;
     span_func_t sfn = target->_span_func; // unmasked span for the aa == 0 fast path
     fill_rule_t fill_rule = target->fill_rule();

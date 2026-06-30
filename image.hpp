@@ -4,7 +4,10 @@
 #include <string>
 #include <vector>
 
-#include "picovector.config.hpp"
+#if __has_include("picovector.config.hpp")
+#  include "picovector.config.hpp"
+#endif
+#include "config_default.hpp"
 #include "types.hpp"
 #include "blend.hpp"
 

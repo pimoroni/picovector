@@ -1,18 +1,16 @@
 #include <algorithm>
 #include <cfloat>
 
-// Set to 1 to enable rasteriser phase profiling (prints phase timings to the REPL).
-#define PV_PROFILE 0
-
-// Set to 1 to use the second core (core1) for rasterisation. Always available on
-// Badgeware; other projects that need core1 for something else can set this to 0.
-#define PV_DUAL_CORE 1
+// PV_PROFILE (rasteriser phase profiling) and PV_DUAL_CORE (rasterise on core1)
+// come from the picovector config — both default OFF (see config_default.hpp).
+// The Badgeware/MicroPython build sets PV_DUAL_CORE=1 via picovector-micropython.cmake.
+// picovector.hpp is included first so those macros are defined before use below.
+#include "picovector.hpp"
 
 #if PV_PROFILE
 #include <cstdio>
 #endif
 
-#include "picovector.hpp"
 #include "brush.hpp"
 #include "image.hpp"
 #include "shape.hpp"
@@ -36,13 +34,11 @@ extern "C" {
 
 using std::sort, std::min, std::max;
 
-// memory pool for rasterisation, png decoding, and other memory intensive
-// tasks (sized to fit PNGDEC state) - on pico it *must* be 32bit aligned (i
-// found out the hard way.)
-extern "C" {
-  constexpr size_t working_buffer_size = (60 + 20) * 1024;
-  char __attribute__((aligned(4))) PicoVector_working_buffer[working_buffer_size];
-}
+// The rasterisation memory pool (PicoVector_working_buffer) and its size now
+// live in picovector_working_buffer.cpp so the size is configurable
+// (PV_WORKING_BUFFER_SIZE) and the buffer can be shared with embedders that use
+// it as scratch (e.g. PNG/JPEG decode in the MicroPython bindings). The extern
+// declarations come in via picovector.hpp.
 
 #define TILE_WIDTH 64
 #define TILE_HEIGHT 64

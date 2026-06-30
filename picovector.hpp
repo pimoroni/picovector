@@ -35,10 +35,7 @@
 #endif
 
 // TODO: bring back AA support
-extern "C" {
-  extern const size_t working_buffer_size;
-  extern char PicoVector_working_buffer[];
-}
+#include "picovector_working_buffer.h"
 
 
 namespace picovector {

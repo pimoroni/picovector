@@ -18,7 +18,7 @@ namespace picovector {
   }
 
   hsv_color_t::hsv_color_t(uint8_t h, uint8_t s, uint8_t v, uint8_t a) : _h(h), _s(s), _v(v), _a(a) {
-    int hs = (h * 360) / 255;
+    int hs = (h * 359) / 255;
     int region = hs / 60;
     int remainder = (hs - (region * 60)) * 255 / 60;
 

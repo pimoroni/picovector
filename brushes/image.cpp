@@ -25,8 +25,7 @@ namespace picovector {
       int u = ((int(pt.x) >> 16) % tw + tw) % tw;
       int v = ((int(pt.y) >> 16) % th + th) % th;
       uint32_t c = p->src->get_unsafe(u, v);
-      uint8_t *src = (uint8_t*)&c;
-      *dst = target->_blend_func(*dst, src[0], src[1], src[2], src[3]);
+      *dst = blend_over_premul(*dst, c);
       dst++;
     }
   }
@@ -54,14 +53,7 @@ namespace picovector {
       int u = ((int(pt.x) >> 16) % tw + tw) % tw;
       int v = ((int(pt.y) >> 16) % th + th) % th;
       uint32_t c = p->src->get_unsafe(u, v);
-      uint8_t *src = (uint8_t*)&c;
-      uint32_t m = *mask;
-      uint32_t sr = (src[0] * m + 128) >> 8;
-      uint32_t sg = (src[1] * m + 128) >> 8;
-      uint32_t sb = (src[2] * m + 128) >> 8;
-      uint32_t sa = (src[3] * m + 128) >> 8;
-
-      *dst = target->_blend_func(*dst, sr, sg, sb, sa);
+      *dst = blend_over_premul(*dst, _premul_mul_alpha(c, *mask));
       dst++;
       mask++;
     }

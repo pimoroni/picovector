@@ -10,6 +10,7 @@
 #include "blit.hpp"
 #include "brush.hpp"
 #include "shape.hpp"
+#include "picovector.hpp" // pv_parallel_rows (dual-core blit split)
 
 using std::vector;
 
@@ -258,6 +259,42 @@ namespace picovector {
     }
   }
 
+#if PV_DUAL_CORE
+  namespace {
+    // one-to-one (unscaled) blit, a disjoint row parity per core
+    struct pv_blit_ctx {
+      image_t *src; image_t *dst; blend_func_t bf;
+      int srx, sry, trx, try_, trw;
+      bool has_palette; const palette_t *palette;
+    };
+    void pv_blit_rows(void *v, int y0, int y1, int step) {
+      pv_blit_ctx *c = (pv_blit_ctx *)v;
+      if(c->has_palette) {
+        for(int y = y0; y < y1; y += step)
+          span_blit(c->src, c->dst, c->bf, c->srx, c->sry + y, c->trx, c->try_ + y, c->trw, *c->palette);
+      } else {
+        for(int y = y0; y < y1; y += step)
+          span_blit(c->src, c->dst, c->bf, c->srx, c->sry + y, c->trx, c->try_ + y, c->trw);
+      }
+    }
+
+    // scaled/filtered blit. srcy is linear in the row index, so each core derives
+    // its own srcy (srcy0 + y*srcstepy) rather than sharing a running accumulator.
+    struct pv_blit_scale_ctx {
+      image_t *src; image_t *dst; blend_func_t bf;
+      int srcx, srcstepx, srcy0, srcstepy, trx, try_, trw;
+      filter_t filter;
+    };
+    void pv_blit_scale_rows(void *v, int y0, int y1, int step) {
+      pv_blit_scale_ctx *c = (pv_blit_scale_ctx *)v;
+      for(int y = y0; y < y1; y += step) {
+        int srcy = c->srcy0 + y * c->srcstepy;
+        span_blit_scale(c->src, c->dst, c->bf, c->srcx, c->srcstepx, srcy, c->trx, c->try_ + y, c->trw, c->filter);
+      }
+    }
+  }
+#endif
+
   void image_t::blit(image_t *target, const vec2_t p) {
     rect_t sr = _bounds;
     sr = sr.floor();
@@ -272,10 +309,24 @@ namespace picovector {
 
     blend_func_t bf = target->_blend_func;
 
-    for(int y = 0; y < tr.h; y++) {
-      if(_has_palette) {
+#if PV_DUAL_CORE
+    // large enough to amortise the inter-core handshake: split rows across cores
+    if((int)tr.w * (int)tr.h >= PV_DUAL_CORE_BLIT_MIN_PX) {
+      pv_blit_ctx ctx{ this, target, bf, (int)sr.x, (int)sr.y, (int)tr.x, (int)tr.y, (int)tr.w,
+                       _has_palette, &_palette };
+      pv_parallel_rows(pv_blit_rows, &ctx, 0, (int)tr.h);
+      return;
+    }
+#endif
+
+    // _has_palette is fixed for the whole blit, so pick the span variant once
+    // rather than re-testing it every scanline.
+    if(_has_palette) {
+      for(int y = 0; y < tr.h; y++) {
         span_blit(this, target, bf, sr.x, sr.y + y, tr.x, tr.y + y, tr.w, _palette);
-      }else{
+      }
+    } else {
+      for(int y = 0; y < tr.h; y++) {
         span_blit(this, target, bf, sr.x, sr.y + y, tr.x, tr.y + y, tr.w);
       }
     }
@@ -326,13 +377,21 @@ namespace picovector {
       srcy = ((_bounds.h - sr.y) * 65536.0f) + srcstepy;
     }
 
-    for(int y = tr.y; y < tr.y + tr.h; y++) {
-      if(this->_has_palette) {
-        span_blit_scale(this, target, bf, srcx, srcstepx, srcy, tr.x, y, tr.w, _palette, filter);
-      }else{
-        span_blit_scale(this, target, bf, srcx, srcstepx, srcy, tr.x, y, tr.w, filter);
-      }
+#if PV_DUAL_CORE
+    // scaled/filtered blits are the biggest dual-core win (arithmetic-bound, so
+    // closer to a true 2x than a bandwidth-bound copy). Split rows once large.
+    if((int)tr.w * (int)tr.h >= PV_DUAL_CORE_BLIT_MIN_PX) {
+      pv_blit_scale_ctx ctx{ this, target, bf, srcx, srcstepx, srcy, srcstepy,
+                             (int)tr.x, (int)tr.y, (int)tr.w, filter };
+      pv_parallel_rows(pv_blit_scale_rows, &ctx, 0, (int)tr.h);
+      return;
+    }
+#endif
 
+    // span_blit_scale resolves palette vs rgba internally via src->has_palette()
+    // (the palette overload just forwards), so no per-row dispatch is needed here.
+    for(int y = tr.y; y < tr.y + tr.h; y++) {
+      span_blit_scale(this, target, bf, srcx, srcstepx, srcy, tr.x, y, tr.w, filter);
       srcy += srcstepy;
     }
   }
@@ -398,7 +457,7 @@ namespace picovector {
         col = _premul_mul_alpha(col, this->_alpha);
       }
 
-      *dst = target->_blend_func(*dst, _r(col), _g(col), _b(col), _a(col));
+      *dst = blend_over_premul(*dst, col);
       dst += dst_step;
     }
   }
@@ -613,14 +672,6 @@ namespace picovector {
     x = max(int(_clip.x), min(x, int(_clip.x + _clip.w - 1)));
     y = max(int(_clip.y), min(y, int(_clip.y + _clip.h - 1)));
     return this->get_unsafe(x, y);
-  }
-
-  uint32_t image_t::get_unsafe(int x, int y) {
-    if(this->_has_palette) {
-      uint8_t pi = *((uint8_t *)ptr(x, y));
-      return this->_palette[pi];
-    }
-    return *((uint32_t *)ptr(x, y));
   }
 
   // Catmull-Rom (a = -0.5) cubic convolution weights for the four taps either

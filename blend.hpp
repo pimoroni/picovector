@@ -14,13 +14,36 @@ static inline __attribute__((always_inline))
 uint32_t _a(const uint32_t c) {return (c >> 24) & 0xffu;}
 
 // takes a premultiplied packed color and applies alpha
+//
+// SWAR: two channels ride in one 32-bit multiply. Each channel is <= 255 and a
+// is <= 255, so a channel*a product is <= 65025 (< 65536) and never carries into
+// its neighbour, which sits 16 bits away. This is bit-identical to the scalar
+// (chan*a + 128) >> 8 form it replaces, at half the multiplies.
 static inline __attribute__((always_inline))
 uint32_t _premul_mul_alpha(uint32_t c, uint32_t a) {
-  uint32_t r = (_r(c) * a + 128) >> 8;
-  uint32_t g = (_g(c) * a + 128) >> 8;
-  uint32_t b = (_b(c) * a + 128) >> 8;
-  a = (_a(c) * a + 128) >> 8;
-  return r | (g << 8) | (b << 16) | (a << 24);
+  uint32_t rb = ( c        & 0x00ff00ffu) * a;  // R in [0:15],  B in [16:31]
+  uint32_t ga = ((c >>  8) & 0x00ff00ffu) * a;  // G in [0:15],  A in [16:31]
+  rb = ((rb + 0x00800080u) >> 8) & 0x00ff00ffu;
+  ga = ((ga + 0x00800080u) >> 8) & 0x00ff00ffu;
+  return rb | (ga << 8);
+}
+
+// composites a premultiplied packed source pixel over a packed dst pixel ("over").
+// dst is opaque-or-not; the source alpha weights how much dst survives. Because
+// the source is premultiplied, the composite is just src + dst*(1-a), and both
+// the dst*(1-a) scale and the final add stay in the packed SWAR domain (a valid
+// premultiplied result is <= 255 per channel, so the add never carries).
+static inline __attribute__((always_inline))
+uint32_t blend_over_premul(uint32_t d, uint32_t c) {
+  uint32_t a = c >> 24;
+  if (a == 0u)   return d;   // source transparent: dst unchanged
+  if (a == 255u) return c;   // source opaque: overwrite
+
+  uint32_t inva = 255u - a;
+  uint32_t drb = ((( d        & 0x00ff00ffu) * inva + 0x00800080u) >> 8) & 0x00ff00ffu;
+  uint32_t dga = ((((d >>  8) & 0x00ff00ffu) * inva + 0x00800080u) >> 8) & 0x00ff00ffu;
+  return (( c        & 0x00ff00ffu) + drb)
+       | ((((c >> 8) & 0x00ff00ffu) + dga) << 8);
 }
 
 static inline __attribute__((always_inline))
@@ -30,24 +53,13 @@ uint32_t _premul_mul_alpha_channel(uint32_t c, uint32_t a) {
 
 typedef uint32_t (*blend_func_t)(uint32_t dst, uint32_t r, uint32_t g, uint32_t b, uint32_t a);
 
-static inline uint32_t blend_func_over(uint32_t dst, uint32_t r, uint32_t g, uint32_t b, uint32_t a) {
-    if (a == 0u)   return dst;
-    if (a == 255u) return r | (g << 8) | (b << 16) | 0xff000000u;
-
-    uint32_t dr =  dst        & 0xffu;
-    uint32_t dg = (dst >>  8) & 0xffu;
-    uint32_t db = (dst >> 16) & 0xffu;
-    uint32_t da = (dst >> 24) & 0xffu;
-
-    uint32_t inva = 255u - a;
-
-    r += ((dr * inva + 128u) >> 8);
-    g += ((dg * inva + 128u) >> 8);
-    b += ((db * inva + 128u) >> 8);
-    a += ((da * inva + 128u) >> 8);
-
-    return r | (g << 8) | (b << 16) | (a << 24);
+// unpacked-args wrapper kept for the sample()-based span paths (blit_span et al)
+// that still hand callers r,g,b,a separately. Repacks and defers to the packed
+// blend so there's a single "over" implementation to maintain.
+static uint32_t blend_func_over(uint32_t dst, uint32_t r, uint32_t g, uint32_t b, uint32_t a) {
+    return blend_over_premul(dst, r | (g << 8) | (b << 16) | (a << 24));
 }
+
 
 // // blends one rgba source pixel over a horizontal span of destination pixels
 // static inline __attribute__((always_inline))

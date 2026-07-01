@@ -71,4 +71,15 @@ namespace picovector {
   // Profiling hook — call once per frame (wired into image clear).
   void pv_profile_frame();
 
+#if PV_DUAL_CORE
+  // Run `worker(ctx, y0, y1, step)` split across both cores by row parity: core1
+  // takes the odd-offset rows (y0+1, y0+3, …), core0 the even (y0, y0+2, …), then
+  // core0 joins. Synchronous — returns once both halves are done. Falls back to a
+  // single in-line call when the range is too small to split. The worker must
+  // touch only its own rows (disjoint dst rows ⇒ no locking needed on the shared,
+  // coherent SRAM framebuffer). Reuses the rasteriser's core1 handshake.
+  typedef void (*pv_row_worker_t)(void *ctx, int y0, int y1, int step);
+  void pv_parallel_rows(pv_row_worker_t worker, void *ctx, int y0, int y1);
+#endif
+
 }

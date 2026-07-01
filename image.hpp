@@ -108,6 +108,9 @@ namespace picovector {
       // void delete_palette();
       void palette(uint8_t i, uint32_t c);
       uint32_t palette(uint8_t i);
+      // raw palette storage for hot blit loops: skips the per-pixel out-of-line
+      // palette(i) call and the by-value palette_t (std::vector) copy per span.
+      inline const uint32_t* palette_data() const { return _palette.data(); }
 
       uint8_t alpha();
       void alpha(uint8_t alpha);
@@ -152,7 +155,12 @@ namespace picovector {
       void put_unsafe(int x, int y);
       uint32_t get(const vec2_t &p1);
       uint32_t get(int x, int y);
-      uint32_t get_unsafe(int x, int y);
+      // hot texel fetch (brush/sample inner loops): inline so callers avoid the
+      // per-pixel call; ptr() and _palette[] are already inline.
+      inline uint32_t get_unsafe(int x, int y) const {
+        if(this->_has_palette) return this->_palette[*((uint8_t *)ptr(x, y))];
+        return *((uint32_t *)ptr(x, y));
+      }
 
       // sample a (premultiplied) texel at fixed-point 16.16 source coordinates
       // using the requested filter; edge-clamped. Palette images always sample

@@ -97,7 +97,6 @@ namespace picovector {
   void gradient_brush_linear_span_func(image_t *target, brush_t *brush, int x, int y, int w) {
     gradient_brush_t *p = (gradient_brush_t*)brush;
     uint32_t *dst = (uint32_t*)target->ptr(x, y);
-    blend_func_t fn = target->_blend_func;
     const uint32_t *lut = p->lut;
 
     // pixel -> gradient space, plus the per-pixel (+1 in screen x) step
@@ -117,7 +116,7 @@ namespace picovector {
       int idx = (int)(t * 255.0f + 0.5f);
       if(idx < 0) idx = 0; else if(idx > 255) idx = 255;
       uint32_t c = lut[idx];
-      *dst = fn(*dst, _r(c), _g(c), _b(c), _a(c));
+      *dst = blend_over_premul(*dst, c);
       dst++;
       t += dt;
     }
@@ -126,7 +125,6 @@ namespace picovector {
   void gradient_brush_linear_masked_span_func(image_t *target, brush_t *brush, int x, int y, int w, uint8_t *mask) {
     gradient_brush_t *p = (gradient_brush_t*)brush;
     uint32_t *dst = (uint32_t*)target->ptr(x, y);
-    blend_func_t fn = target->_blend_func;
     const uint32_t *lut = p->lut;
 
     vec2_t pt = vec2_t((float)x, (float)y).transform(&p->inverse_transform);
@@ -145,8 +143,7 @@ namespace picovector {
       if(idx < 0) idx = 0; else if(idx > 255) idx = 255;
       uint32_t c = lut[idx];
       uint32_t m = *mask;
-      *dst = fn(*dst, (_r(c) * m + 128) >> 8, (_g(c) * m + 128) >> 8,
-                      (_b(c) * m + 128) >> 8, (_a(c) * m + 128) >> 8);
+      *dst = blend_over_premul(*dst, _premul_mul_alpha(c, m));
       dst++;
       mask++;
       t += dt;
@@ -158,7 +155,6 @@ namespace picovector {
   void gradient_brush_radial_span_func(image_t *target, brush_t *brush, int x, int y, int w) {
     gradient_brush_t *p = (gradient_brush_t*)brush;
     uint32_t *dst = (uint32_t*)target->ptr(x, y);
-    blend_func_t fn = target->_blend_func;
     const uint32_t *lut = p->lut;
 
     vec2_t pt = vec2_t((float)x, (float)y).transform(&p->inverse_transform);
@@ -178,7 +174,7 @@ namespace picovector {
       int idx = (int)(t * 255.0f + 0.5f);
       if(idx < 0) idx = 0; else if(idx > 255) idx = 255;
       uint32_t c = lut[idx];
-      *dst = fn(*dst, _r(c), _g(c), _b(c), _a(c));
+      *dst = blend_over_premul(*dst, c);
       dst++;
       px += dpx;
       py += dpy;
@@ -188,7 +184,6 @@ namespace picovector {
   void gradient_brush_radial_masked_span_func(image_t *target, brush_t *brush, int x, int y, int w, uint8_t *mask) {
     gradient_brush_t *p = (gradient_brush_t*)brush;
     uint32_t *dst = (uint32_t*)target->ptr(x, y);
-    blend_func_t fn = target->_blend_func;
     const uint32_t *lut = p->lut;
 
     vec2_t pt = vec2_t((float)x, (float)y).transform(&p->inverse_transform);
@@ -209,8 +204,7 @@ namespace picovector {
       if(idx < 0) idx = 0; else if(idx > 255) idx = 255;
       uint32_t c = lut[idx];
       uint32_t m = *mask;
-      *dst = fn(*dst, (_r(c) * m + 128) >> 8, (_g(c) * m + 128) >> 8,
-                      (_b(c) * m + 128) >> 8, (_a(c) * m + 128) >> 8);
+      *dst = blend_over_premul(*dst, _premul_mul_alpha(c, m));
       dst++;
       mask++;
       px += dpx;

@@ -440,7 +440,7 @@ namespace picovector {
   //          coverage + alpha-maps + blends (KIND_RESOLVE_AA).
   // Hand-off is shared-memory: core0 bumps pv_go to dispatch; the two pv_built
   // counters form the mid barrier; core1 sets pv_done when finished.
-  enum pv_kind_t { KIND_RASTER0 = 0, KIND_RESOLVE_AA = 1 };
+  enum pv_kind_t { KIND_RASTER0 = 0, KIND_RESOLVE_AA = 1, KIND_PARALLEL_ROWS = 2 };
   struct pv_fill_job_t {
     int kind;
     rect_t tb;
@@ -456,6 +456,11 @@ namespace picovector {
     uint aa;
     masked_span_func_t mfn;
     uint8_t *alpha_map;
+    // generic parallel-rows job (KIND_PARALLEL_ROWS): no build/barrier, each core
+    // just runs its row half of an arbitrary worker (used by image_t::blit)
+    pv_row_worker_t row_fn;
+    void *row_ctx;
+    int row_y0, row_y1;
   };
   static pv_fill_job_t pv_job;
   static volatile uint32_t pv_go = 0;        // core0 bumps to dispatch a job
@@ -477,6 +482,16 @@ namespace picovector {
       while(pv_go == served) { __asm volatile("wfe"); } // sleep until a job (no bus contention)
       served = pv_go;
       __sync_synchronize();                  // observe pv_job (written before pv_go)
+
+      // generic parallel-rows job: no build phase, no mid barrier — just run this
+      // core's odd-parity row half and report done.
+      if(pv_job.kind == KIND_PARALLEL_ROWS) {
+        pv_job.row_fn(pv_job.row_ctx, pv_job.row_y0 + 1, pv_job.row_y1, 2);
+        __sync_synchronize();
+        pv_done = served;
+        __asm volatile("sev");
+        continue;
+      }
 
       // build this core's edge-half into region 1
       build_tile_nodes_scaled(pv_job.tb, pv_job.scale, pv_job.e_start, pv_job.e_end, pv_job.row_base);
@@ -508,6 +523,33 @@ namespace picovector {
     multicore_launch_core1_with_stack(pv_core1_entry, pv_core1_stack, sizeof(pv_core1_stack));
     irq_set_enabled(PV_SIO_FIFO_IRQ, true);
     pv_core1_running = true;
+  }
+
+  // Split an arbitrary per-row worker across both cores by row parity. core1 runs
+  // the odd-offset rows, core0 the even, then core0 blocks until core1 signals
+  // done. Synchronous, and safe to call any time the rasteriser isn't mid-dispatch
+  // (blits and render_flush never overlap — both fully drain core1 before
+  // returning). ctx lives on the caller's stack, which stays valid because the
+  // caller (core0) is parked in this function until the join.
+  void pv_parallel_rows(pv_row_worker_t worker, void *ctx, int y0, int y1) {
+    if(y1 - y0 < 2) { worker(ctx, y0, y1, 1); return; } // too small to split usefully
+
+    pv_core1_launch();
+
+    pv_job.kind = KIND_PARALLEL_ROWS;
+    pv_job.row_fn = worker;
+    pv_job.row_ctx = ctx;
+    pv_job.row_y0 = y0;
+    pv_job.row_y1 = y1;
+    __sync_synchronize();                            // publish job before the go bump
+
+    uint32_t ticket = pv_go + 1;
+    pv_go = ticket; __asm volatile("sev");           // dispatch core1 (odd rows)
+
+    worker(ctx, y0, y1, 2);                           // core0: even rows (y0, y0+2, …)
+
+    while(pv_done != ticket) { __asm volatile("wfe"); } // join
+    __sync_synchronize();                            // observe core1's writes
   }
 #endif
 

@@ -47,24 +47,18 @@ namespace picovector {
   void pattern_brush_span_func(image_t *target, brush_t *brush, int x, int y, int w) {
     pattern_brush_t *p = (pattern_brush_t*)brush;
     uint32_t *dst = (uint32_t*)target->ptr(x, y);
-    blend_func_t fn = target->_blend_func;
 
-    uint32_t c1c[4] = {_r(p->c1._p), _g(p->c1._p), _b(p->c1._p), _a(p->c1._p)};
-    uint32_t c2c[4] = {_r(p->c2._p), _g(p->c2._p), _b(p->c2._p), _a(p->c2._p)};
+    uint32_t c1 = p->c1._p;
+    uint32_t c2 = p->c2._p;
 
     while(w--) {
       uint8_t u = 7 - (x & 0b111);
       uint8_t v = y & 0b111;
       uint8_t bit = p->p[v];
 
-      uint32_t *src = bit & (1 << u) ? c1c : c2c;
+      uint32_t src = bit & (1 << u) ? c1 : c2;
 
-      uint32_t r = src[0];
-      uint32_t g = src[1];
-      uint32_t b = src[2];
-      uint32_t a = src[3];
-
-      *dst = fn(*dst, r, g, b, a);
+      *dst = blend_over_premul(*dst, src);
       dst++;
       x++;
     }
@@ -73,25 +67,18 @@ namespace picovector {
   void pattern_brush_masked_span_func(image_t *target, brush_t *brush, int x, int y, int w, uint8_t *mask) {
     pattern_brush_t *p = (pattern_brush_t*)brush;
     uint32_t *dst = (uint32_t*)target->ptr(x, y);
-    blend_func_t fn = target->_blend_func;
 
-    uint32_t c1c[4] = {_r(p->c1._p), _g(p->c1._p), _b(p->c1._p), _a(p->c1._p)};
-    uint32_t c2c[4] = {_r(p->c2._p), _g(p->c2._p), _b(p->c2._p), _a(p->c2._p)};
+    uint32_t c1 = p->c1._p;
+    uint32_t c2 = p->c2._p;
 
     while(w--) {
       uint8_t u = 7 - (x & 0b111);
       uint8_t v = y & 0b111;
       uint8_t bit = p->p[v];
 
-      uint32_t *src = bit & (1 << u) ? c1c : c2c;
+      uint32_t src = bit & (1 << u) ? c1 : c2;
 
-      uint32_t m = *mask;
-      uint32_t r = (src[0] * m + 128) >> 8;
-      uint32_t g = (src[1] * m + 128) >> 8;
-      uint32_t b = (src[2] * m + 128) >> 8;
-      uint32_t a = (src[3] * m + 128) >> 8;
-
-      *dst = fn(*dst, r, g, b, a);
+      *dst = blend_over_premul(*dst, _premul_mul_alpha(src, *mask));
       dst++;
       x++;
       mask++;

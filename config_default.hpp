@@ -36,6 +36,15 @@
 #define PV_DUAL_CORE 0
 #endif
 
+// Minimum blit size (source/destination pixel count) before image_t::blit splits
+// its rows across both cores. Below this the fixed inter-core handshake cost
+// outweighs the win; large scaled/filtered blits benefit most (compute-bound),
+// plain opaque copies least (shared-bus bandwidth-bound). Only used when
+// PV_DUAL_CORE=1.
+#ifndef PV_DUAL_CORE_BLIT_MIN_PX
+#define PV_DUAL_CORE_BLIT_MIN_PX (64 * 64)
+#endif
+
 // ── working buffer size ─────────────────────────────────────────────────────
 // Scratch pool for rasterisation (tile/node/edge buffers). The core rasteriser
 // needs ~52 KB (4 KB tile + 32 KB nodes + edge accumulator); 60 KB gives

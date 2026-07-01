@@ -12,14 +12,8 @@ namespace picovector {
       src = _premul_mul_alpha(src, target->alpha());
     }
 
-    uint32_t r = _r(src);
-    uint32_t g = _g(src);
-    uint32_t b = _b(src);
-    uint32_t a = _a(src);
-
-    blend_func_t fn = target->_blend_func;
     while(w--) {
-      *dst = fn(*dst, r, g, b, a);
+      *dst = blend_over_premul(*dst, src);
       dst++;
     }
   }
@@ -33,19 +27,11 @@ namespace picovector {
       src = _premul_mul_alpha(src, target->alpha());
     }
 
-    uint32_t r = _r(src);
-    uint32_t g = _g(src);
-    uint32_t b = _b(src);
-    uint32_t a = _a(src);
-
-    blend_func_t fn = target->_blend_func;
     while(w--) {
-      uint32_t m = *mask;
-      uint32_t sr = _premul_mul_alpha_channel(r, m);
-      uint32_t sg = _premul_mul_alpha_channel(g, m);
-      uint32_t sb = _premul_mul_alpha_channel(b, m);
-      uint32_t sa = _premul_mul_alpha_channel(a, m);
-      *dst = fn(*dst, sr, sg, sb, sa);
+      // fold the coverage mask into the premultiplied colour (SWAR, two channels
+      // per multiply) then composite — replaces four per-channel multiplies plus
+      // the unpack/indirect-call/repack round trip through the blend pointer.
+      *dst = blend_over_premul(*dst, _premul_mul_alpha(src, *mask));
       dst++;
       mask++;
     }

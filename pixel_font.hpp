@@ -35,9 +35,12 @@ namespace picovector {
 
     int glyph_index(int codepoint);
 
-    void draw(image_t *target, const char *text, int x, int y);
-    void draw_glyph(image_t *target, const pixel_font_glyph_t *glyph, uint8_t *data, brush_t *brush, const rect_t &bounds, int x, int y);
-    rect_t measure(image_t *target, const char *text);
+    // scale is an integer nearest-neighbour magnification (1 = native size).
+    // Each glyph pixel becomes a scale x scale block; layout (advance, spacing,
+    // height) scales with it so measure() and draw() stay consistent.
+    void draw(image_t *target, const char *text, int x, int y, int scale = 1);
+    void draw_glyph(image_t *target, const pixel_font_glyph_t *glyph, uint8_t *data, brush_t *brush, const rect_t &bounds, int x, int y, int scale = 1);
+    rect_t measure(image_t *target, const char *text, int scale = 1);
   };
 
 }

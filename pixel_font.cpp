@@ -35,15 +35,16 @@ namespace picovector {
     return -1;  // not found
   }
 
-  rect_t pixel_font_t::measure(image_t *target, const char *text) {
+  rect_t pixel_font_t::measure(image_t *target, const char *text, int scale) {
+    if(scale < 1) scale = 1;
     rect_t tb = target->clip();
-    rect_t b(tb.x + tb.w, tb.y + tb.h, 0, this->height);
+    rect_t b(tb.x + tb.w, tb.y + tb.h, 0, this->height * scale);
 
     vec2_t caret(0, 0);
     while(*text != '\0') {
       // special case for "space"
       if(*text == 32) {
-        caret.x += this->width / 3;
+        caret.x += (this->width / 3) * scale;
         text++;
         continue;
       }
@@ -51,7 +52,7 @@ namespace picovector {
       int glyph_index = this->glyph_index(*text);
       if(glyph_index != -1) {
         pixel_font_glyph_t *glyph = &this->glyphs[glyph_index];
-        caret.x += glyph->width + 1;
+        caret.x += (glyph->width + 1) * scale;
 
         b.x = min(caret.x, b.x);
         b.w = max(caret.x, b.w);
@@ -62,43 +63,48 @@ namespace picovector {
     return b;
   }
 
-  void pixel_font_t::draw_glyph(image_t *target, const pixel_font_glyph_t *glyph, uint8_t *data, brush_t *brush, const rect_t &bounds, int x, int y) {
-    // calculate the number of bytes per glyph pixel data row
+  void pixel_font_t::draw_glyph(image_t *target, const pixel_font_glyph_t *glyph, uint8_t *data, brush_t *brush, const rect_t &bounds, int x, int y, int scale) {
+    if(scale < 1) scale = 1;
     uint32_t bytes_per_row = (this->width + 7) >> 3;
-
-    // clip the x and y ranges to within bounds
-    int yoff = 0;//max(0, int(bounds.y - y));
-    if(y < bounds.y) {
-      yoff = bounds.y - y;
-    }
-    int yf = y + yoff;
-    int yc = this->height - yoff;
-    yc = min(yc, int(bounds.y + bounds.h - yf));
-
-    int xoff = max(0, int(bounds.x - x));
-    int xf = x + xoff;
-    int xc = glyph->width - xoff;
-    xc = min(xc, int(bounds.x + bounds.w - xf));
-
-    //uint32_t *dst = (uint32_t *)target->ptr(0, yf);
-    uint32_t row_stride = target->row_stride() / 4;
 
     span_func_t fn = target->_span_func;
 
-    data += yoff * bytes_per_row;
-    for(int yo = yf; yo < yf + yc; yo++) {
-      for(int xo = xf; xo < xf + xc; xo++) {
-        int bit = xo - x;
-        uint8_t b = data[bit >> 3];
-        if(b & (0b1 << (7 - (bit & 0b111)))) {
-          //brush->pixel(&dst[xo]);
-          //brush->render_span(target, xo, yo, 1);
-          fn(target, brush, xo, yo, 1);
+    // bounds is the target clip rect. The span func writes without clipping, so
+    // we clip each emitted run here. Walk source pixels (not dest), coalescing
+    // horizontal runs of set bits into a single scale-wide span per dest row —
+    // fewer span-func calls than one per lit pixel, at any scale.
+    int bx0 = int(bounds.x), bx1 = int(bounds.x + bounds.w);
+    int by0 = int(bounds.y), by1 = int(bounds.y + bounds.h);
+
+    for(int gy = 0; gy < int(this->height); gy++) {
+      uint8_t *row = data + gy * bytes_per_row;
+      int dy = y + gy * scale;
+      if(dy + scale <= by0 || dy >= by1) continue; // whole source row off-screen
+
+      int gx = 0;
+      while(gx < int(glyph->width)) {
+        if(row[gx >> 3] & (0x80u >> (gx & 7))) {
+          // extend the run over consecutive set bits
+          int run = 1;
+          while(gx + run < int(glyph->width) &&
+                (row[(gx + run) >> 3] & (0x80u >> ((gx + run) & 7)))) run++;
+
+          // dest span for this run, clipped to bounds in x
+          int dx0 = x + gx * scale;
+          int cx0 = dx0 < bx0 ? bx0 : dx0;
+          int cx1 = (dx0 + run * scale) > bx1 ? bx1 : (dx0 + run * scale);
+          if(cx1 > cx0) {
+            for(int r = 0; r < scale; r++) {          // scale dest rows per source row
+              int ry = dy + r;
+              if(ry < by0 || ry >= by1) continue;
+              fn(target, brush, cx0, ry, cx1 - cx0);
+            }
+          }
+          gx += run;
+        } else {
+          gx++;
         }
       }
-
-      //dst += row_stride;
-      data += bytes_per_row;
     }
   }
 
@@ -127,9 +133,10 @@ namespace picovector {
     return 0; // invalid
   }
 
-  void pixel_font_t::draw(image_t *target, const char *text, int x, int y) {
+  void pixel_font_t::draw(image_t *target, const char *text, int x, int y, int scale) {
+    if(scale < 1) scale = 1;
     // check if text is within clipping area
-    rect_t text_bounds = this->measure(target, text);
+    rect_t text_bounds = this->measure(target, text, scale);
     text_bounds.x = x;
     text_bounds.y = y;
 
@@ -147,7 +154,7 @@ namespace picovector {
     while(*text != '\0') {
       // special case for "space"
       if(*text == 32) {
-        x += this->width / 3;
+        x += (this->width / 3) * scale;
         text++;
         continue;
       }
@@ -158,9 +165,9 @@ namespace picovector {
         pixel_font_glyph_t *glyph = &this->glyphs[glyph_index];
         uint8_t *data = &this->glyph_data[this->glyph_data_size * glyph_index];
 
-        draw_glyph(target, glyph, data, brush, bounds, x, y);
+        draw_glyph(target, glyph, data, brush, bounds, x, y, scale);
 
-        x += glyph->width + 1;
+        x += (glyph->width + 1) * scale;
       }
 
       text += utf8_seq_len(*text);

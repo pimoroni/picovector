@@ -36,6 +36,26 @@ namespace picovector {
     bool solid_fill(uint32_t &out) override;
   };
 
+  void transparent_brush_span_func(image_t *target, brush_t *brush, int x, int y, int w);
+  void transparent_brush_masked_span_func(image_t *target, brush_t *brush, int x, int y, int w, uint8_t *mask);
+  // Window / erase brush: lerps the destination toward a premultiplied target
+  // colour by shape coverage — dst = lerp(dst, tint, coverage). The default tint
+  // is fully transparent, making it a plain eraser (dst-out). Pass a colour to
+  // punch a translucent "window" of that colour in a single pass, with AA edges
+  // that blend against the background (an opaque tint behaves like a normal fill).
+  // Zero-coverage pixels are left exactly untouched; clear() fast-fills via
+  // solid_fill(). With a transparent tint this is bit-identical to a dst-out erase.
+  class transparent_brush_t : public brush_t {
+  public:
+    uint32_t tint; // premultiplied target colour; 0 == fully transparent (erase)
+
+    transparent_brush_t();                 // erase (fully transparent)
+    transparent_brush_t(const color_t &c); // lerp destination toward colour c
+    span_func_t span_func();
+    masked_span_func_t masked_span_func();
+    bool solid_fill(uint32_t &out) override;
+  };
+
   class pattern_brush_t : public brush_t {
   public:
     uint8_t p[8];

@@ -9,7 +9,14 @@
 #endif
 
 #if PV_BLUR_DUAL_CORE
-extern "C" void pv_core1_run(void (*fn)());   // defined in picovector.cpp
+// The dual-core blur shares the rasteriser's single core1 worker rather than
+// launching its own (two independent core1 launchers fight over the physical
+// core and hard-fault). That worker only exists when PV_DUAL_CORE is on, so the
+// blur split depends on it.
+#if !PV_DUAL_CORE
+#error "PV_BLUR_DUAL_CORE requires PV_DUAL_CORE (the shared core1 worker it dispatches to)"
+#endif
+extern "C" void pv_core1_run(void (*fn)());   // defined in picovector.cpp (rasteriser dispatcher)
 extern "C" void pv_core1_join();
 #endif
 
@@ -31,9 +38,11 @@ namespace picovector {
 #if PV_BLUR_INTERP
 
   // Configure this core's INTERP0 for blend mode:
-  //   peek[1] = base0 + ((base1-base0)*a)>>8,  a = ACCUM0[7:0]
-  // i.e. the IIR lerp for one 8-bit channel, in hardware. (A second unit didn't help
-  // — the per-core SIO bus is the bottleneck, not the interpolator, so one suffices.)
+  //   peek[1] = base0 + ((base1-base0)*a)>>8,  a = ACCUM1[7:0]
+  // i.e. the IIR lerp for one 8-bit channel, in hardware. The blend fraction is the
+  // 8 LSBs of LANE1's shift+mask value, so the coefficient lives in ACCUM1 (not
+  // ACCUM0 — LANE0's result is unused here). (A second unit didn't help — the
+  // per-core SIO bus is the bottleneck, not the interpolator, so one suffices.)
   static inline void interp_iir_setup(uint32_t alpha8) {
     interp_config c0 = interp_default_config();
     interp_config_set_blend(&c0, true);
@@ -41,7 +50,7 @@ namespace picovector {
     interp_config c1 = interp_default_config();
     interp_config_set_signed(&c1, true);            // signed blend: base1-base0 can be < 0
     interp_set_config(interp0, 1, &c1);
-    interp0->accum[0] = alpha8;
+    interp0->accum[1] = alpha8;
   }
 
   // Channels are handled independently, so load/store them as bytes directly — no

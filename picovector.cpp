@@ -41,12 +41,15 @@ using std::sort, std::min, std::max;
 // declarations come in via picovector.hpp.
 
 // ---------------------------------------------------------------------------
-// core1 dispatch — run an arbitrary void() job on the second core. The blur
-// filter uses this to split each pass across both cores (~2x). Work is handed
-// off via shared memory, NOT the inter-core FIFO: MicroPython owns the FIFO
-// (its lockout-victim IRQ on core0 would consume our messages), so the FIFO is
-// only used — with that IRQ briefly gated — by multicore_launch_core1 to start
-// the core. Enabled only when the pico SDK's multicore header is present.
+// core1 SDK glue. There is a single core1 worker for the whole component — the
+// rasteriser's dispatcher (further down, inside namespace picovector) owns it
+// and launches it lazily via pv_core1_launch(). Work is handed off via shared
+// memory, NOT the inter-core FIFO: MicroPython owns the FIFO (its lockout-victim
+// IRQ on core0 would consume our messages), so the FIFO is only used — with that
+// IRQ briefly gated — by multicore_launch_core1 to start the core. The blur
+// filter reuses this same worker through pv_core1_run()/pv_core1_join(), defined
+// alongside the dispatcher so both cannot fight over launching core1. Enabled
+// only when the pico SDK's multicore header is present.
 // ---------------------------------------------------------------------------
 
 #if PV_DUAL_CORE
@@ -56,61 +59,6 @@ extern "C" {
   void irq_set_enabled(unsigned int num, bool enabled);
 }
 #define PV_SIO_FIFO_IRQ 25 // SIO_IRQ_FIFO on RP2350 (core0's FIFO IRQ)
-
-namespace {
-  bool pv_core1_running = false;
-  uint32_t __attribute__((aligned(8))) pv_core1_stack[1024];    // 4kB core1 stack
-
-  // core0 sets pv_gen_fn then bumps pv_gen_go (+sev); core1 runs it and bumps
-  // pv_gen_done (+sev). A monotonically increasing ticket avoids lost wakeups.
-  void (* volatile pv_gen_fn)() = nullptr;
-  volatile uint32_t pv_gen_go = 0;
-  volatile uint32_t pv_gen_done = 0;
-
-  void pv_core1_entry() {
-    // The M33 FPU is per-core and a bare core1 launch leaves CP10/CP11 disabled,
-    // so any float math in a job would UsageFault. Enable full access first.
-    *(volatile uint32_t *)0xE000ED88 |= (0xF << 20); // CPACR: CP10/CP11 = full access
-    __asm volatile("dsb");
-    __asm volatile("isb");
-
-    uint32_t gen_served = 0;
-    while(true) {
-      while(pv_gen_go == gen_served) { __asm volatile("wfe"); }  // sleep until a job
-      gen_served = pv_gen_go;
-      __sync_synchronize();                  // observe pv_gen_fn (written before pv_gen_go)
-      void (*fn)() = pv_gen_fn;
-      if(fn) fn();
-      __sync_synchronize();
-      pv_gen_done = gen_served; __asm volatile("sev");           // signal completion
-    }
-  }
-
-  void pv_core1_launch() {
-    if(pv_core1_running) return;
-    // MicroPython's lockout-victim FIFO IRQ on core0 would eat core1's launch
-    // handshake, so gate it across the launch. We use shared memory at runtime,
-    // so the IRQ can be restored afterwards (it simply never fires for us).
-    irq_set_enabled(PV_SIO_FIFO_IRQ, false);
-    multicore_launch_core1_with_stack(pv_core1_entry, pv_core1_stack, sizeof(pv_core1_stack));
-    irq_set_enabled(PV_SIO_FIFO_IRQ, true);
-    pv_core1_running = true;
-  }
-}
-
-// Exposed to other translation units (e.g. the blur filter): ensure core1 is up,
-// then run `fn` on it asynchronously. Pair every pv_core1_run() with a pv_core1_join().
-extern "C" void pv_core1_run(void (*fn)()) {
-  pv_core1_launch();
-  pv_gen_fn = fn;
-  __sync_synchronize();
-  pv_gen_go++;
-  __asm volatile("sev");
-}
-extern "C" void pv_core1_join() {
-  while(pv_gen_done != pv_gen_go) { __asm volatile("wfe"); }
-  __sync_synchronize();
-}
 #endif
 
 #define TILE_WIDTH 64
@@ -513,7 +461,7 @@ namespace picovector {
   //          coverage + alpha-maps + blends (KIND_RESOLVE_AA).
   // Hand-off is shared-memory: core0 bumps pv_go to dispatch; the two pv_built
   // counters form the mid barrier; core1 sets pv_done when finished.
-  enum pv_kind_t { KIND_RASTER0 = 0, KIND_RESOLVE_AA = 1, KIND_PARALLEL_ROWS = 2 };
+  enum pv_kind_t { KIND_RASTER0 = 0, KIND_RESOLVE_AA = 1, KIND_PARALLEL_ROWS = 2, KIND_GENERIC_FN = 3 };
   struct pv_fill_job_t {
     int kind;
     rect_t tb;
@@ -534,6 +482,10 @@ namespace picovector {
     pv_row_worker_t row_fn;
     void *row_ctx;
     int row_y0, row_y1;
+    // generic void() job (KIND_GENERIC_FN): core1 just runs gen_fn and reports
+    // done — no build/barrier. Used by the blur filter so it shares this one
+    // core1 worker instead of launching a second, conflicting one.
+    void (*gen_fn)();
   };
   static pv_fill_job_t pv_job;
   static volatile uint32_t pv_go = 0;        // core0 bumps to dispatch a job
@@ -560,6 +512,16 @@ namespace picovector {
       // core's odd-parity row half and report done.
       if(pv_job.kind == KIND_PARALLEL_ROWS) {
         pv_job.row_fn(pv_job.row_ctx, pv_job.row_y0 + 1, pv_job.row_y1, 2);
+        __sync_synchronize();
+        pv_done = served;
+        __asm volatile("sev");
+        continue;
+      }
+
+      // generic void() job (e.g. the blur filter's core1 band): run it and report
+      // done — no build, no barrier.
+      if(pv_job.kind == KIND_GENERIC_FN) {
+        if(pv_job.gen_fn) pv_job.gen_fn();
         __sync_synchronize();
         pv_done = served;
         __asm volatile("sev");
@@ -622,6 +584,25 @@ namespace picovector {
     worker(ctx, y0, y1, 2);                           // core0: even rows (y0, y0+2, …)
 
     while(pv_done != ticket) { __asm volatile("wfe"); } // join
+    __sync_synchronize();                            // observe core1's writes
+  }
+
+  // Async single-job hand-off to the shared core1 worker, exposed to other
+  // translation units (the blur filter). pv_core1_run() dispatches `fn` to core1
+  // and returns immediately so the caller can do its own half in parallel;
+  // pv_core1_join() then blocks until core1 has finished. Pair every run with a
+  // join, and — like pv_parallel_rows — never overlap with a render_flush/blit
+  // dispatch (they share pv_go/pv_done). extern "C" so blur.cpp can call it by
+  // its plain, unmangled name.
+  extern "C" void pv_core1_run(void (*fn)()) {
+    pv_core1_launch();
+    pv_job.kind = KIND_GENERIC_FN;
+    pv_job.gen_fn = fn;
+    __sync_synchronize();                            // publish job before the go bump
+    pv_go = pv_go + 1; __asm volatile("sev");        // dispatch core1
+  }
+  extern "C" void pv_core1_join() {
+    while(pv_done != pv_go) { __asm volatile("wfe"); }
     __sync_synchronize();                            // observe core1's writes
   }
 #endif

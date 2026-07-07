@@ -48,11 +48,6 @@ using std::sort, std::min, std::max;
 // only used — with that IRQ briefly gated — by multicore_launch_core1 to start
 // the core. Enabled only when the pico SDK's multicore header is present.
 // ---------------------------------------------------------------------------
-#if defined(__has_include)
-#  if __has_include("pico/multicore.h")
-#    define PV_DUAL_CORE 1
-#  endif
-#endif
 
 #if PV_DUAL_CORE
 extern "C" {

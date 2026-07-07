@@ -4,25 +4,10 @@
 #include "../picovector.hpp"
 #include "../image.hpp"
 
-// On the device, do the per-channel IIR lerp with an RP2350 hardware interpolator
-// (blend mode). We also benchmarked a hand-tuned M33 SIMD version; it was no faster
-// (~21ms/frame either way — the blur is limited by per-pixel bus/compute throughput,
-// not the arithmetic), so the interpolator wins on readability. Host builds have no
-// interpolator, so fall back to portable C++.
-#if defined(__has_include)
-#  if __has_include("hardware/interp.h")
-#    include "hardware/interp.h"
-#    define PV_BLUR_INTERP 1
-#  endif
+#if PV_BLUR_INTERP
+#include "hardware/interp.h"
 #endif
 
-// core1 is available (and owned by picovector) on the device build; use it to split
-// each pass across both cores. Host builds fall back to single-core.
-#if defined(__has_include)
-#  if __has_include("pico/multicore.h")
-#    define PV_BLUR_DUAL_CORE 1
-#  endif
-#endif
 #if PV_BLUR_DUAL_CORE
 extern "C" void pv_core1_run(void (*fn)());   // defined in picovector.cpp
 extern "C" void pv_core1_join();

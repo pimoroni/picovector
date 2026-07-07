@@ -36,6 +36,21 @@
 #define PV_DUAL_CORE 0
 #endif
 
+// On the device, do the per-channel IIR lerp with an RP2350 hardware interpolator
+// (blend mode). We also benchmarked a hand-tuned M33 SIMD version; it was no faster
+// (~21ms/frame either way — the blur is limited by per-pixel bus/compute throughput,
+// not the arithmetic), so the interpolator wins on readability. Host builds have no
+// interpolator, so PV_BLUR_INTERP=0 falls back to portable C++.
+#ifndef PV_BLUR_INTERP
+#define PV_BLUR_INTERP PV_DUAL_CORE
+#endif
+
+// core1 is available (but may not be owned by picovector) on the device build;
+// enable PV_BLUR_DUAL_CORE to split each pass across both cores.
+#ifndef PV_BLUR_DUAL_CORE
+#define PV_BLUR_DUAL_CORE PV_DUAL_CORE
+#endif
+
 // Minimum blit size (source/destination pixel count) before image_t::blit splits
 // its rows across both cores. Below this the fixed inter-core handshake cost
 // outweighs the win; large scaled/filtered blits benefit most (compute-bound),

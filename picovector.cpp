@@ -40,6 +40,84 @@ using std::sort, std::min, std::max;
 // it as scratch (e.g. PNG/JPEG decode in the MicroPython bindings). The extern
 // declarations come in via picovector.hpp.
 
+// ---------------------------------------------------------------------------
+// core1 dispatch — run an arbitrary void() job on the second core. The blur
+// filter uses this to split each pass across both cores (~2x). Work is handed
+// off via shared memory, NOT the inter-core FIFO: MicroPython owns the FIFO
+// (its lockout-victim IRQ on core0 would consume our messages), so the FIFO is
+// only used — with that IRQ briefly gated — by multicore_launch_core1 to start
+// the core. Enabled only when the pico SDK's multicore header is present.
+// ---------------------------------------------------------------------------
+#if defined(__has_include)
+#  if __has_include("pico/multicore.h")
+#    define PV_DUAL_CORE 1
+#  endif
+#endif
+
+#if PV_DUAL_CORE
+extern "C" {
+  // forward-declared to avoid a hard SDK include dependency (linked into the firmware)
+  void multicore_launch_core1_with_stack(void (*entry)(void), uint32_t *stack_bottom, size_t stack_size_bytes);
+  void irq_set_enabled(unsigned int num, bool enabled);
+}
+#define PV_SIO_FIFO_IRQ 25 // SIO_IRQ_FIFO on RP2350 (core0's FIFO IRQ)
+
+namespace {
+  bool pv_core1_running = false;
+  uint32_t __attribute__((aligned(8))) pv_core1_stack[1024];    // 4kB core1 stack
+
+  // core0 sets pv_gen_fn then bumps pv_gen_go (+sev); core1 runs it and bumps
+  // pv_gen_done (+sev). A monotonically increasing ticket avoids lost wakeups.
+  void (* volatile pv_gen_fn)() = nullptr;
+  volatile uint32_t pv_gen_go = 0;
+  volatile uint32_t pv_gen_done = 0;
+
+  void pv_core1_entry() {
+    // The M33 FPU is per-core and a bare core1 launch leaves CP10/CP11 disabled,
+    // so any float math in a job would UsageFault. Enable full access first.
+    *(volatile uint32_t *)0xE000ED88 |= (0xF << 20); // CPACR: CP10/CP11 = full access
+    __asm volatile("dsb");
+    __asm volatile("isb");
+
+    uint32_t gen_served = 0;
+    while(true) {
+      while(pv_gen_go == gen_served) { __asm volatile("wfe"); }  // sleep until a job
+      gen_served = pv_gen_go;
+      __sync_synchronize();                  // observe pv_gen_fn (written before pv_gen_go)
+      void (*fn)() = pv_gen_fn;
+      if(fn) fn();
+      __sync_synchronize();
+      pv_gen_done = gen_served; __asm volatile("sev");           // signal completion
+    }
+  }
+
+  void pv_core1_launch() {
+    if(pv_core1_running) return;
+    // MicroPython's lockout-victim FIFO IRQ on core0 would eat core1's launch
+    // handshake, so gate it across the launch. We use shared memory at runtime,
+    // so the IRQ can be restored afterwards (it simply never fires for us).
+    irq_set_enabled(PV_SIO_FIFO_IRQ, false);
+    multicore_launch_core1_with_stack(pv_core1_entry, pv_core1_stack, sizeof(pv_core1_stack));
+    irq_set_enabled(PV_SIO_FIFO_IRQ, true);
+    pv_core1_running = true;
+  }
+}
+
+// Exposed to other translation units (e.g. the blur filter): ensure core1 is up,
+// then run `fn` on it asynchronously. Pair every pv_core1_run() with a pv_core1_join().
+extern "C" void pv_core1_run(void (*fn)()) {
+  pv_core1_launch();
+  pv_gen_fn = fn;
+  __sync_synchronize();
+  pv_gen_go++;
+  __asm volatile("sev");
+}
+extern "C" void pv_core1_join() {
+  while(pv_gen_done != pv_gen_go) { __asm volatile("wfe"); }
+  __sync_synchronize();
+}
+#endif
+
 #define TILE_WIDTH 64
 #define TILE_HEIGHT 64
 #define MAX_NODES_PER_SCANLINE 64

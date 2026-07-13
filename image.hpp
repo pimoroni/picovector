@@ -75,6 +75,7 @@ namespace picovector {
       font_t            *_font = nullptr;
       pixel_font_t      *_pixel_font = nullptr;
       palette_t          _palette;
+      uint               _rows = 1, _cols = 1;   // spritesheet grid (1x1 = not a sheet)
 
     public:
       blend_func_t       _blend_func = blend_func_over;
@@ -84,7 +85,9 @@ namespace picovector {
       image_t();
       image_t(image_t *source, rect_t r);
       image_t(int w, int h, pixel_format_t pixel_format=RGBA8888, bool has_palette=false);
+      image_t(int w, int h, int rows, int cols, pixel_format_t pixel_format=RGBA8888, bool has_palette=false);
       image_t(void *buffer, int w, int h, pixel_format_t pixel_format=RGBA8888, bool has_palette=false);
+      image_t(void *buffer, int w, int h, int rows, int cols, pixel_format_t pixel_format=RGBA8888, bool has_palette=false);
       ~image_t();
 
       size_t buffer_size();
@@ -92,6 +95,10 @@ namespace picovector {
       bool is_compatible(image_t *other);
       void window(image_t *source, rect_t viewport);
       image_t window(rect_t r);
+      // return the sprite at grid cell (x, y) as a window, using the sheet's
+      // _cols x _rows layout. x is the column, y is the row. A non-spritesheet
+      // image is 1x1, so sprite(0, 0) is the whole image.
+      image_t sprite(int x, int y);
       inline void* ptr(int x, int y) const {
         return (uint8_t *)(this->_buffer) + (x * this->_bytes_per_pixel) + (y * this->_row_stride);
       }

@@ -28,10 +28,15 @@ namespace picovector {
     _managed_buffer = false;
   }
 
-  image_t::image_t(int w, int h, pixel_format_t pixel_format, bool has_palette) {
+  image_t::image_t(int w, int h, pixel_format_t pixel_format, bool has_palette)
+    : image_t(w, h, 1, 1, pixel_format, has_palette) {}
+
+  image_t::image_t(int w, int h, int rows, int cols, pixel_format_t pixel_format, bool has_palette) {
     _bounds = rect_t(0, 0, w, h);
     _clip = rect_t(0, 0, w, h);
     _brush = nullptr;
+    _rows = rows;
+    _cols = cols;
     _pixel_format = pixel_format;
     _has_palette = has_palette;
     _managed_buffer = true;
@@ -43,10 +48,15 @@ namespace picovector {
     }
   }
 
-  image_t::image_t(void *buffer, int w, int h, pixel_format_t pixel_format, bool has_palette) {
+  image_t::image_t(void *buffer, int w, int h, pixel_format_t pixel_format, bool has_palette)
+    : image_t(buffer, w, h, 1, 1, pixel_format, has_palette) {}
+
+  image_t::image_t(void *buffer, int w, int h, int rows, int cols, pixel_format_t pixel_format, bool has_palette) {
     _bounds = rect_t(0, 0, w, h);
     _clip = rect_t(0, 0, w, h);
     _brush = nullptr;
+    _rows = rows;
+    _cols = cols;
     _pixel_format = pixel_format;
     _has_palette = has_palette;
     _buffer = buffer;
@@ -181,6 +191,14 @@ namespace picovector {
     rect_t i = _bounds.intersection(r);
     image_t window = image_t(this, rect_t(i.x, i.y, i.w, i.h));
     return window;
+  }
+
+  // Sprite (x, y) in grid coordinates -> a window over that cell. Cell size is
+  // the sheet divided by its _cols x _rows layout.
+  image_t image_t::sprite(int x, int y) {
+    int sw = int(_bounds.w) / int(_cols);
+    int sh = int(_bounds.h) / int(_rows);
+    return window(rect_t(x * sw, y * sh, sw, sh));
   }
 
   // void image_t::clear(uint32_t c) {

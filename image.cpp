@@ -151,6 +151,22 @@ namespace picovector {
     this->_fill_rule = fill_rule;
   }
 
+  uint image_t::rows() {
+    return this->_rows;
+  }
+
+  void image_t::rows(uint rows) {
+    this->_rows = rows;
+  }
+
+  uint image_t::cols() {
+    return this->_cols;
+  }
+
+  void image_t::cols(uint cols) {
+    this->_cols = cols;
+  }
+
   pixel_format_t image_t::pixel_format() {
     return this->_pixel_format;
   }

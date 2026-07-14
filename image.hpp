@@ -125,6 +125,12 @@ namespace picovector {
       fill_rule_t fill_rule();
       void fill_rule(fill_rule_t fill_rule);
 
+      // spritesheet grid used by sprite(); 1x1 = not a sheet
+      uint rows();
+      void rows(uint rows);
+      uint cols();
+      void cols(uint cols);
+
       pixel_format_t pixel_format();
       void pixel_format(pixel_format_t pixel_format);
 

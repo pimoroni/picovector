@@ -13,6 +13,8 @@ list(APPEND SOURCES
   ${CMAKE_CURRENT_LIST_DIR}/primitive.cpp
   ${CMAKE_CURRENT_LIST_DIR}/algorithms/geometry.cpp
   ${CMAKE_CURRENT_LIST_DIR}/algorithms/dda.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/tween/easing.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/tween/tween.cpp
   ${CMAKE_CURRENT_LIST_DIR}/brushes/pattern.cpp
   ${CMAKE_CURRENT_LIST_DIR}/brushes/color.cpp
   ${CMAKE_CURRENT_LIST_DIR}/brushes/transparent.cpp

@@ -60,14 +60,11 @@ namespace picovector {
     // Normalise to OKLCH ranges
     float L = (float)l / 255.0f;   // 0–1
 
-    float t = (float)c / 255.0f;      // 0–1
-    // Slightly compress the top end: more resolution at low/mid chroma
-    t = 1.0f - (1.0f - t) * (1.0f - t);  // simple quadratic ease-out
     const float OKLCH_MAX_CHROMA = 0.35f;
-    float C = t * OKLCH_MAX_CHROMA;
+    float C = ((float)c / 255.0f) * OKLCH_MAX_CHROMA;
 
-    // Wrap hue and convert to radians
-    float hs = (float)((h * 360) / 255) * PV_PI / 180.0f;
+    // byte hue -> radians directly; 256 counts = a full turn (2*PI)
+    float hs = (float)h * (PV_PI / 128.0f);
 
     // OKLCH → OKLab
     float a_ = C * cosf(hs);

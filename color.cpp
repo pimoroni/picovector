@@ -18,9 +18,9 @@ namespace picovector {
   }
 
   hsv_color_t::hsv_color_t(uint8_t h, uint8_t s, uint8_t v, uint8_t a) : _h(h), _s(s), _v(v), _a(a) {
-    int hs = (h * 359) / 255;
-    int region = hs / 60;
-    int remainder = (hs - (region * 60)) * 255 / 60;
+    int hs = h * 6;             // six hue regions of 256
+    int region = hs >> 8;       // 0..5, since 255 * 6 = 1530
+    int remainder = hs & 0xff;  // position within the region, 0..255
 
     int p = (v * (255 - s)) / 255;
     int q = (v * (255 - (s * remainder) / 255)) / 255;

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../config.hpp"   // PV_TICKS (clock source; see config_default.hpp)
 #include "easing.hpp"
 #include "interpolate.hpp"
 
@@ -21,6 +22,12 @@
 //
 // Templated over T: anything pv_lerp() accepts — float, int32_t, vec2_t,
 // rect_t, xform_t.
+//
+// The optional start()/now()/done() helpers add a saved start time so a tween
+// can work out its own elapsed time. They read the current time from the
+// PV_TICKS macro (see config_default.hpp) rather than any platform API, so the
+// core stays host-clean. Time is in whatever unit you use for durations; on the
+// badge PV_TICKS is milliseconds, so express durations in milliseconds too.
 
 namespace picovector {
 
@@ -63,6 +70,23 @@ namespace picovector {
 
     T operator()(float t) const { return at(t); }
 
+    // --- optional self-timing (reads the PV_TICKS clock) -------------------
+    // Save the current time (PV_TICKS) as the start time and begin running.
+    tween_t &start()        { _start = (float)(PV_TICKS); _running = true; return *this; }
+    // Same, but with an explicit start time (e.g. a captured tick value).
+    tween_t &start(float t) { _start = t; _running = true; return *this; }
+    void     stop()         { _running = false; }
+
+    // Time elapsed since start() (0 before the first start()).
+    float elapsed() const { return _running ? (float)(PV_TICKS) - _start : 0.0f; }
+
+    // Value at the current clock time.
+    T now() const { return at(elapsed()); }
+
+    // True once the duration has elapsed since start(). False until started.
+    bool done() const { return _running && elapsed() >= _duration; }
+    bool running() const { return _running; }
+
     T     from() const     { return _from; }
     T     to() const       { return _to; }
     float duration() const { return _duration; }
@@ -71,6 +95,8 @@ namespace picovector {
     T     _from{};
     T     _to{};
     float _duration = 1.0f;
+    float _start    = 0.0f;
+    bool  _running  = false;
     easing_fn_t _ease = ease_linear;
   };
 

@@ -7,6 +7,11 @@
 #include <cstdio>
 #include <cmath>
 
+// Drive the self-timing helpers from a controllable fake clock: define PV_TICKS
+// to a mutable global before the tween header pulls in its config default.
+static float g_fake_ticks = 0.0f;
+#define PV_TICKS g_fake_ticks
+
 #include "../tween.hpp"
 
 using namespace picovector;
@@ -160,11 +165,53 @@ static void test_at() {
   check(approx(tz.at(0.0f), 0.0f) && approx(tz.at(0.1f), 9.0f), "zero duration instant");
 }
 
+static void test_self_timing() {
+  printf("self-timing...\n");
+  g_fake_ticks = 0.0f;
+
+  tween_t<float> tw(0.0f, 100.0f, 2.0f);   // over 2 (clock units)
+  // Before start(), the helpers are inert.
+  check(!tw.running(), "not running before start");
+  check(!tw.done(), "not done before start");
+  check(approx(tw.now(), 0.0f), "now() == from before start");
+
+  g_fake_ticks = 10.0f;                      // clock can be any offset
+  tw.start();                                // saves start = 10
+  check(tw.running(), "running after start");
+  check(approx(tw.now(), 0.0f), "now() == from at start");
+  check(!tw.done(), "not done at start");
+
+  g_fake_ticks = 11.0f;                      // 1 elapsed of 2
+  check(approx(tw.elapsed(), 1.0f), "elapsed tracks clock");
+  check(approx(tw.now(), 50.0f), "now() halfway");
+  check(!tw.done(), "not done halfway");
+
+  g_fake_ticks = 12.0f;                      // duration reached
+  check(approx(tw.now(), 100.0f), "now() == to at end");
+  check(tw.done(), "done at duration");
+
+  g_fake_ticks = 20.0f;                      // past end
+  check(approx(tw.now(), 100.0f), "now() holds past end");
+  check(tw.done(), "still done past end");
+
+  // Explicit start time.
+  tween_t<vec2_t> tv(vec2_t(0, 0), vec2_t(10, 20), 4.0f);
+  tv.start(20.0f);                           // start at t=20
+  g_fake_ticks = 22.0f;                       // 2 of 4 -> halfway
+  vec2_t v = tv.now();
+  check(approx(v.x, 5) && approx(v.y, 10), "explicit-start now()");
+
+  // stop() makes the helpers inert again.
+  tv.stop();
+  check(!tv.running() && !tv.done(), "stop() halts timing");
+}
+
 int main() {
   test_easing();
   test_lerp();
   test_xform();
   test_at();
+  test_self_timing();
   printf("\n%d checks, %d failures\n", checks, failures);
   return failures ? 1 : 0;
 }

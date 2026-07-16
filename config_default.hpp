@@ -60,6 +60,16 @@
 #define PV_DUAL_CORE_BLIT_MIN_PX (64 * 64)
 #endif
 
+// ── clock source ────────────────────────────────────────────────────────────
+// Current time, used by the tween module's self-timing helpers (start/now/done).
+// Expands to an expression yielding the current time in whatever unit tween
+// durations are expressed in. Embedders point it at their tick counter (on the
+// badge, milliseconds from the input module — the same source as badge.ticks);
+// the standalone default is a frozen 0 so timing is inert until wired.
+#ifndef PV_TICKS
+#define PV_TICKS 0
+#endif
+
 // ── working buffer size ─────────────────────────────────────────────────────
 // Scratch pool for rasterisation (tile/node/edge buffers). The core rasteriser
 // needs ~52 KB (4 KB tile + 32 KB nodes + edge accumulator); 60 KB gives

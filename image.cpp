@@ -478,21 +478,57 @@ namespace picovector {
     int dst_step = vertical ? (target->_row_stride >> 2) : 1;
 
     uint32_t *dst = (uint32_t *)target->ptr(p.x, p.y);
-    for(int i = 0; i < c; i++) {
-      u += ud;
-      v += vd;
 
-      // fixed-point 16.16 source coordinates (fractional uv scaled to texels)
-      fx16_t sx = (fx16_t)((u & 0xffffu) * tw);
-      fx16_t sy = (fx16_t)((v & 0xffffu) * th);
-      uint32_t col = this->sample(sx, sy, filter);
-
+    // Palette images always resolve NEAREST (indices can't be interpolated).
+    if(filter == NEAREST || this->_has_palette) {
+      // NEAREST fast path: fetch the nearest texel inline via get_unsafe,
+      // skipping the per-pixel out-of-line sample() call (its filter dispatch,
+      // bounds reload and clamps). ix/iy are already in range by construction -
+      // (uv fraction) * (dim - 1) >> 16 lies in [0, dim - 1] - so no clamp is
+      // needed, matching sample()'s NEAREST result exactly. The invariant
+      // global-alpha test is hoisted out of the loop.
       if(this->_alpha != 255) {
-        col = _premul_mul_alpha(col, this->_alpha);
+        uint32_t ga = this->_alpha;
+        for(int i = 0; i < c; i++) {
+          u += ud; v += vd;
+          int ix = ((u & 0xffffu) * tw) >> 16;
+          int iy = ((v & 0xffffu) * th) >> 16;
+          uint32_t col = _premul_mul_alpha(this->get_unsafe(ix, iy), ga);
+          *dst = blend_over_premul(*dst, col);
+          dst += dst_step;
+        }
+      } else {
+        for(int i = 0; i < c; i++) {
+          u += ud; v += vd;
+          int ix = ((u & 0xffffu) * tw) >> 16;
+          int iy = ((v & 0xffffu) * th) >> 16;
+          *dst = blend_over_premul(*dst, this->get_unsafe(ix, iy));
+          dst += dst_step;
+        }
       }
+      return;
+    }
 
-      *dst = blend_over_premul(*dst, col);
-      dst += dst_step;
+    // Filtered (BILINEAR/BICUBIC) path: sample() does the interpolation, so we
+    // can't fold the fetch into a raw texel index. Alpha test still hoisted.
+    if(this->_alpha != 255) {
+      uint32_t ga = this->_alpha;
+      for(int i = 0; i < c; i++) {
+        u += ud; v += vd;
+        fx16_t sx = (fx16_t)((u & 0xffffu) * tw);
+        fx16_t sy = (fx16_t)((v & 0xffffu) * th);
+        uint32_t col = _premul_mul_alpha(this->sample(sx, sy, filter), ga);
+        *dst = blend_over_premul(*dst, col);
+        dst += dst_step;
+      }
+    } else {
+      for(int i = 0; i < c; i++) {
+        u += ud; v += vd;
+        fx16_t sx = (fx16_t)((u & 0xffffu) * tw);
+        fx16_t sy = (fx16_t)((v & 0xffffu) * th);
+        *dst = blend_over_premul(*dst, this->sample(sx, sy, filter));
+        dst += dst_step;
+      }
     }
   }
 

@@ -70,10 +70,12 @@ namespace picovector {
 
   image_t::~image_t() {
     if(this->_managed_buffer) {
-#ifdef PICO
+#if !PV_GC_MANAGED
+      // Non-GC builds own the allocation and must release it. Under a tracing GC
+      // (PV_GC_MANAGED) the buffer is GC-owned: freeing it from the finaliser can
+      // reclaim a block the gc_sweep has already freed (out-of-order), corrupting
+      // the allocation table — leave it for the sweep.
       PV_FREE(this->_buffer);
-#else
-      PV_FREE(this->_buffer, this->buffer_size());
 #endif
     }
   }

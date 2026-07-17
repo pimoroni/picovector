@@ -35,6 +35,14 @@
 #ifndef PV_DUAL_CORE
 #define PV_DUAL_CORE 0
 #endif
+// The allocator (PV_MALLOC/PV_FREE/PV_STD_ALLOCATOR) is a tracing GC that reclaims
+// unreferenced blocks on its own. Off by default (bare/host builds own and free
+// their allocations). Embedders on a GC — e.g. the MicroPython build wiring these
+// onto m_malloc/m_free — define PV_GC_MANAGED=1 so picovector never explicitly frees
+// or runs a finaliser that frees: doing so double-frees during the GC sweep.
+#ifndef PV_GC_MANAGED
+#define PV_GC_MANAGED 0
+#endif
 
 // On the device, do the per-channel IIR lerp with an RP2350 hardware interpolator
 // (blend mode). We also benchmarked a hand-tuned M33 SIMD version; it was no faster

@@ -3,11 +3,9 @@
 #include <cmath>
 #include <string.h>
 
-namespace picovector {
+#include "util.hpp" // PV_PI
 
-  // Single-precision pi. Defined here (the lowest-level header) so every module
-  // can use it instead of the double-precision M_PI from <cmath>.
-  constexpr float PV_PI = 3.14159265358979f;
+namespace picovector {
 
   class mat3_t {
   public:

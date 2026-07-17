@@ -2,11 +2,9 @@
 
 #include <cmath>
 
-namespace picovector {
+#include "../util.hpp" // PV_PI
 
-  // Single-precision pi kept local so this stays a standalone unit (mat3.hpp
-  // defines PV_PI, but easing has no reason to pull the matrix header in).
-  static constexpr float PI = 3.14159265358979f;
+namespace picovector {
 
   float ease_linear(float t) { return t; }
 
@@ -39,9 +37,9 @@ namespace picovector {
   }
 
   // --- sine ----------------------------------------------------------------
-  float ease_sine_in(float t)  { return 1.0f - cosf((t * PI) / 2.0f); }
-  float ease_sine_out(float t) { return sinf((t * PI) / 2.0f); }
-  float ease_sine_inout(float t) { return -(cosf(PI * t) - 1.0f) / 2.0f; }
+  float ease_sine_in(float t)  { return 1.0f - cosf((t * PV_PI) / 2.0f); }
+  float ease_sine_out(float t) { return sinf((t * PV_PI) / 2.0f); }
+  float ease_sine_inout(float t) { return -(cosf(PV_PI * t) - 1.0f) / 2.0f; }
 
   // --- exponential ---------------------------------------------------------
   float ease_expo_in(float t)  { return t <= 0.0f ? 0.0f : powf(2.0f, 10.0f * t - 10.0f); }
@@ -82,19 +80,19 @@ namespace picovector {
   float ease_elastic_in(float t) {
     if(t <= 0.0f) return 0.0f;
     if(t >= 1.0f) return 1.0f;
-    const float c4 = (2.0f * PI) / 3.0f;
+    const float c4 = (2.0f * PV_PI) / 3.0f;
     return -powf(2.0f, 10.0f * t - 10.0f) * sinf((t * 10.0f - 10.75f) * c4);
   }
   float ease_elastic_out(float t) {
     if(t <= 0.0f) return 0.0f;
     if(t >= 1.0f) return 1.0f;
-    const float c4 = (2.0f * PI) / 3.0f;
+    const float c4 = (2.0f * PV_PI) / 3.0f;
     return powf(2.0f, -10.0f * t) * sinf((t * 10.0f - 0.75f) * c4) + 1.0f;
   }
   float ease_elastic_inout(float t) {
     if(t <= 0.0f) return 0.0f;
     if(t >= 1.0f) return 1.0f;
-    const float c5 = (2.0f * PI) / 4.5f;
+    const float c5 = (2.0f * PV_PI) / 4.5f;
     return t < 0.5f
       ? -(powf(2.0f, 20.0f * t - 10.0f) * sinf((20.0f * t - 11.125f) * c5)) / 2.0f
       :  (powf(2.0f, -20.0f * t + 10.0f) * sinf((20.0f * t - 11.125f) * c5)) / 2.0f + 1.0f;

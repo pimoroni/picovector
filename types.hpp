@@ -10,8 +10,6 @@ using std::min;
 
 namespace picovector {
 
-  typedef int32_t fx16_t; // fixed point 16:16 type
-
   struct vec2_t {
     float x;
     float y;

@@ -3,6 +3,7 @@ add_library(usermod_picovector INTERFACE)
 list(APPEND SOURCES
   # PicoVector C/C++ core library (MicroPython-agnostic)
   ${CMAKE_CURRENT_LIST_DIR}/picovector.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/rasteriser.cpp
   ${CMAKE_CURRENT_LIST_DIR}/picovector_working_buffer.cpp
   ${CMAKE_CURRENT_LIST_DIR}/shape.cpp
   ${CMAKE_CURRENT_LIST_DIR}/font.cpp

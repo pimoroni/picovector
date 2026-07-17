@@ -10,7 +10,7 @@
 #include <algorithm>
 #include <optional>
 
-#include "mat3.hpp" // brings in PV_PI (used across modules) and mat3_t
+#include "mat3.hpp" // mat3_t (and, via util.hpp, PV_PI / fx16_t / clamp)
 
 #ifndef PV_STD_ALLOCATOR
 #define PV_STD_ALLOCATOR std::allocator
@@ -28,7 +28,6 @@
 #define PV_REALLOC realloc
 #endif
 
-// TODO: bring back AA support
 #include "picovector_working_buffer.h"
 
 
@@ -42,28 +41,6 @@ namespace picovector {
   class glyph_t;
   class mat3_t;
   struct vec2_t;
-
-  struct _rspan {
-    int x; // span start x
-    int y; // span y
-    int w; // span width in pixels
-    int o; // opacity of the span for blending (used for AA only)
-
-    _rspan() : x(0), y(0), w(0), o(0) {}
-    _rspan(int x, int y, int w, int o = 255) : x(x), y(y), w(w), o(o) {}
-  };
-
-  // Retained polygon renderer: begin a batch, add transformed paths (each
-  // returns free edge slots, or -1 if it would overflow), then flush once.
-  void render_begin();
-  int  render_add_path(const vec2_t *pts, int count, mat3_t *transform);
-  void render_flush(image_t *target, brush_t *brush);
-
-  // Convenience wrapper for a whole shape.
-  void render(shape_t *shape, image_t *target, mat3_t *transform, brush_t *brush);
-
-  // Profiling hook — call once per frame (wired into image clear).
-  void pv_profile_frame();
 
 #if PV_DUAL_CORE
   // Run `worker(ctx, y0, y1, step)` split across both cores by row parity: core1

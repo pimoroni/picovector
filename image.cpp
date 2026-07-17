@@ -3,14 +3,14 @@
 #include <algorithm>
 #include <vector>
 
-#include "rasteriser.hpp"
 #include "algorithms/algorithms.hpp"
 #include "image.hpp"
 #include "blend.hpp"
 #include "blit.hpp"
 #include "brush.hpp"
 #include "shape.hpp"
-#include "picovector.hpp" // pv_parallel_rows (dual-core blit split)
+#include "picovector.hpp"  // pv_parallel_rows (dual-core blit split)
+#include "rasteriser.hpp"  // render() / pv_profile_frame()
 
 using std::vector;
 

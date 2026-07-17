@@ -3,6 +3,7 @@
 #include "font.hpp"
 #include "image.hpp"
 #include "picovector.hpp"
+#include "rasteriser.hpp" // render_begin / render_add_path / render_flush
 #include "brush.hpp"
 #include "mat3.hpp"
 

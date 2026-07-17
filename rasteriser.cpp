@@ -340,7 +340,11 @@ namespace picovector {
       float xnext = x + dxdy * dy;
       float d = dy * dir;
       int16_t *ln = &sa_acc[yi * w];
-      auto dep = [&](int i, float v) { if((unsigned)i < (unsigned)w) ln[i] += (int16_t)(v * SA_SCALEF); };
+      // Deposit v at column i. Off-left columns (i<0) fold into column 0: the
+      // per-row prefix sum starts there, so that column is the backdrop and must
+      // carry the full winding from everything to its left (a shape running off the
+      // left edge). Off-right columns (i>=w) have no pixels and no carry, so drop.
+      auto dep = [&](int i, float v) { if(i < 0) i = 0; if(i < w) ln[i] += (int16_t)(v * SA_SCALEF); };
 
       float xa = x, xb = xnext;
       if(xa > xb) { float t = xa; xa = xb; xb = t; }

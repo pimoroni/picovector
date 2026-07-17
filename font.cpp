@@ -83,7 +83,7 @@ namespace picovector {
 
   // Scratch for converting one glyph contour's compact int8 points to vec2_t
   // before handing them to the geometry-agnostic renderer.
-  static vec2_t glyph_point_buf[256];
+  static vec2_t glyph_point_buf[512];
 
   // Draw a single glyph through the retained renderer (begin / add_path / flush).
   // This is the old render_glyph, hoisted out of picovector so the renderer

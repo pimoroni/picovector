@@ -30,26 +30,24 @@ namespace picovector {
     color_masked_span(target, color_src(target, brush), x, y, w, mask);
   }
 
-  static void color_brush_blend_spans(image_t *target, brush_t *brush) {
+  static void color_brush_blend_spans(image_t *target, brush_t *brush, int i0, int i1, int step) {
     uint32_t src = color_src(target, brush);
     const pv_span *spans = _spans();
-    int n = _num_spans();
     if(_a(src) == 255) {
       // Opaque: a straight copy - hoists blend_over_premul's a==255 early-out
       // out of the pixel loop. This is the clear()/solid-fill fast path.
-      for(int i = 0; i < n; i++) {
+      for(int i = i0; i < i1; i += step) {
         uint32_t *dst = (uint32_t*)target->ptr(spans[i].x, spans[i].y);
         for(int w = spans[i].w; w; w--) *dst++ = src;
       }
     } else {
-      for(int i = 0; i < n; i++) color_span(target, src, spans[i].x, spans[i].y, spans[i].w);
+      for(int i = i0; i < i1; i += step) color_span(target, src, spans[i].x, spans[i].y, spans[i].w);
     }
   }
-  static void color_brush_blend_masked_spans(image_t *target, brush_t *brush) {
+  static void color_brush_blend_masked_spans(image_t *target, brush_t *brush, int i0, int i1, int step) {
     uint32_t src = color_src(target, brush);
     const pv_masked_span *spans = _masked_spans();
-    int n = _num_spans();
-    for(int i = 0; i < n; i++) color_masked_span(target, src, spans[i].x, spans[i].y, spans[i].w, spans[i].mask);
+    for(int i = i0; i < i1; i += step) color_masked_span(target, src, spans[i].x, spans[i].y, spans[i].w, spans[i].mask);
   }
 
   color_brush_t::color_brush_t(const color_t& c) : c(c) {}

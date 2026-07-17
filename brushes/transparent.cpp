@@ -14,11 +14,10 @@ namespace picovector {
   static void transparent_brush_span_func(image_t *target, brush_t *brush, int x, int y, int w) {
     transparent_span(target, (transparent_brush_t *)brush, x, y, w);
   }
-  static void transparent_brush_blend_spans(image_t *target, brush_t *brush) {
+  static void transparent_brush_blend_spans(image_t *target, brush_t *brush, int i0, int i1, int step) {
     transparent_brush_t *p = (transparent_brush_t *)brush;
     const pv_span *spans = _spans();
-    int n = _num_spans();
-    for(int i = 0; i < n; i++) transparent_span(target, p, spans[i].x, spans[i].y, spans[i].w);
+    for(int i = i0; i < i1; i += step) transparent_span(target, p, spans[i].x, spans[i].y, spans[i].w);
   }
 
   // Coverage lerp toward the tint: dst = lerp(dst, tint, coverage), premultiplied.
@@ -58,10 +57,9 @@ namespace picovector {
     return transparent_brush_masked_span_func;
   }
 
-  static void transparent_brush_blend_masked_spans(image_t *target, brush_t *brush) {
+  static void transparent_brush_blend_masked_spans(image_t *target, brush_t *brush, int i0, int i1, int step) {
     const pv_masked_span *spans = _masked_spans();
-    int n = _num_spans();
-    for(int i = 0; i < n; i++)
+    for(int i = i0; i < i1; i += step)
       transparent_brush_masked_span_func(target, brush, spans[i].x, spans[i].y, spans[i].w, (uint8_t*)spans[i].mask);
   }
   batch_span_func_t transparent_brush_t::blend_masked_spans() { return transparent_brush_blend_masked_spans; }

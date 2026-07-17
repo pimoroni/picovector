@@ -21,11 +21,10 @@ namespace picovector {
   static void brightness_brush_span_func(image_t *target, brush_t *brush, int x, int y, int w) {
     brightness_span(target, (brightness_brush_t*)brush, x, y, w);
   }
-  static void brightness_brush_blend_spans(image_t *target, brush_t *brush) {
+  static void brightness_brush_blend_spans(image_t *target, brush_t *brush, int i0, int i1, int step) {
     brightness_brush_t *p = (brightness_brush_t*)brush;
     const pv_span *spans = _spans();
-    int n = _num_spans();
-    for(int i = 0; i < n; i++) brightness_span(target, p, spans[i].x, spans[i].y, spans[i].w);
+    for(int i = i0; i < i1; i += step) brightness_span(target, p, spans[i].x, spans[i].y, spans[i].w);
   }
 
   static void brightness_brush_masked_span_func(image_t *target, brush_t *brush, int x, int y, int w, uint8_t *mask) {
@@ -55,10 +54,9 @@ namespace picovector {
     return brightness_brush_masked_span_func;
   }
 
-  static void brightness_brush_blend_masked_spans(image_t *target, brush_t *brush) {
+  static void brightness_brush_blend_masked_spans(image_t *target, brush_t *brush, int i0, int i1, int step) {
     const pv_masked_span *spans = _masked_spans();
-    int n = _num_spans();
-    for(int i = 0; i < n; i++)
+    for(int i = i0; i < i1; i += step)
       brightness_brush_masked_span_func(target, brush, spans[i].x, spans[i].y, spans[i].w, (uint8_t*)spans[i].mask);
   }
   batch_span_func_t brightness_brush_t::blend_masked_spans() { return brightness_brush_blend_masked_spans; }

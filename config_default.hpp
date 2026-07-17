@@ -60,6 +60,18 @@
 #define PV_DUAL_CORE_BLIT_MIN_PX (64 * 64)
 #endif
 
+// Minimum total span-pixel count before _blend_spans/_blend_masked_spans split
+// the span list across both cores (parity split by span index — disjoint
+// framebuffer rows, so no locking). Below this the inter-core handshake costs
+// more than it saves. The handshake is only a few hundred cycles, so for the
+// compute-bound blends (coverage-masked, gradient, translucent) the crossover is
+// low; a plain opaque solid fill is bandwidth-bound and never really benefits,
+// but that special case is handled by the brush, not this threshold. Only used
+// when PV_DUAL_CORE=1.
+#ifndef PV_DUAL_CORE_BLEND_MIN_PX
+#define PV_DUAL_CORE_BLEND_MIN_PX 64
+#endif
+
 // ── clock source ────────────────────────────────────────────────────────────
 // Current time, used by the tween module's self-timing helpers (start/now/done).
 // Expands to an expression yielding the current time in whatever unit tween

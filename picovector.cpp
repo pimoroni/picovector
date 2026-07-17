@@ -19,19 +19,6 @@
 #include "mat3.hpp"
 #include "blend.hpp"
 
-#if PV_DUAL_CORE
-// forward-declare the pico SDK symbols we use (avoids a hard dependency on the
-// SDK include path; they're linked into the firmware). Work is handed to core1
-// via shared memory, NOT the inter-core FIFO: MicroPython owns the FIFO (its
-// lockout-victim IRQ on core0 would consume our messages). The FIFO is only used
-// — with that IRQ briefly gated — by multicore_launch_core1 to start the core.
-extern "C" {
-  void multicore_launch_core1_with_stack(void (*entry)(void), uint32_t *stack_bottom, size_t stack_size_bytes);
-  void irq_set_enabled(unsigned int num, bool enabled);
-}
-#define PV_SIO_FIFO_IRQ 25 // SIO_IRQ_FIFO on RP2350 (core0's FIFO IRQ)
-#endif
-
 using std::sort, std::min, std::max;
 
 // The rasterisation memory pool (PicoVector_working_buffer) and its size now
@@ -61,35 +48,49 @@ extern "C" {
 #define PV_SIO_FIFO_IRQ 25 // SIO_IRQ_FIFO on RP2350 (core0's FIFO IRQ)
 #endif
 
-#define TILE_WIDTH 64
-#define TILE_HEIGHT 64
-#define MAX_NODES_PER_SCANLINE 64
+// A tile spans the whole lores screen, so any shape rasterises in a single tile /
+// single pass. For the signed-area path this also means no interior tile
+// boundaries, so edge coverage is exact everywhere (no cross-tile clamping).
+#define TILE_WIDTH 160
+#define TILE_HEIGHT 120
+#define MAX_NODES_PER_SCANLINE 32 // edge crossings per scanline; guarded in
+                                  // add_line_segment_to_nodes. Extras beyond 32 are
+                                  // dropped (convex = 2; a busy scanline rarely nears it).
 
-// The dual-core build splits the edges in half: core0 writes its crossings into
-// node rows [0, node_region), core1 into [node_region, 2*node_region), so the two
-// cores never share a scanline counter; the fill/resolve then merges the regions.
-// One tile at antialias `aa` needs (tile_h << aa) node rows per region, so two
-// regions must fit the NODE_BUFFER_ROWS-row buffer — at 4x AA that forces
-// half-height tiles. node_region is computed per-flush from the aa level.
-#define NODE_BUFFER_ROWS (TILE_HEIGHT * 4) // 256 supersampled scanline rows
+// The aa==0 hard-edge path stores one crossing list per output scanline, so it
+// needs one node row per tile row (no supersampling - that's the signed-area
+// path's job).
+#define NODE_BUFFER_ROWS TILE_HEIGHT // one node row per tile scanline
 
-#define TILE_BUFFER_SIZE (TILE_WIDTH * (TILE_HEIGHT + 1) * sizeof(uint8_t)) // ~4kB tile buffer
+#define TILE_BUFFER_SIZE (TILE_WIDTH * (TILE_HEIGHT + 1) * sizeof(uint8_t)) // ~19kB coverage buffer
 #define NODE_BUFFER_ROW_SIZE (MAX_NODES_PER_SCANLINE * sizeof(int16_t))
-#define NODE_BUFFER_SIZE (NODE_BUFFER_ROWS * NODE_BUFFER_ROW_SIZE) // 32kB node buffer
-#define NODE_COUNT_BUFFER_SIZE (NODE_BUFFER_ROWS * sizeof(uint8_t)) // 256 byte node count buffer
-
-// buffer that each tile is rendered into before callback
-uint8_t *tile_buffer = (uint8_t *)&PicoVector_working_buffer[0];
-int16_t *node_buffer = (int16_t *)&PicoVector_working_buffer[TILE_BUFFER_SIZE];
-uint8_t *node_count_buffer = (uint8_t *)&PicoVector_working_buffer[TILE_BUFFER_SIZE + NODE_BUFFER_SIZE];
+#define NODE_BUFFER_SIZE (NODE_BUFFER_ROWS * NODE_BUFFER_ROW_SIZE) // node buffer
+#define NODE_COUNT_BUFFER_SIZE (NODE_BUFFER_ROWS * sizeof(uint8_t)) // node count buffer
 
 // edge accumulator for the retained renderer (begin / add_path / flush). Each
 // path's points are mat3-transformed once into device-space edges here, then the
-// flush rasterises the whole batch in one tile pass.
+// flush rasterises the whole batch in one pass.
 struct edge_t { float x0, y0, x1, y1; };
-#define MAX_EDGES 1024 // 16kB; covers the worst single shape (world map max = 556 pts)
-edge_t *edge_buffer = (edge_t *)&PicoVector_working_buffer[TILE_BUFFER_SIZE + NODE_BUFFER_SIZE + NODE_COUNT_BUFFER_SIZE];
-static int   edge_count = 0;
+#define MAX_EDGES 1024 // covers the worst single shape (world map max = 556 pts)
+#define EDGE_BUFFER_SIZE (MAX_EDGES * (int)sizeof(edge_t))          // 16kB
+#define SA_ACC_SIZE      (TILE_WIDTH * TILE_HEIGHT * (int)sizeof(int16_t)) // Q11 accumulator
+
+// Working-buffer layout. tile_buffer (coverage) and edge_buffer are used by both
+// rasteriser paths. The node buffers (aa==0 path) and the signed-area accumulator
+// sa_acc are mutually exclusive - a render_flush is either aa==0 (nodes) or aa>0
+// (signed area) - so they overlay ONE shared region rather than each costing SRAM.
+#define AA_REGION_OFF    (TILE_BUFFER_SIZE + EDGE_BUFFER_SIZE)
+#define NODE_REGION_SIZE (NODE_BUFFER_SIZE + NODE_COUNT_BUFFER_SIZE)
+#define AA_REGION_SIZE   (NODE_REGION_SIZE > SA_ACC_SIZE ? NODE_REGION_SIZE : SA_ACC_SIZE)
+static_assert(AA_REGION_OFF + AA_REGION_SIZE <= PV_WORKING_BUFFER_SIZE,
+              "PicoVector working buffer too small for a full-screen tile");
+
+uint8_t *tile_buffer       = (uint8_t *)&PicoVector_working_buffer[0];
+edge_t  *edge_buffer       = (edge_t *)&PicoVector_working_buffer[TILE_BUFFER_SIZE];
+int16_t *node_buffer       = (int16_t *)&PicoVector_working_buffer[AA_REGION_OFF];
+uint8_t *node_count_buffer = (uint8_t *)&PicoVector_working_buffer[AA_REGION_OFF + NODE_BUFFER_SIZE];
+int16_t *sa_acc            = (int16_t *)&PicoVector_working_buffer[AA_REGION_OFF]; // shares the node region
+static int edge_count = 0;
 static float acc_minx, acc_miny, acc_maxx, acc_maxy; // running device-space bounds
 
 // --- rasteriser profiling (toggle with PV_PROFILE above) ----------
@@ -128,11 +129,10 @@ namespace picovector {
 
   int sign(int v) {return (v > 0) - (v < 0);}
 
-  // row_base shifts this edge's crossings into a separate region of the node /
-  // count buffers (0 for core0, TILE_HEIGHT for core1) so the two cores can each
-  // build a disjoint half of the edges without racing the shared node counters.
-  // The fill then merges the two regions per scanline.
-  void add_line_segment_to_nodes(vec2_t start, vec2_t end, rect_t *tb, int row_base = 0) {
+  // Record where this edge crosses each scanline of the tile (used by the aa==0
+  // hard-edge path). The crossing x and winding direction are packed into one
+  // node per scanline the edge spans.
+  void add_line_segment_to_nodes(vec2_t start, vec2_t end, rect_t *tb) {
     // winding direction: downward edges wind +1, upward (swapped) edges -1
     int dir_bit = 0;
     if(end.y < start.y) {
@@ -162,11 +162,18 @@ namespace picovector {
 
     for(int iy = sy; iy < ey; iy++) {
       int ix = max(min(int(x), maxx), minx);
-      int row = iy + row_base;
+      int row = iy;
 
-      // pack: x in the high bits, winding direction in bit 0 (tile-local x fits)
-      node_buffer[(row * MAX_NODES_PER_SCANLINE) + node_count_buffer[row]] = (ix << 1) | dir_bit;
-      node_count_buffer[row]++;
+      // pack: x in the high bits, winding direction in bit 0 (tile-local x fits).
+      // Guard the per-scanline cap: a scanline with more than MAX_NODES_PER_SCANLINE
+      // crossings drops the extras rather than overflowing into the next row's
+      // slots. This only bites pathological self-overlapping geometry (a dropped
+      // crossing is a minor local fill artifact, not memory corruption).
+      uint8_t cnt = node_count_buffer[row];
+      if(cnt < MAX_NODES_PER_SCANLINE) {
+        node_buffer[(row * MAX_NODES_PER_SCANLINE) + cnt] = (ix << 1) | dir_bit;
+        node_count_buffer[row] = cnt + 1;
+      }
 
       x += dx;
     }
@@ -285,131 +292,13 @@ namespace picovector {
     return *((int16_t*)a) - *((int16_t*)b);
   }
 
-  uint8_t alpha_map_none[2] = {0, 255};
-  uint8_t alpha_map_x4[5] = {0, 63, 127, 190, 255};
-  uint8_t alpha_map_x16[17] = {0, 16, 32, 48, 64, 80, 96, 112, 128, 144, 160, 176, 192, 208, 224, 240, 255};
-
-  // Resolve one output-row parity of an antialiased tile: accumulate sub-pixel
-  // coverage for the output rows where (oy & 1) == parity, map coverage to alpha,
-  // and blend them to the target. The node buffer is read-only here and the two
-  // parities touch disjoint tile_buffer / framebuffer rows, so the two cores can
-  // run parity 0 and 1 concurrently with no locking. parity < 0 does every row.
-  static void resolve_aa_parity(rect_t *tb, uint aa, fill_rule_t fill_rule, int parity,
-                                int sx, int sy, image_t *target, brush_t *brush,
-                                masked_span_func_t fn, uint8_t *p_alpha_map, int node_region) {
-    int ss = 1 << aa;       // supersample factor
-    int mask = ss - 1;      // sub-pixel mask
-    int minx = int(tb->w);  // tracked in supersampled x
-    int maxx = 0;
-    int out_miny = int(tb->h); // tracked in output rows
-    int out_maxy = -1;
-    int16_t merged[MAX_NODES_PER_SCANLINE * 2]; // scratch to combine the two build regions
-
-    // --- coverage accumulation (this parity's output rows only) ---
-    for(int y = 0; y < int(tb->h); y++) {
-      int oy = y >> aa;
-      if(parity >= 0 && (oy & 1) != parity) continue;
-
-      // merge the two edge-half regions for this supersampled scanline (region 1
-      // is empty when the build ran single-core, so we sort region 0 in place).
-      int n0 = node_count_buffer[y];
-      int n1 = node_count_buffer[y + node_region];
-      int n = n0 + n1;
-      if(n == 0) continue; // no nodes on this supersampled line
-
-      int16_t *nodes;
-      if(n1 == 0) {
-        nodes = &node_buffer[y * MAX_NODES_PER_SCANLINE];
-      } else {
-        int16_t *r0 = &node_buffer[y * MAX_NODES_PER_SCANLINE];
-        int16_t *r1 = &node_buffer[(y + node_region) * MAX_NODES_PER_SCANLINE];
-        for(int i = 0; i < n0; i++) merged[i] = r0[i];
-        for(int i = 0; i < n1; i++) merged[n0 + i] = r1[i];
-        nodes = merged;
-      }
-
-      if(oy < out_miny) out_miny = oy;
-      if(oy > out_maxy) out_maxy = oy;
-
-      insertion_sort_i16(nodes, n);
-      uint8_t *row_data = &tile_buffer[oy * TILE_WIDTH];
-
-      // accumulate one filled span [spx, epx) of coverage into the output row,
-      // distributing partial sub-pixel coverage at the two ends.
-      auto fill_span = [&](int spx, int epx) {
-        if(spx >= epx) return;
-        if(spx < minx) minx = spx;
-        if(epx > maxx) maxx = epx;
-        int o0 = spx >> aa;
-        int o1 = (epx - 1) >> aa;
-        if(o0 == o1) {
-          row_data[o0] += (epx - spx);
-        } else {
-          row_data[o0] += ss - (spx & mask);
-          for(int ox = o0 + 1; ox < o1; ox++) row_data[ox] += ss;
-          row_data[o1] += ((epx - 1) & mask) + 1;
-        }
-      };
-
-      if(fill_rule == NON_ZERO) {
-        int winding = 0, span_start = 0;
-        for(int i = 0; i < n; i++) {
-          int nx = nodes[i] >> 1;
-          int prev = winding;
-          winding += (nodes[i] & 1) ? -1 : 1;
-          if(prev == 0 && winding != 0) span_start = nx;
-          else if(prev != 0 && winding == 0) fill_span(span_start, nx);
-        }
-      } else {
-        for(int i = 0; i + 1 < n; i += 2) fill_span(nodes[i] >> 1, nodes[i + 1] >> 1);
-      }
-    }
-
-    if(out_maxy < 0) return; // no coverage for this parity
-
-    int out_minx = (minx >> aa);
-    int out_maxx = ((maxx + ss - 1) >> aa);
-    int w = out_maxx - out_minx;
-    if(w <= 0) return;
-
-    // --- alpha-map + masked blend (this parity's output rows) ---
-    int step = (parity < 0) ? 1 : 2;
-    for(int oy = out_miny; oy <= out_maxy; oy += step) {
-      uint8_t *p = &tile_buffer[oy * TILE_WIDTH + out_minx];
-      for(int c = w; c--; p++) *p = p_alpha_map[*p]; // coverage -> alpha
-      p = &tile_buffer[oy * TILE_WIDTH + out_minx];
-      PV_CNT(pv_pixels, w);
-      fn(target, brush, sx + out_minx, sy + oy, w, p);
-    }
-  }
-
-  // Fill the aa==0 (no antialias) scanlines of a built tile, [y0, height)
-  // stepping by `step` (1 = all rows; 2 = even/odd parity for the two cores).
-  // node_region is the row offset of core1's edge-half (0 if built single-core).
-  static void fill_aa0_rows(int y0, int height, int step, int sx, int sy,
-                            image_t *target, brush_t *brush, span_func_t sfn, fill_rule_t fill_rule,
-                            int node_region) {
-    int16_t merged[MAX_NODES_PER_SCANLINE * 2]; // scratch when two regions must be combined
-
-    for(int y = y0; y < height; y += step) {
-      // The two cores build disjoint edge-halves into separate node regions
-      // (core0 at row y, core1 at row y + node_region). Combine them. The
-      // common single-core case has region 1 empty, so we sort region 0 in place.
-      int n0 = node_count_buffer[y];
-      int n1 = node_count_buffer[y + node_region];
-      int n = n0 + n1;
+  // Emit a built tile's filled scanlines as opaque solid spans into the shared
+  // span buffer (the hard-edged, non-antialiased path). The batch blend follows.
+  static void emit_spans(int height, int sx, int sy, fill_rule_t fill_rule) {
+    for(int y = 0; y < height; y++) {
+      int n = node_count_buffer[y];        // crossings recorded by build_tile_nodes
       if(n == 0) continue;
-
-      int16_t *nodes;
-      if(n1 == 0) {
-        nodes = &node_buffer[y * MAX_NODES_PER_SCANLINE];
-      } else {
-        int16_t *r0 = &node_buffer[y * MAX_NODES_PER_SCANLINE];
-        int16_t *r1 = &node_buffer[(y + node_region) * MAX_NODES_PER_SCANLINE];
-        for(int i = 0; i < n0; i++) merged[i] = r0[i];
-        for(int i = 0; i < n1; i++) merged[n0 + i] = r1[i];
-        nodes = merged;
-      }
+      int16_t *nodes = &node_buffer[y * MAX_NODES_PER_SCANLINE];
       insertion_sort_i16(nodes, n);
 
       if(fill_rule == NON_ZERO) {
@@ -421,77 +310,55 @@ namespace picovector {
           if(prev == 0 && winding != 0) span_start = nx;
           else if(prev != 0 && winding == 0 && span_start < nx) {
             PV_CNT(pv_pixels, nx - span_start);
-            sfn(target, brush, sx + span_start, sy + y, nx - span_start);
+            _add_span(sx + span_start, sy + y, nx - span_start);
           }
         }
       } else {
         for(int i = 0; i + 1 < n; i += 2) {
           int nsx = nodes[i] >> 1;
           int nex = nodes[i + 1] >> 1;
-          if(nsx < nex) { PV_CNT(pv_pixels, nex - nsx); sfn(target, brush, sx + nsx, sy + y, nex - nsx); }
+          if(nsx < nex) { PV_CNT(pv_pixels, nex - nsx); _add_span(sx + nsx, sy + y, nex - nsx); }
         }
       }
     }
   }
 
-  // Build the scanline nodes for one tile from a slice [e_start, e_end) of the
-  // accumulated edge buffer. The mat3 was already folded in by add_path; here we
-  // only apply the antialias scale and the tile offset, then clip + walk each
-  // edge. row_base shifts the output into this core's node region (0 or
-  // node_region) so the two cores can build disjoint edge halves without racing.
-  static void build_tile_nodes_scaled(rect_t &tb, float scale, int e_start, int e_end, int row_base) {
+  // Build the scanline nodes for one tile from the accumulated edge buffer. The
+  // mat3 was already folded in by add_path; here we just offset each edge into the
+  // tile and clip + walk it (aa==0 hard-edge path, output resolution).
+  static void build_tile_nodes(rect_t &tb) {
     vec2_t offset = tb.tl();
-    for(int e = e_start; e < e_end; e++) {
+    for(int e = 0; e < edge_count; e++) {
       const edge_t &ed = edge_buffer[e];
-      vec2_t s(ed.x0 * scale - offset.x, ed.y0 * scale - offset.y);
-      vec2_t en(ed.x1 * scale - offset.x, ed.y1 * scale - offset.y);
-      add_line_segment_to_nodes(s, en, &tb, row_base);
+      add_line_segment_to_nodes(vec2_t(ed.x0 - offset.x, ed.y0 - offset.y),
+                                vec2_t(ed.x1 - offset.x, ed.y1 - offset.y), &tb);
     }
   }
 
 #if PV_DUAL_CORE
-  // Per tile, one dispatch covers both phases with an internal cross-core barrier
-  // (cheaper than two dispatches — core1 only re-enters its wfe sleep once):
-  //   build: core0 builds edges [0, half) into node region 0, core1 builds
-  //          [half, edge_count) into region 1 (offset node_region). Every edge is
-  //          processed once; separate regions keep the node counters race-free.
-  //   <barrier> both builds must complete before either resolves (it reads both)
-  //   resolve: core0 takes even output rows, core1 odd; each row merges the two
-  //          regions. aa==0 emits opaque spans (KIND_RASTER0); aa>0 accumulates
-  //          coverage + alpha-maps + blends (KIND_RESOLVE_AA).
-  // Hand-off is shared-memory: core0 bumps pv_go to dispatch; the two pv_built
-  // counters form the mid barrier; core1 sets pv_done when finished.
-  enum pv_kind_t { KIND_RASTER0 = 0, KIND_RESOLVE_AA = 1, KIND_PARALLEL_ROWS = 2, KIND_GENERIC_FN = 3 };
+  // One shared core1 worker serves two job kinds, both handed off through shared
+  // memory (core0 bumps pv_go to dispatch, core1 sets pv_done when finished):
+  //   KIND_PARALLEL_ROWS: core1 runs its parity half of an arbitrary per-row
+  //          worker. This is how the rasteriser fold and image_t::blit reach
+  //          core1 — the batch blend (_blend_spans) splits its span list this way.
+  //   KIND_GENERIC_FN: core1 just runs gen_fn and reports done (the blur filter's
+  //          core1 band, sharing this worker instead of launching its own).
+  enum pv_kind_t { KIND_PARALLEL_ROWS = 2, KIND_GENERIC_FN = 3 };
   struct pv_fill_job_t {
     int kind;
-    rect_t tb;
-    float scale;
-    int e_start, e_end, row_base;
-    int node_region; // row offset of core1's edge-half (for the resolve merge)
-    int height, sx, sy;
-    image_t *target;
-    brush_t *brush;
-    span_func_t sfn;
-    fill_rule_t fill_rule;
-    // antialiased resolve
-    uint aa;
-    masked_span_func_t mfn;
-    uint8_t *alpha_map;
-    // generic parallel-rows job (KIND_PARALLEL_ROWS): no build/barrier, each core
-    // just runs its row half of an arbitrary worker (used by image_t::blit)
+    // generic parallel-rows job (KIND_PARALLEL_ROWS): each core runs its row half
+    // of an arbitrary worker (the batch blend and image_t::blit)
     pv_row_worker_t row_fn;
     void *row_ctx;
     int row_y0, row_y1;
     // generic void() job (KIND_GENERIC_FN): core1 just runs gen_fn and reports
-    // done — no build/barrier. Used by the blur filter so it shares this one
-    // core1 worker instead of launching a second, conflicting one.
+    // done. Used by the blur filter so it shares this one core1 worker instead of
+    // launching a second, conflicting one.
     void (*gen_fn)();
   };
   static pv_fill_job_t pv_job;
   static volatile uint32_t pv_go = 0;        // core0 bumps to dispatch a job
-  static volatile uint32_t pv_built_0 = 0;   // core0 sets when its build half is done
-  static volatile uint32_t pv_built_1 = 0;   // core1 sets when its build half is done
-  static volatile uint32_t pv_done = 0;      // core1 sets when its fill is done
+  static volatile uint32_t pv_done = 0;      // core1 sets when its work is done
   static bool pv_core1_running = false;
   static uint32_t __attribute__((aligned(8))) pv_core1_stack[1024]; // 4kB core1 stack
 
@@ -528,24 +395,9 @@ namespace picovector {
         continue;
       }
 
-      // build this core's edge-half into region 1
-      build_tile_nodes_scaled(pv_job.tb, pv_job.scale, pv_job.e_start, pv_job.e_end, pv_job.row_base);
-      __sync_synchronize();
-      pv_built_1 = served; __asm volatile("sev");          // signal build done
-      while(pv_built_0 != served) { __asm volatile("wfe"); } // wait core0's build (barrier)
-      __sync_synchronize();
-
-      // resolve the odd output rows (merges both node regions)
-      if(pv_job.kind == KIND_RESOLVE_AA) {
-        resolve_aa_parity(&pv_job.tb, pv_job.aa, pv_job.fill_rule, 1, pv_job.sx, pv_job.sy,
-                          pv_job.target, pv_job.brush, pv_job.mfn, pv_job.alpha_map, pv_job.node_region);
-      } else {
-        fill_aa0_rows(1, pv_job.height, 2, pv_job.sx, pv_job.sy,
-                      pv_job.target, pv_job.brush, pv_job.sfn, pv_job.fill_rule, pv_job.node_region);
-      }
-      __sync_synchronize();
-      pv_done = served;                      // signal completion
-      __asm volatile("sev");                 // wake core0
+      // No other job kinds are dispatched (the rasteriser fold now drives core1
+      // only through KIND_PARALLEL_ROWS, via _blend_spans/pv_parallel_rows), so
+      // anything else just loops back to sleep.
     }
   }
 
@@ -607,7 +459,116 @@ namespace picovector {
   }
 #endif
 
-  // Rasterise the whole accumulated batch in one tile pass.
+  // Q11 fixed-point coverage accumulator (sa_acc, declared at file scope in the
+  // working buffer): 11 fractional bits keep shallow-edge deposits from rounding
+  // away, and the ~4 integer bits (range +/-16) cover any realistic winding.
+  static const int   SA_ONE = 2048;        // Q11 fixed-point 1.0 (full coverage)
+  static const float SA_SCALEF = 2048.0f;
+
+  // Deposit one edge's signed area into `sa_acc` (row stride `w`, height `h`,
+  // tile-local output-resolution coords). Each row the edge spans gets an "area"
+  // term in the cell(s) the edge crosses plus a carry so the per-row prefix sum
+  // fills everything to the right by the edge's signed vertical coverage. This is
+  // the font-rs line-accumulation, with clamping so edges outside the tile's
+  // x-range don't touch memory (a fully-left edge still carries full cover at x=0).
+  static void signed_area_line(int w, int h, float x0, float y0, float x1, float y1) {
+    if(y0 == y1) return;                       // horizontal: no vertical coverage
+    float dir = 1.0f;
+    if(y0 > y1) { dir = -1.0f; float t; t = x0; x0 = x1; x1 = t; t = y0; y0 = y1; y1 = t; }
+    float dxdy = (x1 - x0) / (y1 - y0);
+    if(y0 < 0.0f) { x0 += (0.0f - y0) * dxdy; y0 = 0.0f; } // clip to top
+    if(y1 > (float)h) y1 = (float)h;                        // clip to bottom
+    if(y0 >= y1) return;
+
+    float x = x0;
+    int yend = (int)ceilf(y1);
+    for(int yi = (int)y0; yi < yend; yi++) {
+      float dy = fminf((float)(yi + 1), y1) - fmaxf((float)yi, y0); // vertical span in this row
+      float xnext = x + dxdy * dy;
+      float d = dy * dir;
+      int16_t *ln = &sa_acc[yi * w];
+      // deposit v (a float coverage fraction) at column i as Q11, bounds-checked
+      // (unsigned compare rejects i<0 and i>=w in one test)
+      auto dep = [&](int i, float v) { if((unsigned)i < (unsigned)w) ln[i] += (int16_t)(v * SA_SCALEF); };
+
+      float xa = x, xb = xnext;
+      if(xa > xb) { float t = xa; xa = xb; xb = t; }
+      if(xb <= 0.0f) { ln[0] += (int16_t)(d * SA_SCALEF); x = xnext; continue; } // wholly left -> full carry at x=0
+      if(xa >= (float)w) { x = xnext; continue; }           // wholly right -> nothing in tile
+
+      float x0floor = floorf(xa);
+      int x0i = (int)x0floor;
+      int x1i = (int)ceilf(xb);
+      if(x1i <= x0i + 1) {
+        // edge stays in one column this row: split area between it and the carry
+        float xmf = 0.5f * (x + xnext) - x0floor;
+        dep(x0i,     d * (1.0f - xmf));
+        dep(x0i + 1, d * xmf);
+      } else {
+        float s = 1.0f / (xb - xa);
+        float x0f = xa - x0floor;
+        float a0 = 1.0f - x0f;                 // xa -> first cell boundary
+        float x1f = xb - (float)x1i + 1.0f;    // xb's fraction into its (last) cell
+        float am = 0.5f * s * a0 * a0;          // area in the first partial cell
+        float tail = 0.5f * s * x1f * x1f;      // area in the last partial cell
+        dep(x0i, d * am);
+        if(x1i == x0i + 2) {
+          dep(x0i + 1, d * (1.0f - am - tail));
+        } else {
+          float a1 = s * (1.5f - x0f);
+          dep(x0i + 1, d * (a1 - am));
+          for(int xi = x0i + 2; xi < x1i - 1; xi++) dep(xi, d * s);
+          float a2 = a1 + (float)(x1i - x0i - 3) * s;
+          dep(x1i - 1, d * (1.0f - a2 - tail));
+        }
+        dep(x1i, d * tail);
+      }
+      x = xnext;
+    }
+  }
+
+  // Rasterise the antialiased tile with the signed-area method: clear the
+  // accumulator, deposit every edge (device -> tile-local, output resolution),
+  // then prefix-sum each row into coverage bytes and emit a masked span. No node
+  // build, no supersample scaling. Coverage is analytic (256 levels).
+  static void emit_sa_spans(int sx, int sy, int sw, int sh, fill_rule_t fill_rule) {
+    int w = sw, h = sh;
+    memset(sa_acc, 0, (size_t)(w * h) * sizeof(int16_t));
+
+    vec2_t off((float)sx, (float)sy);
+    for(int e = 0; e < edge_count; e++) {
+      const edge_t &ed = edge_buffer[e];
+      signed_area_line(w, h, ed.x0 - off.x, ed.y0 - off.y, ed.x1 - off.x, ed.y1 - off.y);
+    }
+
+    for(int y = 0; y < h; y++) {
+      int16_t *arow = &sa_acc[y * w];
+      uint8_t *cov = &tile_buffer[y * TILE_WIDTH];
+      int32_t acc = 0;
+      int minx = -1, maxx = -1;
+      for(int x = 0; x < w; x++) {
+        acc += arow[x];
+        int32_t c = acc < 0 ? -acc : acc;         // |winding| in Q16
+        // Fast path: coverage <= 1 (no self-overlap) - both fill rules agree.
+        // Only overlapping winding (>1) needs the rule applied.
+        if(c > SA_ONE) {
+          if(fill_rule == NON_ZERO) {
+            c = SA_ONE;
+          } else {                                  // even-odd: integer triangle wave
+            c &= (2 * SA_ONE - 1);                  // mod 2.0
+            if(c > SA_ONE) c = 2 * SA_ONE - c;
+          }
+        }
+        int a = (c + 4) >> 3;                       // Q11 -> 0..256, rounded
+        if(a > 255) a = 255;
+        cov[x] = (uint8_t)a;
+        if(a) { if(minx < 0) minx = x; maxx = x; }
+      }
+      if(minx >= 0) _add_masked_span(sx + minx, sy + y, maxx - minx + 1, &cov[minx]);
+    }
+  }
+
+  // Rasterise the whole accumulated batch, one screen-sized tile at a time.
   void render_flush(image_t *target, brush_t *brush) {
     if(edge_count == 0 || brush == nullptr) return;
 
@@ -620,99 +581,37 @@ namespace picovector {
     sb = sb.intersection(clip);
     if(sb.empty()) return;
 
-    // antialias level of target image
-    uint aa = (uint)target->antialias();
-
-    uint8_t *p_alpha_map = alpha_map_none;
-    if(aa == 1) p_alpha_map = alpha_map_x4;
-    if(aa == 2) p_alpha_map = alpha_map_x16;
-
-    // Span functions come from the brush we were handed (authoritative), not the
-    // image's last-set pen — so callers can draw any shape with any brush without
-    // first syncing it onto the image.
-    masked_span_func_t fn = brush->masked_span_func();
-    span_func_t sfn = brush->span_func(); // unmasked span for the aa == 0 fast path
+    bool is_aa = target->antialias() != 0;
     fill_rule_t fill_rule = target->fill_rule();
 
-    // For the dual-core build split each core needs its own node region of
-    // (tile_h << aa) rows; both regions must fit the NODE_BUFFER_ROWS-row buffer,
-    // which at 4x AA forces half-height tiles. node_region is core1's row offset.
+    // A tile spans the whole lores screen (TILE_WIDTH x TILE_HEIGHT), so the common
+    // case is a single tile / single pass; larger targets are tiled. The blend
+    // splits itself across both cores when the batch is big enough (see
+    // _blend_spans), so dual-core lives entirely inside the blend.
     int tile_h = TILE_HEIGHT;
-    while((tile_h << aa) * 2 > NODE_BUFFER_ROWS) tile_h >>= 1;
-    int node_region = tile_h << aa;
 
-    bool is_aa = (aa != 0);
-
-    // iterate over tiles
     for(int y = sb.y; y < sb.y + sb.h; y += tile_h) {
       for(int x = sb.x; x < sb.x + sb.w; x += TILE_WIDTH) {
         rect_t tb = clip.intersection(rect_t(x, y, TILE_WIDTH, tile_h)).intersection(sb).round();
-        if(tb.empty()) { continue; } // if tile empty, skip it
+        if(tb.empty()) continue;
 
-        // screen coordinates for clipped tile (before antialias scaling)
-        int sx = tb.x;
-        int sy = tb.y;
-        int sw = tb.w;
-        int sh = tb.h;
+        int sx = tb.x, sy = tb.y, sw = tb.w, sh = tb.h;
 
-        tb.x *= (1 << aa);
-        tb.y *= (1 << aa);
-        tb.w *= (1 << aa);
-        tb.h *= (1 << aa);
-
-        // clear node counts for both build regions
-        memset(node_count_buffer, 0, NODE_COUNT_BUFFER_SIZE);
-
-        // the aa == 0 fast path emits spans directly and never reads the tile
-        // coverage buffer, so only bother clearing it when antialiasing
+        PV_T0(_t_raster);
+        _reset_spans();
         if(is_aa) {
-          for(int row = 0; row <= sh; ++row) {
-            memset(&tile_buffer[row * TILE_WIDTH], 0, sw);
-          }
+          // Analytic signed-area: deposit edges at output resolution, prefix-sum
+          // each row to coverage, emit masked spans, then blend.
+          emit_sa_spans(sx, sy, sw, sh, fill_rule);
+          _blend_masked_spans(target, brush);
+        } else {
+          // Hard edges: build scanline crossings, emit solid spans, then blend.
+          memset(node_count_buffer, 0, NODE_COUNT_BUFFER_SIZE);
+          build_tile_nodes(tb);
+          emit_spans(sh, sx, sy, fill_rule);
+          _blend_spans(target, brush);
         }
-
-        // Both AA levels share one fused dispatch: the build splits the edges
-        // across the two cores into disjoint node regions, and the resolve splits
-        // the output rows by parity (merging the two regions per scanline). aa==0
-        // emits opaque spans; aa>0 accumulates coverage, alpha-maps and blends.
-#if PV_DUAL_CORE
-        pv_core1_launch();
-        int half = (edge_count + 1) / 2;
-        pv_job.kind = is_aa ? KIND_RESOLVE_AA : KIND_RASTER0;
-        pv_job.tb = tb; pv_job.scale = float(1 << aa);
-        pv_job.e_start = half; pv_job.e_end = edge_count; pv_job.row_base = node_region;
-        pv_job.node_region = node_region;
-        pv_job.height = int(tb.h); pv_job.sx = sx; pv_job.sy = sy;
-        pv_job.target = target; pv_job.brush = brush;
-        pv_job.sfn = sfn; pv_job.mfn = fn; pv_job.fill_rule = fill_rule;
-        pv_job.aa = aa; pv_job.alpha_map = p_alpha_map;
-        __sync_synchronize();
-        uint32_t ticket = pv_go + 1;
-        pv_go = ticket; __asm volatile("sev");                                 // dispatch core1 (edge-half + odd rows)
-
-        PV_T0(_t_build);
-        build_tile_nodes_scaled(tb, float(1 << aa), 0, half, 0);               // core0: build [0, half) -> region 0
-        __sync_synchronize();
-        pv_built_0 = ticket; __asm volatile("sev");                            // signal build done
-        while(pv_built_1 != ticket) { __asm volatile("wfe"); }                 // barrier: both halves built
-        __sync_synchronize();
-        PV_ADD(pv_t_build, _t_build);
-
-        PV_T0(_t_raster);
-        if(is_aa) resolve_aa_parity(&tb, aa, fill_rule, 0, sx, sy, target, brush, fn, p_alpha_map, node_region);
-        else      fill_aa0_rows(0, int(tb.h), 2, sx, sy, target, brush, sfn, fill_rule, node_region); // core0: even rows
-        while(pv_done != ticket) { __asm volatile("wfe"); }                    // wait for core1's odd rows
         PV_ADD(pv_t_raster, _t_raster);
-#else
-        PV_T0(_t_build);
-        build_tile_nodes_scaled(tb, float(1 << aa), 0, edge_count, 0);         // single core, region 0 only
-        PV_ADD(pv_t_build, _t_build);
-
-        PV_T0(_t_raster);
-        if(is_aa) resolve_aa_parity(&tb, aa, fill_rule, -1, sx, sy, target, brush, fn, p_alpha_map, node_region);
-        else      fill_aa0_rows(0, int(tb.h), 1, sx, sy, target, brush, sfn, fill_rule, node_region);
-        PV_ADD(pv_t_raster, _t_raster);
-#endif
       }
     }
   }

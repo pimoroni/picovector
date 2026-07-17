@@ -27,8 +27,11 @@ namespace picovector {
   struct pv_masked_span { int16_t x, y; uint16_t w; const uint8_t *mask; };   // 12 bytes
 
   // A brush's batch blend reads the shared buffer via _spans()/_masked_spans()
-  // and _num_spans(), so it takes only the target and brush.
-  typedef void (*batch_span_func_t)(image_t *target, brush_t *brush);
+  // and composites the span index range [i0, i1) stepping by `step`. Single-core
+  // callers pass (0, n, 1); the dual-core dispatcher splits by span-index parity
+  // (core0: 0,2,4…; core1: 1,3,5…) so the two cores write disjoint framebuffer
+  // rows without locking.
+  typedef void (*batch_span_func_t)(image_t *target, brush_t *brush, int i0, int i1, int step);
 
   // One 8KB buffer, reinterpreted as whichever span type the current batch uses
   // (never both). Solid: ~1365 spans; masked: ~682. _span_n counts elements of

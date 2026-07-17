@@ -44,6 +44,61 @@ namespace picovector {
   // tile-width chunk: compute averages into a temp before writing back so a span
   // doesn't blur with its own freshly-written pixels (horizontal feedback)
   #define BLUR_CHUNK 64
+  // radius the running-sum fast path handles (bounds the on-stack column buffers);
+  // larger radii fall back to the naive box_average (correct, just slower).
+  #define BLUR_MAX_R 32
+
+  // Fill out[0..n) with the box-average of the target for pixels (x..x+n-1, y),
+  // radius r, using a horizontal running sum: each column's vertical sum is
+  // computed once, then a (2r+1)-wide window slides across the row. This is
+  // O(n·r) instead of box_average's O(n·r²), and byte-identical to it (it sums the
+  // same clamped box, column-first). Requires r <= BLUR_MAX_R. Reads target only,
+  // so it stays safe to run per-span across both cores.
+  static void blur_row_averages(image_t *target, int x, int y, int n, int r, int W, int H, uint32_t *out) {
+    int y0 = y - r < 0 ? 0 : y - r;
+    int y1 = y + r >= H ? H - 1 : y + r;
+    int ny = y1 - y0 + 1;
+
+    // per-column vertical sums for columns [x-r, x+n-1+r]; off-image columns are 0.
+    // indexed by j = c - (x - r), j in [0, n + 2r)
+    uint32_t csr[BLUR_CHUNK + 2 * BLUR_MAX_R], csg[BLUR_CHUNK + 2 * BLUR_MAX_R];
+    uint32_t csb[BLUR_CHUNK + 2 * BLUR_MAX_R], csa[BLUR_CHUNK + 2 * BLUR_MAX_R];
+    int ncol = n + 2 * r;
+    for(int j = 0; j < ncol; j++) {
+      int c = x - r + j;
+      if(c < 0 || c >= W) { csr[j] = csg[j] = csb[j] = csa[j] = 0; continue; }
+      uint32_t sr = 0, sg = 0, sb = 0, sa = 0;
+      for(int yy = y0; yy <= y1; yy++) {
+        uint8_t *px = (uint8_t*)target->ptr(c, yy);
+        sr += px[0]; sg += px[1]; sb += px[2]; sa += px[3];
+      }
+      csr[j] = sr; csg[j] = sg; csb[j] = sb; csa[j] = sa;
+    }
+
+    // slide a 2r+1 column window: pixel i's box is columns [i, i+2r] in j-space
+    uint32_t br = 0, bg = 0, bb = 0, ba = 0;
+    for(int j = 0; j <= 2 * r; j++) { br += csr[j]; bg += csg[j]; bb += csb[j]; ba += csa[j]; }
+    for(int i = 0; i < n; i++) {
+      int px = x + i;
+      int xa = px - r < 0 ? 0 : px - r;
+      int xb = px + r >= W ? W - 1 : px + r;
+      uint32_t nn = (uint32_t)(ny * (xb - xa + 1)); // valid pixels in the clamped box
+      uint32_t o; uint8_t *ob = (uint8_t*)&o;
+      ob[0] = (uint8_t)(br / nn); ob[1] = (uint8_t)(bg / nn);
+      ob[2] = (uint8_t)(bb / nn); ob[3] = (uint8_t)(ba / nn);
+      out[i] = o;
+      if(i + 1 < n) { // advance window: drop column i, add column i+2r+1
+        br += csr[i + 2 * r + 1] - csr[i]; bg += csg[i + 2 * r + 1] - csg[i];
+        bb += csb[i + 2 * r + 1] - csb[i]; ba += csa[i + 2 * r + 1] - csa[i];
+      }
+    }
+  }
+
+  // Fill out[0..n) with box averages for a span row, fast path when it fits.
+  static inline void blur_row(image_t *target, int x, int y, int n, int r, int W, int H, uint32_t *out) {
+    if(r <= BLUR_MAX_R) blur_row_averages(target, x, y, n, r, W, H, out);
+    else for(int i = 0; i < n; i++) out[i] = box_average(target, x + i, y, r, W, H);
+  }
 
   static inline __attribute__((always_inline))
   void blur_span(image_t *target, blur_brush_t *p, int x, int y, int w) {
@@ -54,7 +109,7 @@ namespace picovector {
     uint32_t tmp[BLUR_CHUNK];
     while(w > 0) {
       int n = w < BLUR_CHUNK ? w : BLUR_CHUNK;
-      for(int i = 0; i < n; i++) tmp[i] = box_average(target, x + i, y, r, W, H);
+      blur_row(target, x, y, n, r, W, H, tmp);
       uint32_t *dst = (uint32_t*)target->ptr(x, y);
       for(int i = 0; i < n; i++) dst[i] = tmp[i];
       x += n;
@@ -79,7 +134,7 @@ namespace picovector {
     uint32_t tmp[BLUR_CHUNK];
     while(w > 0) {
       int n = w < BLUR_CHUNK ? w : BLUR_CHUNK;
-      for(int i = 0; i < n; i++) tmp[i] = box_average(target, x + i, y, r, W, H);
+      blur_row(target, x, y, n, r, W, H, tmp);
       uint32_t *dst = (uint32_t*)target->ptr(x, y);
       for(int i = 0; i < n; i++) dst[i] = blur_mask_lerp(dst[i], tmp[i], mask[i]);
       x += n;

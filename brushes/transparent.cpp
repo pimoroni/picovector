@@ -5,10 +5,20 @@ namespace picovector {
   // Full coverage: the pixel becomes the tint outright (lerp at coverage 1).
   // For the default transparent tint this writes 0 (erase); used by clear()'s slow
   // path and image_t::rectangle(). The fast clear path uses solid_fill() below.
-  void transparent_brush_span_func(image_t *target, brush_t *brush, int x, int y, int w) {
+  static inline __attribute__((always_inline))
+  void transparent_span(image_t *target, transparent_brush_t *p, int x, int y, int w) {
     uint32_t *dst = (uint32_t *)target->ptr(x, y);
-    uint32_t s = ((transparent_brush_t *)brush)->tint;
+    uint32_t s = p->tint;
     while(w--) { *dst++ = s; }
+  }
+  static void transparent_brush_span_func(image_t *target, brush_t *brush, int x, int y, int w) {
+    transparent_span(target, (transparent_brush_t *)brush, x, y, w);
+  }
+  static void transparent_brush_blend_spans(image_t *target, brush_t *brush) {
+    transparent_brush_t *p = (transparent_brush_t *)brush;
+    const pv_span *spans = _spans();
+    int n = _num_spans();
+    for(int i = 0; i < n; i++) transparent_span(target, p, spans[i].x, spans[i].y, spans[i].w);
   }
 
   // Coverage lerp toward the tint: dst = lerp(dst, tint, coverage), premultiplied.
@@ -17,7 +27,7 @@ namespace picovector {
   // dst untouched, full coverage becomes the tint — and the middle uses the
   // two-lane SWAR weighted sum. With tint == 0 this reduces to dst*(255-cov)/256,
   // bit-identical to the previous destination-out erase.
-  void transparent_brush_masked_span_func(image_t *target, brush_t *brush, int x, int y, int w, uint8_t *mask) {
+  static void transparent_brush_masked_span_func(image_t *target, brush_t *brush, int x, int y, int w, uint8_t *mask) {
     uint32_t *dst = (uint32_t *)target->ptr(x, y);
     uint32_t S = ((transparent_brush_t *)brush)->tint;
     uint32_t Srb = S & 0x00ff00ffu, Sga = (S >> 8) & 0x00ff00ffu;
@@ -40,16 +50,22 @@ namespace picovector {
   span_func_t transparent_brush_t::span_func() {
     return transparent_brush_span_func;
   }
+  batch_span_func_t transparent_brush_t::blend_spans() {
+    return transparent_brush_blend_spans;
+  }
 
   masked_span_func_t transparent_brush_t::masked_span_func() {
     return transparent_brush_masked_span_func;
   }
 
+  static void transparent_brush_blend_masked_spans(image_t *target, brush_t *brush) {
+    const pv_masked_span *spans = _masked_spans();
+    int n = _num_spans();
+    for(int i = 0; i < n; i++)
+      transparent_brush_masked_span_func(target, brush, spans[i].x, spans[i].y, spans[i].w, (uint8_t*)spans[i].mask);
+  }
+  batch_span_func_t transparent_brush_t::blend_masked_spans() { return transparent_brush_blend_masked_spans; }
+
   // Solid tint fill lets clear() write the buffer to the tint directly (0 for the
   // default transparent brush, a translucent/opaque word for a colour tint).
-  bool transparent_brush_t::solid_fill(uint32_t &out) {
-    out = tint;
-    return true;
-  }
-
 }

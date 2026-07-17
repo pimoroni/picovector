@@ -44,8 +44,8 @@ namespace picovector {
     {0b11111111,0b11110111,0b11101011,0b11010101,0b10101010,0b11010101,0b11101011,0b11110111}
   };
 
-  void pattern_brush_span_func(image_t *target, brush_t *brush, int x, int y, int w) {
-    pattern_brush_t *p = (pattern_brush_t*)brush;
+  static inline __attribute__((always_inline))
+  void pattern_span(image_t *target, pattern_brush_t *p, int x, int y, int w) {
     uint32_t *dst = (uint32_t*)target->ptr(x, y);
 
     uint32_t c1 = p->c1._p;
@@ -63,8 +63,17 @@ namespace picovector {
       x++;
     }
   }
+  static void pattern_brush_span_func(image_t *target, brush_t *brush, int x, int y, int w) {
+    pattern_span(target, (pattern_brush_t*)brush, x, y, w);
+  }
+  static void pattern_brush_blend_spans(image_t *target, brush_t *brush) {
+    pattern_brush_t *p = (pattern_brush_t*)brush;
+    const pv_span *spans = _spans();
+    int n = _num_spans();
+    for(int i = 0; i < n; i++) pattern_span(target, p, spans[i].x, spans[i].y, spans[i].w);
+  }
 
-  void pattern_brush_masked_span_func(image_t *target, brush_t *brush, int x, int y, int w, uint8_t *mask) {
+  static void pattern_brush_masked_span_func(image_t *target, brush_t *brush, int x, int y, int w, uint8_t *mask) {
     pattern_brush_t *p = (pattern_brush_t*)brush;
     uint32_t *dst = (uint32_t*)target->ptr(x, y);
 
@@ -96,9 +105,20 @@ namespace picovector {
   span_func_t pattern_brush_t::span_func() {
     return pattern_brush_span_func;
   }
+  batch_span_func_t pattern_brush_t::blend_spans() {
+    return pattern_brush_blend_spans;
+  }
 
   masked_span_func_t pattern_brush_t::masked_span_func() {
     return pattern_brush_masked_span_func;
   }
+
+  static void pattern_brush_blend_masked_spans(image_t *target, brush_t *brush) {
+    const pv_masked_span *spans = _masked_spans();
+    int n = _num_spans();
+    for(int i = 0; i < n; i++)
+      pattern_brush_masked_span_func(target, brush, spans[i].x, spans[i].y, spans[i].w, (uint8_t*)spans[i].mask);
+  }
+  batch_span_func_t pattern_brush_t::blend_masked_spans() { return pattern_brush_blend_masked_spans; }
 
 }

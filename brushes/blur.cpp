@@ -45,8 +45,8 @@ namespace picovector {
   // doesn't blur with its own freshly-written pixels (horizontal feedback)
   #define BLUR_CHUNK 64
 
-  void blur_brush_span_func(image_t *target, brush_t *brush, int x, int y, int w) {
-    blur_brush_t *p = (blur_brush_t*)brush;
+  static inline __attribute__((always_inline))
+  void blur_span(image_t *target, blur_brush_t *p, int x, int y, int w) {
     int r = p->radius < 1 ? 1 : p->radius;
     rect_t b = target->bounds();
     int W = (int)b.w, H = (int)b.h;
@@ -61,8 +61,17 @@ namespace picovector {
       w -= n;
     }
   }
+  static void blur_brush_span_func(image_t *target, brush_t *brush, int x, int y, int w) {
+    blur_span(target, (blur_brush_t*)brush, x, y, w);
+  }
+  static void blur_brush_blend_spans(image_t *target, brush_t *brush) {
+    blur_brush_t *p = (blur_brush_t*)brush;
+    const pv_span *spans = _spans();
+    int n = _num_spans();
+    for(int i = 0; i < n; i++) blur_span(target, p, spans[i].x, spans[i].y, spans[i].w);
+  }
 
-  void blur_brush_masked_span_func(image_t *target, brush_t *brush, int x, int y, int w, uint8_t *mask) {
+  static void blur_brush_masked_span_func(image_t *target, brush_t *brush, int x, int y, int w, uint8_t *mask) {
     blur_brush_t *p = (blur_brush_t*)brush;
     int r = p->radius < 1 ? 1 : p->radius;
     rect_t b = target->bounds();
@@ -85,9 +94,20 @@ namespace picovector {
   span_func_t blur_brush_t::span_func() {
     return blur_brush_span_func;
   }
+  batch_span_func_t blur_brush_t::blend_spans() {
+    return blur_brush_blend_spans;
+  }
 
   masked_span_func_t blur_brush_t::masked_span_func() {
     return blur_brush_masked_span_func;
   }
+
+  static void blur_brush_blend_masked_spans(image_t *target, brush_t *brush) {
+    const pv_masked_span *spans = _masked_spans();
+    int n = _num_spans();
+    for(int i = 0; i < n; i++)
+      blur_brush_masked_span_func(target, brush, spans[i].x, spans[i].y, spans[i].w, (uint8_t*)spans[i].mask);
+  }
+  batch_span_func_t blur_brush_t::blend_masked_spans() { return blur_brush_blend_masked_spans; }
 
 }

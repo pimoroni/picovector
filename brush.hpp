@@ -8,24 +8,27 @@
 
 namespace picovector {
 
+  // Blend the shared span buffer with a brush (dispatches to its batch func).
+  void _blend_spans(image_t *target, brush_t *brush);
+  void _blend_masked_spans(image_t *target, brush_t *brush);
+
   class brush_t {
   public:
     virtual span_func_t span_func() = 0;
     virtual masked_span_func_t masked_span_func() = 0;
 
+    // Composite a whole list of pre-clipped spans in one call: blend_spans a
+    // solid batch, blend_masked_spans a coverage-masked (AA) batch. Every brush
+    // implements both (they read the shared buffer via _spans()/_masked_spans()).
+    virtual batch_span_func_t blend_spans() = 0;
+    virtual batch_span_func_t blend_masked_spans() = 0;
+
     // Fold the shape's transform into the brush's own coordinate space, so a
     // brush with geometry (e.g. a gradient) moves with the shape it fills.
     // Called by render() before flushing; no-op for brushes without geometry.
     virtual void set_render_transform(mat3_t *transform) { (void)transform; }
-
-    // If this brush paints a single opaque colour, return true and the 32bpp
-    // framebuffer word for it — lets clear() fill directly instead of per-pixel
-    // blending. False for any brush that varies or blends.
-    virtual bool solid_fill(uint32_t &out) { (void)out; return false; }
   };
 
-  void color_brush_span_func(image_t *target, brush_t *brush, int x, int y, int w);
-  void color_brush_masked_span_func(image_t *target, brush_t *brush, int x, int y, int w, uint8_t *mask);
   class color_brush_t : public brush_t {
   public:
     color_t c;
@@ -33,18 +36,17 @@ namespace picovector {
     color_brush_t(const color_t& c);
     span_func_t span_func();
     masked_span_func_t masked_span_func();
-    bool solid_fill(uint32_t &out) override;
+    batch_span_func_t blend_spans() override;
+    batch_span_func_t blend_masked_spans() override;
   };
 
-  void transparent_brush_span_func(image_t *target, brush_t *brush, int x, int y, int w);
-  void transparent_brush_masked_span_func(image_t *target, brush_t *brush, int x, int y, int w, uint8_t *mask);
   // Window / erase brush: lerps the destination toward a premultiplied target
   // colour by shape coverage — dst = lerp(dst, tint, coverage). The default tint
   // is fully transparent, making it a plain eraser (dst-out). Pass a colour to
   // punch a translucent "window" of that colour in a single pass, with AA edges
   // that blend against the background (an opaque tint behaves like a normal fill).
-  // Zero-coverage pixels are left exactly untouched; clear() fast-fills via
-  // solid_fill(). With a transparent tint this is bit-identical to a dst-out erase.
+  // Zero-coverage pixels are left exactly untouched. With a transparent tint
+  // this is bit-identical to a dst-out erase.
   class transparent_brush_t : public brush_t {
   public:
     uint32_t tint; // premultiplied target colour; 0 == fully transparent (erase)
@@ -53,7 +55,8 @@ namespace picovector {
     transparent_brush_t(const color_t &c); // lerp destination toward colour c
     span_func_t span_func();
     masked_span_func_t masked_span_func();
-    bool solid_fill(uint32_t &out) override;
+    batch_span_func_t blend_spans() override;
+    batch_span_func_t blend_masked_spans() override;
   };
 
   class pattern_brush_t : public brush_t {
@@ -66,6 +69,8 @@ namespace picovector {
     pattern_brush_t(const color_t& c1, const color_t& c2, uint8_t *pattern);
     span_func_t span_func();
     masked_span_func_t masked_span_func();
+    batch_span_func_t blend_spans() override;
+    batch_span_func_t blend_masked_spans() override;
   };
 
   class image_brush_t : public brush_t {
@@ -78,6 +83,8 @@ namespace picovector {
     image_brush_t(image_t *src, mat3_t *transform);
     span_func_t span_func();
     masked_span_func_t masked_span_func();
+    batch_span_func_t blend_spans() override;
+    batch_span_func_t blend_masked_spans() override;
     void set_render_transform(mat3_t *transform) override;
   };
 
@@ -86,13 +93,7 @@ namespace picovector {
     GRADIENT_RADIAL = 1  // colour runs outward from p1, reaching the last stop at |p2-p1|
   };
 
-  void gradient_brush_linear_span_func(image_t *target, brush_t *brush, int x, int y, int w);
-  void gradient_brush_radial_span_func(image_t *target, brush_t *brush, int x, int y, int w);
-  void gradient_brush_linear_masked_span_func(image_t *target, brush_t *brush, int x, int y, int w, uint8_t *mask);
-  void gradient_brush_radial_masked_span_func(image_t *target, brush_t *brush, int x, int y, int w, uint8_t *mask);
 
-  void pixelate_brush_span_func(image_t *target, brush_t *brush, int x, int y, int w);
-  void pixelate_brush_masked_span_func(image_t *target, brush_t *brush, int x, int y, int w, uint8_t *mask);
 
   // Mosaic brush: replaces the shape's area with the target content sampled at
   // an integer block grid (top-left of each `size`x`size` block).
@@ -103,10 +104,10 @@ namespace picovector {
     pixelate_brush_t(int size);
     span_func_t span_func();
     masked_span_func_t masked_span_func();
+    batch_span_func_t blend_spans() override;
+    batch_span_func_t blend_masked_spans() override;
   };
 
-  void blur_brush_span_func(image_t *target, brush_t *brush, int x, int y, int w);
-  void blur_brush_masked_span_func(image_t *target, brush_t *brush, int x, int y, int w, uint8_t *mask);
 
   // Box-blur brush: replaces the shape's area with a (2*radius+1) box average of
   // the target content behind it. Single-pass in place, so it reads some
@@ -118,10 +119,10 @@ namespace picovector {
     blur_brush_t(int radius);
     span_func_t span_func();
     masked_span_func_t masked_span_func();
+    batch_span_func_t blend_spans() override;
+    batch_span_func_t blend_masked_spans() override;
   };
 
-  void brightness_brush_span_func(image_t *target, brush_t *brush, int x, int y, int w);
-  void brightness_brush_masked_span_func(image_t *target, brush_t *brush, int x, int y, int w, uint8_t *mask);
 
   // Lighten/darken brush: adds a signed amount to each RGB channel of the target
   // content behind the shape (positive lightens, negative darkens), clamped.
@@ -132,6 +133,8 @@ namespace picovector {
     brightness_brush_t(int amount);
     span_func_t span_func();
     masked_span_func_t masked_span_func();
+    batch_span_func_t blend_spans() override;
+    batch_span_func_t blend_masked_spans() override;
   };
 
   // SVG-style linear/radial gradient. Geometry (p1, p2) lives in the gradient's
@@ -153,6 +156,8 @@ namespace picovector {
                      mat3_t *transform);
     span_func_t span_func();
     masked_span_func_t masked_span_func();
+    batch_span_func_t blend_spans() override;
+    batch_span_func_t blend_masked_spans() override;
     void set_render_transform(mat3_t *transform) override;
   };
 

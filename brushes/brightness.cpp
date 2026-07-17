@@ -7,8 +7,8 @@ namespace picovector {
   }
 
   // add `amount` to each RGB channel of the target content (alpha untouched)
-  void brightness_brush_span_func(image_t *target, brush_t *brush, int x, int y, int w) {
-    brightness_brush_t *p = (brightness_brush_t*)brush;
+  static inline __attribute__((always_inline))
+  void brightness_span(image_t *target, brightness_brush_t *p, int x, int y, int w) {
     int amt = p->amount;
     uint8_t *c = (uint8_t*)target->ptr(x, y);
     for(int i = 0; i < w; i++) {
@@ -18,8 +18,17 @@ namespace picovector {
       c += 4; // leave alpha
     }
   }
+  static void brightness_brush_span_func(image_t *target, brush_t *brush, int x, int y, int w) {
+    brightness_span(target, (brightness_brush_t*)brush, x, y, w);
+  }
+  static void brightness_brush_blend_spans(image_t *target, brush_t *brush) {
+    brightness_brush_t *p = (brightness_brush_t*)brush;
+    const pv_span *spans = _spans();
+    int n = _num_spans();
+    for(int i = 0; i < n; i++) brightness_span(target, p, spans[i].x, spans[i].y, spans[i].w);
+  }
 
-  void brightness_brush_masked_span_func(image_t *target, brush_t *brush, int x, int y, int w, uint8_t *mask) {
+  static void brightness_brush_masked_span_func(image_t *target, brush_t *brush, int x, int y, int w, uint8_t *mask) {
     brightness_brush_t *p = (brightness_brush_t*)brush;
     int amt = p->amount;
     uint8_t *c = (uint8_t*)target->ptr(x, y);
@@ -38,9 +47,20 @@ namespace picovector {
   span_func_t brightness_brush_t::span_func() {
     return brightness_brush_span_func;
   }
+  batch_span_func_t brightness_brush_t::blend_spans() {
+    return brightness_brush_blend_spans;
+  }
 
   masked_span_func_t brightness_brush_t::masked_span_func() {
     return brightness_brush_masked_span_func;
   }
+
+  static void brightness_brush_blend_masked_spans(image_t *target, brush_t *brush) {
+    const pv_masked_span *spans = _masked_spans();
+    int n = _num_spans();
+    for(int i = 0; i < n; i++)
+      brightness_brush_masked_span_func(target, brush, spans[i].x, spans[i].y, spans[i].w, (uint8_t*)spans[i].mask);
+  }
+  batch_span_func_t brightness_brush_t::blend_masked_spans() { return brightness_brush_blend_masked_spans; }
 
 }

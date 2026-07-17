@@ -5,9 +5,14 @@
 
 namespace picovector {
 
-  // empty implementations for unsupported modes
-  void span_func_nop(image_t *target, brush_t *brush, int x, int y, int w) {}
-  void masked_span_func_nop(image_t *target, brush_t *brush, int x, int y, int w, uint8_t *mask) {}
 
+  // Blend the shared span buffer with `brush` in one call - dispatches to the
+  // brush's batch func. Draw methods call this after filling the buffer.
+  void _blend_spans(image_t *target, brush_t *brush) {
+    if(brush) brush->blend_spans()(target, brush);
+  }
+  void _blend_masked_spans(image_t *target, brush_t *brush) {
+    if(brush) brush->blend_masked_spans()(target, brush);
+  }
 
 }

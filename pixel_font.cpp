@@ -67,7 +67,7 @@ namespace picovector {
     if(scale < 1) scale = 1;
     uint32_t bytes_per_row = (this->width + 7) >> 3;
 
-    span_func_t fn = target->_span_func;
+    _reset_spans();
 
     // bounds is the target clip rect. The span func writes without clipping, so
     // we clip each emitted run here. Walk source pixels (not dest), coalescing
@@ -97,7 +97,7 @@ namespace picovector {
             for(int r = 0; r < scale; r++) {          // scale dest rows per source row
               int ry = dy + r;
               if(ry < by0 || ry >= by1) continue;
-              fn(target, brush, cx0, ry, cx1 - cx0);
+              _add_span(cx0, ry, cx1 - cx0);
             }
           }
           gx += run;
@@ -106,6 +106,7 @@ namespace picovector {
         }
       }
     }
+    _blend_spans(target, brush);
   }
 
   static uint16_t get_utf8_char(const char *text, const char *end) {

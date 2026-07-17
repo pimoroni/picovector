@@ -18,8 +18,8 @@ namespace picovector {
   // Sampling the block's top-left anchor is stable in place: when the anchor
   // pixel is itself drawn it samples itself, so it never changes value, and
   // every other pixel in the block reads that same original colour.
-  void pixelate_brush_span_func(image_t *target, brush_t *brush, int x, int y, int w) {
-    pixelate_brush_t *p = (pixelate_brush_t*)brush;
+  static inline __attribute__((always_inline))
+  void pixelate_span(image_t *target, pixelate_brush_t *p, int x, int y, int w) {
     int size = p->size < 1 ? 1 : p->size;
     uint32_t *dst = (uint32_t*)target->ptr(x, y);
     int by = (y / size) * size;
@@ -28,8 +28,17 @@ namespace picovector {
       dst[i] = *(uint32_t*)target->ptr(bx, by);
     }
   }
+  static void pixelate_brush_span_func(image_t *target, brush_t *brush, int x, int y, int w) {
+    pixelate_span(target, (pixelate_brush_t*)brush, x, y, w);
+  }
+  static void pixelate_brush_blend_spans(image_t *target, brush_t *brush) {
+    pixelate_brush_t *p = (pixelate_brush_t*)brush;
+    const pv_span *spans = _spans();
+    int n = _num_spans();
+    for(int i = 0; i < n; i++) pixelate_span(target, p, spans[i].x, spans[i].y, spans[i].w);
+  }
 
-  void pixelate_brush_masked_span_func(image_t *target, brush_t *brush, int x, int y, int w, uint8_t *mask) {
+  static void pixelate_brush_masked_span_func(image_t *target, brush_t *brush, int x, int y, int w, uint8_t *mask) {
     pixelate_brush_t *p = (pixelate_brush_t*)brush;
     int size = p->size < 1 ? 1 : p->size;
     uint32_t *dst = (uint32_t*)target->ptr(x, y);
@@ -46,9 +55,20 @@ namespace picovector {
   span_func_t pixelate_brush_t::span_func() {
     return pixelate_brush_span_func;
   }
+  batch_span_func_t pixelate_brush_t::blend_spans() {
+    return pixelate_brush_blend_spans;
+  }
 
   masked_span_func_t pixelate_brush_t::masked_span_func() {
     return pixelate_brush_masked_span_func;
   }
+
+  static void pixelate_brush_blend_masked_spans(image_t *target, brush_t *brush) {
+    const pv_masked_span *spans = _masked_spans();
+    int n = _num_spans();
+    for(int i = 0; i < n; i++)
+      pixelate_brush_masked_span_func(target, brush, spans[i].x, spans[i].y, spans[i].w, (uint8_t*)spans[i].mask);
+  }
+  batch_span_func_t pixelate_brush_t::blend_masked_spans() { return pixelate_brush_blend_masked_spans; }
 
 }

@@ -16,6 +16,11 @@ using std::vector;
 
 namespace picovector {
 
+  // Shared span-accumulation buffer (declared extern in image.hpp). Aligned for
+  // pv_masked_span (holds a pointer); reinterpreted per batch as solid/masked.
+  alignas(4) uint8_t _span_buf[PV_SPAN_BYTES];
+  int _span_n = 0;
+
   image_t::image_t() {
   }
 
@@ -181,10 +186,6 @@ namespace picovector {
 
   void image_t::brush(brush_t *brush) {
     this->_brush = brush;
-    this->_span_func = brush->span_func();
-    this->_masked_span_func = brush->masked_span_func();
-    // this->_span_func = brush->get_span_func(this);
-    // this->_mask_span_func = brush->get_mask_span_func(this);
   }
 
   font_t* image_t::font() {
@@ -241,20 +242,8 @@ namespace picovector {
 
   void image_t::clear() {
     pv_profile_frame(); // once-per-frame profiling sample (no-op unless PV_PROFILE)
-
-    // Fast path: an opaque solid-colour brush on a 32bpp target fills directly
-    // with a constant word, skipping the per-pixel blend in the span function.
-    uint32_t word;
-    if(_brush && _bytes_per_pixel == 4 && _brush->solid_fill(word)) {
-      int x0 = (int)_clip.x, y0 = (int)_clip.y;
-      int w = (int)_clip.w, h = (int)_clip.h;
-      for(int y = 0; y < h; y++) {
-        uint32_t *p = (uint32_t *)ptr(x0, y0 + y);
-        for(int i = 0; i < w; i++) p[i] = word;
-      }
-      return;
-    }
-
+    // Fill the clip with the pen. An opaque colour brush takes its direct-copy
+    // fast path in blend_spans, so this is as quick as the old constant-word fill.
     rectangle(_clip);
   }
 
@@ -443,9 +432,9 @@ namespace picovector {
   */
   void image_t::blit_span(image_t *target, vec2_t p, int c, vec2_t uv0, vec2_t uv1, filter_t filter, bool vertical) {
     rect_t b = target->_clip;
-    if(p.x < b.x || p.x > b.x + b.w) {
-      return;
-    }
+    // if(p.x < b.x || p.x > b.x + b.w) {
+    //   return;
+    // }
 
     fx16_t u = f_to_fx16(uv0.x);
     fx16_t v = f_to_fx16(uv0.y);
@@ -547,13 +536,19 @@ namespace picovector {
 
   void image_t::rectangle(rect_t r) {
     r = r.intersection(_clip);
-    span_func_t fn = this->_span_func;
+    if(r.w <= 0 || r.h <= 0) return;
+
+    // One span per row into the shared buffer, then a single batch blend. A
+    // target is never taller than the buffer's ~1365-span capacity, so there's
+    // no need to check for overflow.
+    _reset_spans();
     for(int y = r.y; y < r.y + r.h; y++) {
-      fn(this, this->_brush, r.x, y, r.w);
+      _add_span((int16_t)r.x, (int16_t)y, (uint16_t)r.w);
     }
+    _blend_spans(this, this->_brush);
   }
 
-  void image_t::span(int x, int y, int w) {
+  void image_t::_span(int x, int y, int w) {
     if(y < _clip.y || y >= _clip.y + _clip.h) return;
     if(x + w < _clip.x || x >= _clip.x + _clip.w) return;
 
@@ -565,7 +560,13 @@ namespace picovector {
     if(x + w >= _clip.x + _clip.w) {
       w = _clip.x + _clip.w - x;
     }
-    this->_span_func(this, this->_brush, x, y, w);
+    _add_span(x, y, w);
+  }
+
+  void image_t::span(int x, int y, int w) {
+    _reset_spans();
+    _span(x, y, w);
+    _blend_spans(this, this->_brush);
   }
 
   void image_t::masked_span(int x, int y, int w, uint8_t *mask) {
@@ -581,13 +582,18 @@ namespace picovector {
       w = _clip.x + _clip.w - x;
     }
 
-    this->_masked_span_func(this, this->_brush, x, y, w, mask);
+    _reset_spans();
+    _add_masked_span(x, y, w, mask);
+    _blend_masked_spans(this, this->_brush);
   }
 
   void image_t::circle(const vec2_t &p, const int &r) {
     rect_t b = rect_t(p.x - r, p.y - r, r * 2, r * 2);
     if(!b.intersects(_clip)) return;
 
+    // Accumulate every scanline span of the circle, then blend once. Radius is
+    // bounded by the target height, so the span buffer can't overflow.
+    _reset_spans();
     int ox = r, oy = 0, err = -r;
     while (ox >= oy)
     {
@@ -595,20 +601,21 @@ namespace picovector {
 
       err += oy; oy++; err += oy;
 
-      this->span(p.x - ox, p.y + last_oy, ox * 2 + 1);
+      this->_span(p.x - ox, p.y + last_oy, ox * 2 + 1);
       if (last_oy != 0) {
-        this->span(p.x - ox, p.y - last_oy, ox * 2 + 1);
+        this->_span(p.x - ox, p.y - last_oy, ox * 2 + 1);
       }
 
       if(err >= 0 && ox != last_oy) {
-        this->span(p.x - last_oy, p.y + ox, last_oy * 2 + 1);
+        this->_span(p.x - last_oy, p.y + ox, last_oy * 2 + 1);
         if (ox != 0) {
-          this->span(p.x - last_oy, p.y - ox, last_oy * 2 + 1);
+          this->_span(p.x - last_oy, p.y - ox, last_oy * 2 + 1);
         }
 
         err -= ox; ox--; err -= ox;
       }
     }
+    _blend_spans(this, this->_brush);
   }
 
   int32_t orient2d(vec2_t p1, vec2_t p2, vec2_t p3) {
@@ -655,8 +662,7 @@ namespace picovector {
     int32_t w1row = orient2d(p3, p1, tl) + bias1;
     int32_t w2row = orient2d(p1, p2, tl) + bias2;
 
-    span_func_t fn = this->_span_func;
-
+    _reset_spans();
     for (int32_t y = 0; y < b.h; y++) {
       int32_t w0 = w0row;
       int32_t w1 = w1row;
@@ -664,18 +670,24 @@ namespace picovector {
 
       int xo = b.x;
       int yo = b.y + y;
+      int run = -1; // start x of the current covered run (-1 = none)
       for (int32_t x = 0; x < b.w; x++) {
         if ((w0 | w1 | w2) >= 0) {
-          fn(this, this->_brush, xo, yo, 1);
+          if (run < 0) run = xo;               // coalesce contiguous covered pixels
+        } else if (run >= 0) {
+          _add_span(run, yo, xo - run);
+          run = -1;
         }
 
         xo++;
         w0 += a12; w1 += a20; w2 += a01;
       }
+      if (run >= 0) _add_span(run, yo, xo - run); // run reaches the row edge
 
       w0row += b12; w1row += b20; w2row += b01;
 
     }
+    _blend_spans(this, this->_brush);
   }
 
   void round_rectangle(const rect_t &r, int radius) {
@@ -707,15 +719,15 @@ namespace picovector {
     int sy = y0 < y1 ? 1 : -1;
     int err = dx + dy;
 
-    span_func_t fn = this->_span_func;
-
+    _reset_spans();
     while(true) {
-        fn(this, this->_brush, x0, y0, 1);
+        _add_span(x0, y0, 1);
         if (x0 == x1 && y0 == y1) break;
         int e2 = 2 * err;
         if (e2 >= dy) {err += dy; x0 += sx;}
         if (e2 <= dx) {err += dx; y0 += sy;}
     }
+    _blend_spans(this, this->_brush);
   }
 
   void image_t::put(const vec2_t &p) {
@@ -726,12 +738,15 @@ namespace picovector {
     if(x < _clip.x || x >= _clip.x + _clip.w || y < _clip.y || y >= _clip.y + _clip.h) {
       return;
     }
-    this->_span_func(this, this->_brush, x, y, 1);
+    _reset_spans();
+    _add_span(x, y, 1);   // already clipped above
+    _blend_spans(this, this->_brush);
   }
 
   void image_t::put_unsafe(int x, int y) {
-    this->_span_func(this, this->_brush, x, y, 1);
-    //this->_brush->render_span(this, x, y, 1);
+    _reset_spans();
+    _add_span(x, y, 1);
+    _blend_spans(this, this->_brush);
   }
 
   uint32_t image_t::get(const vec2_t &p) {

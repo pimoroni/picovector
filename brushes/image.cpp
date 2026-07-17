@@ -2,8 +2,8 @@
 
 namespace picovector {
 
-  void image_brush_span_func(image_t *target, brush_t *brush, int x, int y, int w) {
-    image_brush_t *p = (image_brush_t*)brush;
+  static inline __attribute__((always_inline))
+  void image_span(image_t *target, image_brush_t *p, int x, int y, int w) {
     uint32_t *dst = (uint32_t*)target->ptr(x, y);
     rect_t b = p->src->bounds();
 
@@ -29,8 +29,17 @@ namespace picovector {
       dst++;
     }
   }
+  static void image_brush_span_func(image_t *target, brush_t *brush, int x, int y, int w) {
+    image_span(target, (image_brush_t*)brush, x, y, w);
+  }
+  static void image_brush_blend_spans(image_t *target, brush_t *brush) {
+    image_brush_t *p = (image_brush_t*)brush;
+    const pv_span *spans = _spans();
+    int n = _num_spans();
+    for(int i = 0; i < n; i++) image_span(target, p, spans[i].x, spans[i].y, spans[i].w);
+  }
 
-  void image_brush_masked_span_func(image_t *target, brush_t *brush, int x, int y, int w, uint8_t *mask) {
+  static void image_brush_masked_span_func(image_t *target, brush_t *brush, int x, int y, int w, uint8_t *mask) {
     image_brush_t *p = (image_brush_t*)brush;
     uint32_t *dst = (uint32_t*)target->ptr(x, y);
     rect_t b = p->src->bounds();
@@ -83,8 +92,19 @@ namespace picovector {
   span_func_t image_brush_t::span_func() {
     return image_brush_span_func;
   }
+  batch_span_func_t image_brush_t::blend_spans() {
+    return image_brush_blend_spans;
+  }
 
   masked_span_func_t image_brush_t::masked_span_func() {
     return image_brush_masked_span_func;
   }
+
+  static void image_brush_blend_masked_spans(image_t *target, brush_t *brush) {
+    const pv_masked_span *spans = _masked_spans();
+    int n = _num_spans();
+    for(int i = 0; i < n; i++)
+      image_brush_masked_span_func(target, brush, spans[i].x, spans[i].y, spans[i].w, (uint8_t*)spans[i].mask);
+  }
+  batch_span_func_t image_brush_t::blend_masked_spans() { return image_brush_blend_masked_spans; }
 }

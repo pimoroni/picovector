@@ -15,12 +15,39 @@ namespace picovector {
   class image_t;
   class brush_t;
 
-  // empty implementations for unsupported modes
-  void span_func_nop(image_t *target, brush_t *brush, int x, int y, int w);
-  void masked_span_func_nop(image_t *target, brush_t *brush, int x, int y, int w, uint8_t *mask);
 
   typedef void (*span_func_t)(image_t *target, brush_t *brush, int x, int y, int w);
   typedef void (*masked_span_func_t)(image_t *target, brush_t *brush, int x, int y, int w, uint8_t *mask);
+
+  // Pre-clipped horizontal runs. A batch is homogeneous - either all solid (the
+  // simple draw methods) or all masked (the AA rasteriser) - so the two never
+  // mix in the buffer and there is no per-span mask test. Masked spans carry w
+  // coverage bytes (a pointer into the rasteriser's tile buffer).
+  struct pv_span        { int16_t x, y; uint16_t w; };                        // 6 bytes
+  struct pv_masked_span { int16_t x, y; uint16_t w; const uint8_t *mask; };   // 12 bytes
+
+  // A brush's batch blend reads the shared buffer via _spans()/_masked_spans()
+  // and _num_spans(), so it takes only the target and brush.
+  typedef void (*batch_span_func_t)(image_t *target, brush_t *brush);
+
+  // One 8KB buffer, reinterpreted as whichever span type the current batch uses
+  // (never both). Solid: ~1365 spans; masked: ~682. _span_n counts elements of
+  // the active type. A 240-row solid fill can't overflow; masked batches are
+  // per-tile (<=64 rows) but a busy tile can, so the AA emit flushes when full.
+  static const int PV_SPAN_BYTES = 8192;
+  static const int PV_MASKED_SPAN_CAP = PV_SPAN_BYTES / (int)sizeof(pv_masked_span);
+  extern uint8_t _span_buf[PV_SPAN_BYTES];
+  extern int _span_n;
+  static inline void _reset_spans() { _span_n = 0; }
+  static inline void _add_span(int x, int y, int w) {
+    ((pv_span *)_span_buf)[_span_n++] = { (int16_t)x, (int16_t)y, (uint16_t)w };
+  }
+  static inline void _add_masked_span(int x, int y, int w, const uint8_t *mask) {
+    ((pv_masked_span *)_span_buf)[_span_n++] = { (int16_t)x, (int16_t)y, (uint16_t)w, mask };
+  }
+  static inline const pv_span *_spans() { return (const pv_span *)_span_buf; }
+  static inline const pv_masked_span *_masked_spans() { return (const pv_masked_span *)_span_buf; }
+  static inline int _num_spans() { return _span_n; }
 
   typedef enum antialias_t {
     OFF   = 0,
@@ -79,8 +106,6 @@ namespace picovector {
 
     public:
       blend_func_t       _blend_func = blend_func_over;
-      span_func_t        _span_func = span_func_nop;
-      masked_span_func_t _masked_span_func = masked_span_func_nop;
 
       image_t();
       image_t(image_t *source, rect_t r);
@@ -195,6 +220,9 @@ namespace picovector {
       // source along uv0->uv1. `vertical` selects the travel axis (y for vspan,
       // x for hspan), which drives both the clip and the destination step.
       void blit_span(image_t *target, vec2_t p, int c, vec2_t uv0, vec2_t uv1, filter_t filter, bool vertical);
+      // Clip one horizontal run to _clip and, if any remains, add it to the
+      // shared span buffer (no blend). Shared by span() and circle().
+      void _span(int x, int y, int w);
   };
 
 }

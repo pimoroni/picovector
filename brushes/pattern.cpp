@@ -44,55 +44,6 @@ namespace picovector {
     {0b11111111,0b11110111,0b11101011,0b11010101,0b10101010,0b11010101,0b11101011,0b11110111}
   };
 
-  static inline __attribute__((always_inline))
-  void pattern_span(image_t *target, pattern_brush_t *p, int x, int y, int w) {
-    uint32_t *dst = (uint32_t*)target->ptr(x, y);
-
-    uint32_t c1 = p->c1._p;
-    uint32_t c2 = p->c2._p;
-
-    while(w--) {
-      uint8_t u = 7 - (x & 0b111);
-      uint8_t v = y & 0b111;
-      uint8_t bit = p->p[v];
-
-      uint32_t src = bit & (1 << u) ? c1 : c2;
-
-      *dst = blend_over_premul(*dst, src);
-      dst++;
-      x++;
-    }
-  }
-  static void pattern_brush_span_func(image_t *target, brush_t *brush, int x, int y, int w) {
-    pattern_span(target, (pattern_brush_t*)brush, x, y, w);
-  }
-  static void pattern_brush_blend_spans(image_t *target, brush_t *brush, int i0, int i1, int step) {
-    pattern_brush_t *p = (pattern_brush_t*)brush;
-    const pv_span *spans = _spans();
-    for(int i = i0; i < i1; i += step) pattern_span(target, p, spans[i].x, spans[i].y, spans[i].w);
-  }
-
-  static void pattern_brush_masked_span_func(image_t *target, brush_t *brush, int x, int y, int w, uint8_t *mask) {
-    pattern_brush_t *p = (pattern_brush_t*)brush;
-    uint32_t *dst = (uint32_t*)target->ptr(x, y);
-
-    uint32_t c1 = p->c1._p;
-    uint32_t c2 = p->c2._p;
-
-    while(w--) {
-      uint8_t u = 7 - (x & 0b111);
-      uint8_t v = y & 0b111;
-      uint8_t bit = p->p[v];
-
-      uint32_t src = bit & (1 << u) ? c1 : c2;
-
-      *dst = blend_over_premul(*dst, _premul_mul_alpha(src, *mask));
-      dst++;
-      x++;
-      mask++;
-    }
-  }
-
   pattern_brush_t::pattern_brush_t(const color_t& c1, const color_t& c2, uint8_t pattern_index) : c1(c1), c2(c2) {
     memcpy(this->p, &patterns[pattern_index], sizeof(uint8_t) * 8);
   }
@@ -101,22 +52,54 @@ namespace picovector {
     memcpy(this->p, pattern, sizeof(uint8_t) * 8);
   }
 
-  span_func_t pattern_brush_t::span_func() {
-    return pattern_brush_span_func;
-  }
-  batch_span_func_t pattern_brush_t::blend_spans() {
-    return pattern_brush_blend_spans;
+  void pattern_brush_t::blend_spans(image_t *target, int i0, int i1, int step) {
+    pattern_brush_t *p = this;
+    const pv_span *spans = _spans();
+    for(int i = i0; i < i1; i += step) {
+      int x = spans[i].x, y = spans[i].y, w = spans[i].w;
+      uint32_t *dst = (uint32_t*)target->ptr(x, y);
+
+      uint32_t c1 = p->c1._p;
+      uint32_t c2 = p->c2._p;
+
+      while(w--) {
+        uint8_t u = 7 - (x & 0b111);
+        uint8_t v = y & 0b111;
+        uint8_t bit = p->p[v];
+
+        uint32_t src = bit & (1 << u) ? c1 : c2;
+
+        *dst = blend_over_premul(*dst, src);
+        dst++;
+        x++;
+      }
+    }
   }
 
-  masked_span_func_t pattern_brush_t::masked_span_func() {
-    return pattern_brush_masked_span_func;
-  }
-
-  static void pattern_brush_blend_masked_spans(image_t *target, brush_t *brush, int i0, int i1, int step) {
+  void pattern_brush_t::blend_masked_spans(image_t *target, int i0, int i1, int step) {
+    pattern_brush_t *p = this;
     const pv_masked_span *spans = _masked_spans();
-    for(int i = i0; i < i1; i += step)
-      pattern_brush_masked_span_func(target, brush, spans[i].x, spans[i].y, spans[i].w, (uint8_t*)spans[i].mask);
+    for(int i = i0; i < i1; i += step) {
+      int x = spans[i].x, y = spans[i].y, w = spans[i].w;
+      uint8_t *mask = (uint8_t*)spans[i].mask;
+      uint32_t *dst = (uint32_t*)target->ptr(x, y);
+
+      uint32_t c1 = p->c1._p;
+      uint32_t c2 = p->c2._p;
+
+      while(w--) {
+        uint8_t u = 7 - (x & 0b111);
+        uint8_t v = y & 0b111;
+        uint8_t bit = p->p[v];
+
+        uint32_t src = bit & (1 << u) ? c1 : c2;
+
+        *dst = blend_over_premul(*dst, _premul_mul_alpha(src, *mask));
+        dst++;
+        x++;
+        mask++;
+      }
+    }
   }
-  batch_span_func_t pattern_brush_t::blend_masked_spans() { return pattern_brush_blend_masked_spans; }
 
 }

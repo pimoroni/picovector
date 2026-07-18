@@ -70,6 +70,11 @@ namespace picovector {
     }
   }
 
+  // Per-span samplers, shared by the solid and masked batches: mask == nullptr is
+  // the solid path, mask != nullptr folds per-pixel coverage into the colour.
+  static void gradient_linear_span(image_t *target, gradient_brush_t *p, int x, int y, int w, const uint8_t *mask);
+  static void gradient_radial_span(image_t *target, gradient_brush_t *p, int x, int y, int w, const uint8_t *mask);
+
   gradient_brush_t::gradient_brush_t(gradient_type_t type, float x1, float y1, float x2, float y2,
                                      const float *positions, const uint32_t *premul_colors, int stop_count,
                                      mat3_t *transform)
@@ -92,14 +97,38 @@ namespace picovector {
     inverse_transform.multiply(inv); // base_inverse * inverse(shape)
   }
 
+  // Batch: dispatch on gradient type once, then run the shared per-span sampler.
+  void gradient_brush_t::blend_spans(image_t *target, int i0, int i1, int step) {
+    gradient_brush_t *p = this;
+    const pv_span *spans = _spans();
+    if(p->type == GRADIENT_RADIAL) {
+      for(int i = i0; i < i1; i += step) gradient_radial_span(target, p, spans[i].x, spans[i].y, spans[i].w, nullptr);
+    } else {
+      for(int i = i0; i < i1; i += step) gradient_linear_span(target, p, spans[i].x, spans[i].y, spans[i].w, nullptr);
+    }
+  }
+
+  void gradient_brush_t::blend_masked_spans(image_t *target, int i0, int i1, int step) {
+    gradient_brush_t *p = this;
+    const pv_masked_span *spans = _masked_spans();
+    if(p->type == GRADIENT_RADIAL) {
+      for(int i = i0; i < i1; i += step)
+        gradient_radial_span(target, p, spans[i].x, spans[i].y, spans[i].w, (const uint8_t*)spans[i].mask);
+    } else {
+      for(int i = i0; i < i1; i += step)
+        gradient_linear_span(target, p, spans[i].x, spans[i].y, spans[i].w, (const uint8_t*)spans[i].mask);
+    }
+  }
+
+  // ── helpers ─────────────────────────────────────────────────────────────────
+
   // --- linear ---------------------------------------------------------------
 
-  static inline __attribute__((always_inline))
-  void gradient_linear_span(image_t *target, gradient_brush_t *p, int x, int y, int w) {
+  static void gradient_linear_span(image_t *target, gradient_brush_t *p, int x, int y, int w, const uint8_t *mask) {
     uint32_t *dst = (uint32_t*)target->ptr(x, y);
     const uint32_t *lut = p->lut;
 
-    // pixel -> gradient space, plus the per-pixel (+1 in screen x) step
+    // pixel -> gradient space, plus the per-pixel step for a one-pixel screen step
     vec2_t pt = vec2_t((float)x, (float)y).transform(&p->inverse_transform);
     float dpx = p->inverse_transform.v00;
     float dpy = p->inverse_transform.v10;
@@ -116,47 +145,16 @@ namespace picovector {
       int idx = (int)(t * 255.0f + 0.5f);
       if(idx < 0) idx = 0; else if(idx > 255) idx = 255;
       uint32_t c = lut[idx];
+      if(mask){ c = _premul_mul_alpha(c, *mask); mask++; }
       *dst = blend_over_premul(*dst, c);
       dst++;
-      t += dt;
-    }
-  }
-  static void gradient_brush_linear_span_func(image_t *target, brush_t *brush, int x, int y, int w) {
-    gradient_linear_span(target, (gradient_brush_t*)brush, x, y, w);
-  }
-
-  static void gradient_brush_linear_masked_span_func(image_t *target, brush_t *brush, int x, int y, int w, uint8_t *mask) {
-    gradient_brush_t *p = (gradient_brush_t*)brush;
-    uint32_t *dst = (uint32_t*)target->ptr(x, y);
-    const uint32_t *lut = p->lut;
-
-    vec2_t pt = vec2_t((float)x, (float)y).transform(&p->inverse_transform);
-    float dpx = p->inverse_transform.v00;
-    float dpy = p->inverse_transform.v10;
-
-    float dx = p->p2.x - p->p1.x;
-    float dy = p->p2.y - p->p1.y;
-    float inv_len2 = 1.0f / (dx * dx + dy * dy + 1e-12f);
-
-    float t  = ((pt.x - p->p1.x) * dx + (pt.y - p->p1.y) * dy) * inv_len2;
-    float dt = (dpx * dx + dpy * dy) * inv_len2;
-
-    while(w--) {
-      int idx = (int)(t * 255.0f + 0.5f);
-      if(idx < 0) idx = 0; else if(idx > 255) idx = 255;
-      uint32_t c = lut[idx];
-      uint32_t m = *mask;
-      *dst = blend_over_premul(*dst, _premul_mul_alpha(c, m));
-      dst++;
-      mask++;
       t += dt;
     }
   }
 
   // --- radial ---------------------------------------------------------------
 
-  static inline __attribute__((always_inline))
-  void gradient_radial_span(image_t *target, gradient_brush_t *p, int x, int y, int w) {
+  static void gradient_radial_span(image_t *target, gradient_brush_t *p, int x, int y, int w, const uint8_t *mask) {
     uint32_t *dst = (uint32_t*)target->ptr(x, y);
     const uint32_t *lut = p->lut;
 
@@ -177,81 +175,12 @@ namespace picovector {
       int idx = (int)(t * 255.0f + 0.5f);
       if(idx < 0) idx = 0; else if(idx > 255) idx = 255;
       uint32_t c = lut[idx];
+      if(mask){ c = _premul_mul_alpha(c, *mask); mask++; }
       *dst = blend_over_premul(*dst, c);
       dst++;
       px += dpx;
       py += dpy;
     }
   }
-  static void gradient_brush_radial_span_func(image_t *target, brush_t *brush, int x, int y, int w) {
-    gradient_radial_span(target, (gradient_brush_t*)brush, x, y, w);
-  }
-  // Batch: dispatch on gradient type once, then inline the per-span sampler.
-  static void gradient_brush_blend_spans(image_t *target, brush_t *brush, int i0, int i1, int step) {
-    gradient_brush_t *p = (gradient_brush_t*)brush;
-    const pv_span *spans = _spans();
-    if(p->type == GRADIENT_RADIAL) {
-      for(int i = i0; i < i1; i += step) gradient_radial_span(target, p, spans[i].x, spans[i].y, spans[i].w);
-    } else {
-      for(int i = i0; i < i1; i += step) gradient_linear_span(target, p, spans[i].x, spans[i].y, spans[i].w);
-    }
-  }
-
-  static void gradient_brush_radial_masked_span_func(image_t *target, brush_t *brush, int x, int y, int w, uint8_t *mask) {
-    gradient_brush_t *p = (gradient_brush_t*)brush;
-    uint32_t *dst = (uint32_t*)target->ptr(x, y);
-    const uint32_t *lut = p->lut;
-
-    vec2_t pt = vec2_t((float)x, (float)y).transform(&p->inverse_transform);
-    float dpx = p->inverse_transform.v00;
-    float dpy = p->inverse_transform.v10;
-
-    float rx = p->p2.x - p->p1.x;
-    float ry = p->p2.y - p->p1.y;
-    float radius = sqrtf(rx * rx + ry * ry);
-    float inv_r = radius > 0.0f ? 1.0f / radius : 0.0f;
-
-    float px = pt.x, py = pt.y;
-    while(w--) {
-      float ex = px - p->p1.x;
-      float ey = py - p->p1.y;
-      float t = sqrtf(ex * ex + ey * ey) * inv_r;
-      int idx = (int)(t * 255.0f + 0.5f);
-      if(idx < 0) idx = 0; else if(idx > 255) idx = 255;
-      uint32_t c = lut[idx];
-      uint32_t m = *mask;
-      *dst = blend_over_premul(*dst, _premul_mul_alpha(c, m));
-      dst++;
-      mask++;
-      px += dpx;
-      py += dpy;
-    }
-  }
-
-  span_func_t gradient_brush_t::span_func() {
-    return type == GRADIENT_RADIAL ? gradient_brush_radial_span_func
-                                   : gradient_brush_linear_span_func;
-  }
-  batch_span_func_t gradient_brush_t::blend_spans() {
-    return gradient_brush_blend_spans;
-  }
-
-  masked_span_func_t gradient_brush_t::masked_span_func() {
-    return type == GRADIENT_RADIAL ? gradient_brush_radial_masked_span_func
-                                   : gradient_brush_linear_masked_span_func;
-  }
-
-  static void gradient_brush_blend_masked_spans(image_t *target, brush_t *brush, int i0, int i1, int step) {
-    gradient_brush_t *p = (gradient_brush_t*)brush;
-    const pv_masked_span *spans = _masked_spans();
-    if(p->type == GRADIENT_RADIAL) {
-      for(int i = i0; i < i1; i += step)
-        gradient_brush_radial_masked_span_func(target, brush, spans[i].x, spans[i].y, spans[i].w, (uint8_t*)spans[i].mask);
-    } else {
-      for(int i = i0; i < i1; i += step)
-        gradient_brush_linear_masked_span_func(target, brush, spans[i].x, spans[i].y, spans[i].w, (uint8_t*)spans[i].mask);
-    }
-  }
-  batch_span_func_t gradient_brush_t::blend_masked_spans() { return gradient_brush_blend_masked_spans; }
 
 }

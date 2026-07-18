@@ -100,67 +100,41 @@ namespace picovector {
     else for(int i = 0; i < n; i++) out[i] = box_average(target, x + i, y, r, W, H);
   }
 
-  static inline __attribute__((always_inline))
-  void blur_span(image_t *target, blur_brush_t *p, int x, int y, int w) {
-    int r = p->radius < 1 ? 1 : p->radius;
-    rect_t b = target->bounds();
-    int W = (int)b.w, H = (int)b.h;
-
-    uint32_t tmp[BLUR_CHUNK];
-    while(w > 0) {
-      int n = w < BLUR_CHUNK ? w : BLUR_CHUNK;
-      blur_row(target, x, y, n, r, W, H, tmp);
-      uint32_t *dst = (uint32_t*)target->ptr(x, y);
-      for(int i = 0; i < n; i++) dst[i] = tmp[i];
-      x += n;
-      w -= n;
-    }
-  }
-  static void blur_brush_span_func(image_t *target, brush_t *brush, int x, int y, int w) {
-    blur_span(target, (blur_brush_t*)brush, x, y, w);
-  }
-  static void blur_brush_blend_spans(image_t *target, brush_t *brush, int i0, int i1, int step) {
-    blur_brush_t *p = (blur_brush_t*)brush;
-    const pv_span *spans = _spans();
-    for(int i = i0; i < i1; i += step) blur_span(target, p, spans[i].x, spans[i].y, spans[i].w);
-  }
-
-  static void blur_brush_masked_span_func(image_t *target, brush_t *brush, int x, int y, int w, uint8_t *mask) {
-    blur_brush_t *p = (blur_brush_t*)brush;
-    int r = p->radius < 1 ? 1 : p->radius;
-    rect_t b = target->bounds();
-    int W = (int)b.w, H = (int)b.h;
-
-    uint32_t tmp[BLUR_CHUNK];
-    while(w > 0) {
-      int n = w < BLUR_CHUNK ? w : BLUR_CHUNK;
-      blur_row(target, x, y, n, r, W, H, tmp);
-      uint32_t *dst = (uint32_t*)target->ptr(x, y);
-      for(int i = 0; i < n; i++) dst[i] = blur_mask_lerp(dst[i], tmp[i], mask[i]);
-      x += n;
-      w -= n;
-      mask += n;
-    }
-  }
+  // Per-span sampler, shared by the solid and masked batches: mask == nullptr is
+  // the solid path, mask != nullptr lerps the blur into dst by per-pixel coverage.
+  static void blur_span(image_t *target, blur_brush_t *p, int x, int y, int w, const uint8_t *mask);
 
   blur_brush_t::blur_brush_t(int radius) : radius(radius) {}
 
-  span_func_t blur_brush_t::span_func() {
-    return blur_brush_span_func;
-  }
-  batch_span_func_t blur_brush_t::blend_spans() {
-    return blur_brush_blend_spans;
-  }
-
-  masked_span_func_t blur_brush_t::masked_span_func() {
-    return blur_brush_masked_span_func;
+  void blur_brush_t::blend_spans(image_t *target, int i0, int i1, int step) {
+    blur_brush_t *p = this;
+    const pv_span *spans = _spans();
+    for(int i = i0; i < i1; i += step) blur_span(target, p, spans[i].x, spans[i].y, spans[i].w, nullptr);
   }
 
-  static void blur_brush_blend_masked_spans(image_t *target, brush_t *brush, int i0, int i1, int step) {
+  void blur_brush_t::blend_masked_spans(image_t *target, int i0, int i1, int step) {
     const pv_masked_span *spans = _masked_spans();
     for(int i = i0; i < i1; i += step)
-      blur_brush_masked_span_func(target, brush, spans[i].x, spans[i].y, spans[i].w, (uint8_t*)spans[i].mask);
+      blur_span(target, this, spans[i].x, spans[i].y, spans[i].w, (const uint8_t*)spans[i].mask);
   }
-  batch_span_func_t blur_brush_t::blend_masked_spans() { return blur_brush_blend_masked_spans; }
+
+  // ── helpers ─────────────────────────────────────────────────────────────────
+
+  static void blur_span(image_t *target, blur_brush_t *p, int x, int y, int w, const uint8_t *mask) {
+    int r = p->radius < 1 ? 1 : p->radius;
+    rect_t b = target->bounds();
+    int W = (int)b.w, H = (int)b.h;
+
+    uint32_t tmp[BLUR_CHUNK];
+    while(w > 0) {
+      int n = w < BLUR_CHUNK ? w : BLUR_CHUNK;
+      blur_row(target, x, y, n, r, W, H, tmp);
+      uint32_t *dst = (uint32_t*)target->ptr(x, y);
+      for(int i = 0; i < n; i++) dst[i] = mask ? blur_mask_lerp(dst[i], tmp[i], mask[i]) : tmp[i];
+      x += n;
+      w -= n;
+      if(mask) mask += n;
+    }
+  }
 
 }

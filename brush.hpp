@@ -14,14 +14,12 @@ namespace picovector {
 
   class brush_t {
   public:
-    virtual span_func_t span_func() = 0;
-    virtual masked_span_func_t masked_span_func() = 0;
-
-    // Composite a whole list of pre-clipped spans in one call: blend_spans a
-    // solid batch, blend_masked_spans a coverage-masked (AA) batch. Every brush
-    // implements both (they read the shared buffer via _spans()/_masked_spans()).
-    virtual batch_span_func_t blend_spans() = 0;
-    virtual batch_span_func_t blend_masked_spans() = 0;
+    // Composite a whole list of pre-clipped spans in one call: blend_spans a solid
+    // batch, blend_masked_spans a coverage-masked (AA) batch. Both read the shared
+    // buffer via _spans()/_masked_spans(). Every draw goes through here - the draw
+    // methods fill the span buffer and call _blend_spans/_blend_masked_spans.
+    virtual void blend_spans(image_t *target, int i0, int i1, int step) = 0;
+    virtual void blend_masked_spans(image_t *target, int i0, int i1, int step) = 0;
 
     // Fold the shape's transform into the brush's own coordinate space, so a
     // brush with geometry (e.g. a gradient) moves with the shape it fills.
@@ -34,10 +32,8 @@ namespace picovector {
     color_t c;
 
     color_brush_t(const color_t& c);
-    span_func_t span_func();
-    masked_span_func_t masked_span_func();
-    batch_span_func_t blend_spans() override;
-    batch_span_func_t blend_masked_spans() override;
+    void blend_spans(image_t *target, int i0, int i1, int step) override;
+    void blend_masked_spans(image_t *target, int i0, int i1, int step) override;
   };
 
   // Window / erase brush: lerps the destination toward a premultiplied target
@@ -53,10 +49,8 @@ namespace picovector {
 
     transparent_brush_t();                 // erase (fully transparent)
     transparent_brush_t(const color_t &c); // lerp destination toward colour c
-    span_func_t span_func();
-    masked_span_func_t masked_span_func();
-    batch_span_func_t blend_spans() override;
-    batch_span_func_t blend_masked_spans() override;
+    void blend_spans(image_t *target, int i0, int i1, int step) override;
+    void blend_masked_spans(image_t *target, int i0, int i1, int step) override;
   };
 
   class pattern_brush_t : public brush_t {
@@ -67,10 +61,8 @@ namespace picovector {
 
     pattern_brush_t(const color_t& c1, const color_t& c2, uint8_t pattern_index);
     pattern_brush_t(const color_t& c1, const color_t& c2, uint8_t *pattern);
-    span_func_t span_func();
-    masked_span_func_t masked_span_func();
-    batch_span_func_t blend_spans() override;
-    batch_span_func_t blend_masked_spans() override;
+    void blend_spans(image_t *target, int i0, int i1, int step) override;
+    void blend_masked_spans(image_t *target, int i0, int i1, int step) override;
   };
 
   class image_brush_t : public brush_t {
@@ -81,10 +73,8 @@ namespace picovector {
 
     image_brush_t(image_t *src);
     image_brush_t(image_t *src, mat3_t *transform);
-    span_func_t span_func();
-    masked_span_func_t masked_span_func();
-    batch_span_func_t blend_spans() override;
-    batch_span_func_t blend_masked_spans() override;
+    void blend_spans(image_t *target, int i0, int i1, int step) override;
+    void blend_masked_spans(image_t *target, int i0, int i1, int step) override;
     void set_render_transform(mat3_t *transform) override;
   };
 
@@ -102,10 +92,8 @@ namespace picovector {
     int size;
 
     pixelate_brush_t(int size);
-    span_func_t span_func();
-    masked_span_func_t masked_span_func();
-    batch_span_func_t blend_spans() override;
-    batch_span_func_t blend_masked_spans() override;
+    void blend_spans(image_t *target, int i0, int i1, int step) override;
+    void blend_masked_spans(image_t *target, int i0, int i1, int step) override;
   };
 
 
@@ -117,10 +105,8 @@ namespace picovector {
     int radius;
 
     blur_brush_t(int radius);
-    span_func_t span_func();
-    masked_span_func_t masked_span_func();
-    batch_span_func_t blend_spans() override;
-    batch_span_func_t blend_masked_spans() override;
+    void blend_spans(image_t *target, int i0, int i1, int step) override;
+    void blend_masked_spans(image_t *target, int i0, int i1, int step) override;
   };
 
 
@@ -131,10 +117,36 @@ namespace picovector {
     int amount;
 
     brightness_brush_t(int amount);
-    span_func_t span_func();
-    masked_span_func_t masked_span_func();
-    batch_span_func_t blend_spans() override;
-    batch_span_func_t blend_masked_spans() override;
+    void blend_spans(image_t *target, int i0, int i1, int step) override;
+    void blend_masked_spans(image_t *target, int i0, int i1, int step) override;
+  };
+
+  // Greyscale brush: replaces the shape's content with its (green-biased)
+  // luminance. This is image.monochrome() as a brush - the filter method just
+  // fills the image bounds with it.
+  class monochrome_brush_t : public brush_t {
+  public:
+    monochrome_brush_t();
+    void blend_spans(image_t *target, int i0, int i1, int step) override;
+    void blend_masked_spans(image_t *target, int i0, int i1, int step) override;
+  };
+
+  // Ordered-dither filter as a brush: 4-level green-biased palette via a
+  // screen-aligned 4x4 Bayer matrix. image.dither() fills bounds with it.
+  class dither_brush_t : public brush_t {
+  public:
+    dither_brush_t();
+    void blend_spans(image_t *target, int i0, int i1, int step) override;
+    void blend_masked_spans(image_t *target, int i0, int i1, int step) override;
+  };
+
+  // 1-bit filter as a brush: threshold each covered pixel to black or white by
+  // luminance. image.onebit() fills bounds with it.
+  class onebit_brush_t : public brush_t {
+  public:
+    onebit_brush_t();
+    void blend_spans(image_t *target, int i0, int i1, int step) override;
+    void blend_masked_spans(image_t *target, int i0, int i1, int step) override;
   };
 
   // SVG-style linear/radial gradient. Geometry (p1, p2) lives in the gradient's
@@ -154,10 +166,8 @@ namespace picovector {
     gradient_brush_t(gradient_type_t type, float x1, float y1, float x2, float y2,
                      const float *positions, const uint32_t *premul_colors, int stop_count,
                      mat3_t *transform);
-    span_func_t span_func();
-    masked_span_func_t masked_span_func();
-    batch_span_func_t blend_spans() override;
-    batch_span_func_t blend_masked_spans() override;
+    void blend_spans(image_t *target, int i0, int i1, int step) override;
+    void blend_masked_spans(image_t *target, int i0, int i1, int step) override;
     void set_render_transform(mat3_t *transform) override;
   };
 

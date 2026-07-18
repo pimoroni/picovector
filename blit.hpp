@@ -41,13 +41,32 @@ namespace picovector {
   template<bool ApplyAlpha, typename Src>
   static inline __attribute__((always_inline))
   void span_scale_over(Src src, uint32_t *pd, int w, fx16_t sx, fx16_t sx_step, int sw, uint32_t alpha) {
-    for(int i = 0; i < w; i++) {
-      int ix = sx >> 16;
-      if(ix < 0) ix = 0; else if(ix >= sw) ix = sw - 1;
-      uint32_t c = src[ix];
-      if(ApplyAlpha) c = _premul_mul_alpha(c, alpha);
-      pd[i] = blend_over_premul(pd[i], c);
-      sx += sx_step;
+    // ix = sx>>16 is monotonic in i (the step is fixed), so if both span
+    // endpoints land in [0, sw) then every pixel does. The caller clips the
+    // source rect to the source bounds, so that is the common case: when it holds
+    // we drop the per-pixel bounds test entirely. Edge-crossing spans (sub-texel
+    // rounding at the last pixel, or a source rect spilling past an edge) fall
+    // back to the clamped loop, which is byte-identical to the always-clamped
+    // path. The endpoint is evaluated once per span in Q16, with a 64-bit
+    // intermediate so w*step can't overflow (w and sw carry the fixed-point
+    // extent, not just a pixel count).
+    int64_t ex = (int64_t)sx + (int64_t)(w - 1) * sx_step; // Q16 end coordinate
+    if((unsigned)(sx >> 16) < (unsigned)sw && ex >= 0 && (ex >> 16) < sw) {
+      for(int i = 0; i < w; i++) {
+        uint32_t c = src[sx >> 16];
+        if(ApplyAlpha) c = _premul_mul_alpha(c, alpha);
+        pd[i] = blend_over_premul(pd[i], c);
+        sx += sx_step;
+      }
+    } else {
+      for(int i = 0; i < w; i++) {
+        int ix = sx >> 16;
+        if(ix < 0) ix = 0; else if(ix >= sw) ix = sw - 1;
+        uint32_t c = src[ix];
+        if(ApplyAlpha) c = _premul_mul_alpha(c, alpha);
+        pd[i] = blend_over_premul(pd[i], c);
+        sx += sx_step;
+      }
     }
   }
 
@@ -56,7 +75,7 @@ namespace picovector {
   // blend mode is "over", inlined via blend_over_premul. Reintroduce a dispatch
   // here if additional blend modes are ever added.
 
-  void span_blit(image_t *src, image_t *dst, blend_func_t bf, int sx, int sy, int dx, int dy, int w) {
+  inline void span_blit(image_t *src, image_t *dst, blend_func_t bf, int sx, int sy, int dx, int dy, int w) {
     (void)bf;
     uint32_t *ps = (uint32_t *)src->ptr(sx, sy);
     uint32_t *pd = (uint32_t *)dst->ptr(dx, dy);
@@ -66,7 +85,7 @@ namespace picovector {
     else                  span_over<true >(src_rgba{ps}, pd, w, dst_alpha);
   }
 
-  void span_blit(image_t *src, image_t *dst, blend_func_t bf, int sx, int sy, int dx, int dy, int w, const palette_t &palette) {
+  inline void span_blit(image_t *src, image_t *dst, blend_func_t bf, int sx, int sy, int dx, int dy, int w, const palette_t &palette) {
     (void)bf;
     uint8_t  *ps  = (uint8_t *)src->ptr(sx, sy);
     uint32_t *pd  = (uint32_t *)dst->ptr(dx, dy);
@@ -77,7 +96,7 @@ namespace picovector {
     else                  span_over<true >(src_pal{ps, pal}, pd, w, dst_alpha);
   }
 
-  void span_blit_scale(image_t *src, image_t *dst, blend_func_t bf, fx16_t sx, fx16_t sx_step, fx16_t sy, int dx, int dy, int w, filter_t filter = NEAREST) {
+  inline void span_blit_scale(image_t *src, image_t *dst, blend_func_t bf, fx16_t sx, fx16_t sx_step, fx16_t sy, int dx, int dy, int w, filter_t filter = NEAREST) {
     (void)bf;
     uint32_t *pd = (uint32_t *)dst->ptr(dx, dy);
     uint32_t src_alpha = src->alpha();
@@ -119,7 +138,7 @@ namespace picovector {
 
   // palette images can't be interpolated, so sample() resolves them NEAREST;
   // the palette argument is no longer needed but kept for call-site compatibility
-  void span_blit_scale(image_t *src, image_t *dst, blend_func_t bf, fx16_t sx, fx16_t sx_step, fx16_t sy, int dx, int dy, int w, const palette_t &palette, filter_t filter = NEAREST) {
+  inline void span_blit_scale(image_t *src, image_t *dst, blend_func_t bf, fx16_t sx, fx16_t sx_step, fx16_t sy, int dx, int dy, int w, const palette_t &palette, filter_t filter = NEAREST) {
     (void)palette;
     span_blit_scale(src, dst, bf, sx, sx_step, sy, dx, dy, w, filter);
   }

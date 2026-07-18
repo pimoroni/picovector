@@ -16,8 +16,6 @@ namespace picovector {
   class brush_t;
 
 
-  typedef void (*span_func_t)(image_t *target, brush_t *brush, int x, int y, int w);
-  typedef void (*masked_span_func_t)(image_t *target, brush_t *brush, int x, int y, int w, uint8_t *mask);
 
   // Pre-clipped horizontal runs. A batch is homogeneous - either all solid (the
   // simple draw methods) or all masked (the AA rasteriser) - so the two never
@@ -26,12 +24,11 @@ namespace picovector {
   struct pv_span        { int16_t x, y; uint16_t w; };                        // 6 bytes
   struct pv_masked_span { int16_t x, y; uint16_t w; const uint8_t *mask; };   // 12 bytes
 
-  // A brush's batch blend reads the shared buffer via _spans()/_masked_spans()
-  // and composites the span index range [i0, i1) stepping by `step`. Single-core
-  // callers pass (0, n, 1); the dual-core dispatcher splits by span-index parity
-  // (core0: 0,2,4…; core1: 1,3,5…) so the two cores write disjoint framebuffer
-  // rows without locking.
-  typedef void (*batch_span_func_t)(image_t *target, brush_t *brush, int i0, int i1, int step);
+  // A brush's blend_spans()/blend_masked_spans() composite the span index range
+  // [i0, i1) stepping by `step`, reading the shared buffer via _spans()/
+  // _masked_spans(). Single-core callers pass (0, n, 1); the dual-core dispatcher
+  // splits by span-index parity (core0: 0,2,4…; core1: 1,3,5…) so the two cores
+  // write disjoint framebuffer rows without locking.
 
   // One 8KB buffer, reinterpreted as whichever span type the current batch uses
   // (never both). Solid: ~1365 spans; masked: ~682. _span_n counts elements of
@@ -172,6 +169,9 @@ namespace picovector {
       void pixel_font(pixel_font_t *pixel_font);
 
       void span(int x, int y, int w);
+      // horizontal / vertical single-run fills (span buffer + batch blend)
+      void hspan(int x, int y, int w);
+      void vspan(int x, int y, int h);
       void masked_span(int x, int y, int w, uint8_t *mask);
 
 
@@ -215,14 +215,14 @@ namespace picovector {
       void blit(image_t *t, const vec2_t p);
       void blit(image_t *t, rect_t tr, filter_t filter = NEAREST);
       void blit(image_t *t, rect_t sr, rect_t tr, filter_t filter = NEAREST);
-      void blit_hspan(image_t *target, vec2_t p, int c, vec2_t uv0, vec2_t uv1, filter_t filter = NEAREST);
-      void blit_vspan(image_t *target, vec2_t p, int c, vec2_t uv0, vec2_t uv1, filter_t filter = NEAREST);
+      void blit_hspan(image_t *target, vec2_t p, float len, vec2_t uv0, vec2_t uv1, filter_t filter = NEAREST);
+      void blit_vspan(image_t *target, vec2_t p, float len, vec2_t uv0, vec2_t uv1, filter_t filter = NEAREST);
 
     private:
       // shared body for blit_hspan / blit_vspan: walks `c` texels sampling the
       // source along uv0->uv1. `vertical` selects the travel axis (y for vspan,
       // x for hspan), which drives both the clip and the destination step.
-      void blit_span(image_t *target, vec2_t p, int c, vec2_t uv0, vec2_t uv1, filter_t filter, bool vertical);
+      void blit_span(image_t *target, vec2_t p, float len, vec2_t uv0, vec2_t uv1, filter_t filter, bool vertical);
       // Clip one horizontal run to _clip and, if any remains, add it to the
       // shared span buffer (no blend). Shared by span() and circle().
       void _span(int x, int y, int w);

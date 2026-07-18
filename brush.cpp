@@ -6,12 +6,13 @@
 namespace picovector {
 
 #if PV_DUAL_CORE
-  // Adapter so pv_parallel_rows can drive a brush's ranged batch func: the
+  // Adapter so pv_parallel_rows can drive a brush's ranged batch method: the
   // "row" range it hands out is really a span-index range, split by parity.
-  struct _blend_ctx { image_t *target; brush_t *brush; batch_span_func_t fn; };
+  struct _blend_ctx { image_t *target; brush_t *brush; bool masked; };
   static void _blend_row_worker(void *ctx, int i0, int i1, int step) {
     _blend_ctx *c = (_blend_ctx *)ctx;
-    c->fn(c->target, c->brush, i0, i1, step);
+    if(c->masked) c->brush->blend_masked_spans(c->target, i0, i1, step);
+    else          c->brush->blend_spans(c->target, i0, i1, step);
   }
 
   // Total pixels across the current span batch (solid stride) - used to decide
@@ -38,30 +39,28 @@ namespace picovector {
     if(!brush) return;
     int n = _num_spans();
     if(n <= 0) return;
-    batch_span_func_t fn = brush->blend_spans();
 #if PV_DUAL_CORE
     if(n >= 2 && _solid_span_pixels(n) >= PV_DUAL_CORE_BLEND_MIN_PX) {
-      _blend_ctx c = { target, brush, fn };
+      _blend_ctx c = { target, brush, false };
       pv_parallel_rows(_blend_row_worker, &c, 0, n);
       return;
     }
 #endif
-    fn(target, brush, 0, n, 1);
+    brush->blend_spans(target, 0, n, 1);
   }
 
   void _blend_masked_spans(image_t *target, brush_t *brush) {
     if(!brush) return;
     int n = _num_spans();
     if(n <= 0) return;
-    batch_span_func_t fn = brush->blend_masked_spans();
 #if PV_DUAL_CORE
     if(n >= 2 && _masked_span_pixels(n) >= PV_DUAL_CORE_BLEND_MIN_PX) {
-      _blend_ctx c = { target, brush, fn };
+      _blend_ctx c = { target, brush, true };
       pv_parallel_rows(_blend_row_worker, &c, 0, n);
       return;
     }
 #endif
-    fn(target, brush, 0, n, 1);
+    brush->blend_masked_spans(target, 0, n, 1);
   }
 
 }

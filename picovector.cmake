@@ -9,6 +9,7 @@ list(APPEND SOURCES
   ${CMAKE_CURRENT_LIST_DIR}/font.cpp
   ${CMAKE_CURRENT_LIST_DIR}/pixel_font.cpp
   ${CMAKE_CURRENT_LIST_DIR}/image.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/blit.cpp
   ${CMAKE_CURRENT_LIST_DIR}/brush.cpp
   ${CMAKE_CURRENT_LIST_DIR}/color.cpp
   ${CMAKE_CURRENT_LIST_DIR}/primitive.cpp
@@ -20,14 +21,15 @@ list(APPEND SOURCES
   ${CMAKE_CURRENT_LIST_DIR}/brushes/color.cpp
   ${CMAKE_CURRENT_LIST_DIR}/brushes/transparent.cpp
   ${CMAKE_CURRENT_LIST_DIR}/brushes/image.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/blit.cpp
   ${CMAKE_CURRENT_LIST_DIR}/brushes/gradient.cpp
   ${CMAKE_CURRENT_LIST_DIR}/brushes/pixelate.cpp
   ${CMAKE_CURRENT_LIST_DIR}/brushes/blur.cpp
   ${CMAKE_CURRENT_LIST_DIR}/brushes/brightness.cpp
   ${CMAKE_CURRENT_LIST_DIR}/filters/blur.cpp
-  ${CMAKE_CURRENT_LIST_DIR}/filters/dither.cpp
-  ${CMAKE_CURRENT_LIST_DIR}/filters/monochrome.cpp
-  ${CMAKE_CURRENT_LIST_DIR}/filters/onebit.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/brushes/dither.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/brushes/monochrome.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/brushes/onebit.cpp
 )
 
 # The MicroPython bindings, decoders, allocator config and build knobs live in

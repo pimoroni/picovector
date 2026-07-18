@@ -83,10 +83,11 @@
 #endif
 
 // ── working buffer size ─────────────────────────────────────────────────────
-// Scratch pool for rasterisation (tile/node/edge buffers). The core rasteriser
-// needs ~52 KB (4 KB tile + 32 KB nodes + edge accumulator); 60 KB gives
-// headroom. Embedders that also use the buffer as scratch — e.g. PNG/JPEG decode
-// in the MicroPython bindings — should enlarge this (see PicoVector_working_buffer).
+// Scratch pool the rasteriser carves its tile/edge/coverage buffers out of; a
+// compile-time static_assert in rasteriser.cpp fails the build if they don't fit,
+// so this just needs to be large enough. Embedders that also reuse the buffer as
+// general scratch — e.g. PNG/JPEG decode in the MicroPython bindings — should size
+// it for whichever use needs the most (see PicoVector_working_buffer).
 #ifndef PV_WORKING_BUFFER_SIZE
-#define PV_WORKING_BUFFER_SIZE (60 * 1024)
+#define PV_WORKING_BUFFER_SIZE (80 * 1024)
 #endif

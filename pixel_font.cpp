@@ -191,6 +191,11 @@ namespace picovector {
       uint8_t len = utf8_seq_len(*text);
       text += len ? len : 1;  // never stall on a malformed lead byte
     }
+
+    // Advance the caret as if the text ended with a newline, so a following
+    // text() with no position starts on the next line.
+    c->x = c->origin_x;
+    c->y += c->line_height;
   }
 
 }

@@ -37,22 +37,30 @@ namespace picovector {
     return rect_t(minx, miny, ceil(maxx) - minx, ceil(maxy) - miny);
   }
 
+  static uint16_t get_utf8_char(const char *text, const char *end);
+  static inline uint8_t utf8_seq_len(uint8_t b0);
+
   rect_t font_t::measure(image_t *target, const char *text, float size) {
     (void)target;
     float x = 0.0f, max_w = 0.0f;
     int lines = 1;
     const float s = size / 128.0f;
 
-    for(size_t i = 0, n = strlen(text); i < n; i++) {
-      char c = text[i];
-      if(c == '\n') { if(x > max_w) max_w = x; x = 0.0f; lines++; continue; }
-      if(c == '\r') continue;
+    // Walk UTF-8 codepoints so widths match draw() for non-ASCII glyphs.
+    const char *p = text;
+    const char *end = text + strlen(text);
+    while(p != end) {
+      uint16_t cp = get_utf8_char(p, end);
+      if(cp == '\n') { if(x > max_w) max_w = x; x = 0.0f; lines++; p += 1; continue; }
+      if(cp == '\r') { p += 1; continue; }
       for(int j = 0; j < this->glyph_count; j++) {
-        if(this->glyphs[j].codepoint == uint16_t(c)) {
+        if(this->glyphs[j].codepoint == cp) {
           x += float(this->glyphs[j].advance) * s;
           break;
         }
       }
+      uint8_t len = utf8_seq_len(*p);
+      p += len ? len : 1;  // never stall on a malformed lead byte
     }
     if(x > max_w) max_w = x;
 
@@ -155,7 +163,8 @@ namespace picovector {
         }
       }
 
-      text += utf8_seq_len(*text);
+      uint8_t len = utf8_seq_len(*text);
+      text += len ? len : 1;  // never stall on a malformed lead byte
     }
   }
 

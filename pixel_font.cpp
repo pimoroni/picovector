@@ -35,12 +35,17 @@ namespace picovector {
     return -1;  // not found
   }
 
+  static uint16_t get_utf8_char(const char *text, const char *end);
+  static inline uint8_t utf8_seq_len(uint8_t b0);
+
   rect_t pixel_font_t::measure(image_t *target, const char *text, int scale) {
     (void)target;
     if(scale < 1) scale = 1;
     float x = 0, max_w = 0;
     int lines = 1;
 
+    // Walk UTF-8 codepoints so widths match draw() for non-ASCII glyphs.
+    const char *end = text + strlen(text);
     while(*text != '\0') {
       if(*text == '\n') { if(x > max_w) max_w = x; x = 0; lines++; text++; continue; }
       if(*text == '\r') { text++; continue; }
@@ -51,12 +56,13 @@ namespace picovector {
         continue;
       }
 
-      int glyph_index = this->glyph_index(*text);
+      int glyph_index = this->glyph_index(get_utf8_char(text, end));
       if(glyph_index != -1) {
         x += (this->glyphs[glyph_index].width + 1) * scale;
       }
 
-      text += utf8_seq_len(*text);
+      uint8_t len = utf8_seq_len(*text);
+      text += len ? len : 1;  // never stall on a malformed lead byte
     }
     if(x > max_w) max_w = x;
 
@@ -182,7 +188,8 @@ namespace picovector {
         c->x += (glyph->width + 1) * scale;
       }
 
-      text += utf8_seq_len(*text);
+      uint8_t len = utf8_seq_len(*text);
+      text += len ? len : 1;  // never stall on a malformed lead byte
     }
   }
 

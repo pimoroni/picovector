@@ -15,6 +15,18 @@ namespace picovector {
   class image_t;
   class brush_t;
 
+  // Persistent text caret, so image.text() can omit its position (continuing
+  // where the last text() left off) and honour '\n'. `origin_x` is the column a
+  // newline returns to; `line_height` is the per-newline y advance (both set up
+  // per text() call from the position and font). `valid` is false until the
+  // first positioned draw / explicit set, when it defaults the origin to (0, 0).
+  struct text_cursor_t {
+    float x = 0.0f, y = 0.0f;
+    float origin_x = 0.0f;
+    float line_height = 0.0f;
+    bool  valid = false;
+  };
+
 
 
   // Pre-clipped horizontal runs. A batch is homogeneous - either all solid (the
@@ -101,6 +113,7 @@ namespace picovector {
       brush_t           *_brush = nullptr;
       font_t            *_font = nullptr;
       pixel_font_t      *_pixel_font = nullptr;
+      text_cursor_t      _text_cursor;
       palette_t          _palette;
       uint               _rows = 1, _cols = 1;   // spritesheet grid (1x1 = not a sheet)
 
@@ -167,6 +180,14 @@ namespace picovector {
 
       pixel_font_t *pixel_font();
       void pixel_font(pixel_font_t *pixel_font);
+
+      // Text caret. The vec2 getter/setter back the `image.cursor` property;
+      // setting it establishes the newline origin (origin_x = x) and marks it
+      // valid. text_cursor_state() is the mutable state the text draw path
+      // reads/advances.
+      vec2_t text_cursor();
+      void text_cursor(vec2_t p);
+      text_cursor_t *text_cursor_state() { return &_text_cursor; }
 
       void span(int x, int y, int w);
       // horizontal / vertical single-run fills (span buffer + batch blend)

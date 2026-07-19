@@ -38,22 +38,25 @@ namespace picovector {
   }
 
   rect_t font_t::measure(image_t *target, const char *text, float size) {
-    rect_t r =  {0, 0, 0, 0};
+    (void)target;
+    float x = 0.0f, max_w = 0.0f;
+    int lines = 1;
+    const float s = size / 128.0f;
 
-    mat3_t transform;
-    transform = transform.scale(size / 128.0f, size / 128.0f);
-
-    for(size_t i = 0; i < strlen(text); i++) {
+    for(size_t i = 0, n = strlen(text); i < n; i++) {
       char c = text[i];
-      // find the glyph
+      if(c == '\n') { if(x > max_w) max_w = x; x = 0.0f; lines++; continue; }
+      if(c == '\r') continue;
       for(int j = 0; j < this->glyph_count; j++) {
         if(this->glyphs[j].codepoint == uint16_t(c)) {
-          r.w += float(this->glyphs[j].advance) * (size / 128.0f);
-          r.h = size;
+          x += float(this->glyphs[j].advance) * s;
+          break;
         }
       }
     }
+    if(x > max_w) max_w = x;
 
+    rect_t r = { 0, 0, max_w, size * lines };
     return r;
   }
 
@@ -106,19 +109,40 @@ namespace picovector {
     render_flush(target, brush);
   }
 
-  void font_t::draw(image_t *target, const char *text, float x, float y, float size) {
-    vec2_t caret(x, y);
+  void font_t::draw(image_t *target, const char *text, float size) {
+    // Draw from the image's text caret, advancing it per glyph and honouring
+    // '\n' (return to origin_x, drop one line). image.text() sets up the caret
+    // (x, y, origin_x, valid) before calling; line_height for a vector font is
+    // the point size.
+    text_cursor_t *c = target->text_cursor_state();
+    c->line_height = size;
+    const float s = size / 128.0f;
 
-    mat3_t transform;
-    transform = transform.translate(x, y);
-    transform = transform.translate(0, size);
-    transform = transform.scale(size / 128.0f, size / 128.0f);
+    // A glyph's compact int8 contour is drawn through `transform`, which places
+    // the baseline at (x, y) and scales the 128-unit em to `size`. It's rebuilt
+    // from the caret whenever the position jumps (start / newline).
+    auto build_transform = [size, s](float x, float y) {
+      mat3_t t;
+      t = t.translate(x, y);
+      t = t.translate(0, size);
+      t = t.scale(s, s);
+      return t;
+    };
+    mat3_t transform = build_transform(c->x, c->y);
 
     const char *end = text + strlen(text);
 
     while(text != end) {
-      // find the uft8 codepoint
       uint16_t codepoint = get_utf8_char(text, end);
+
+      if(codepoint == '\n') {
+        c->x = c->origin_x;
+        c->y += c->line_height;
+        transform = build_transform(c->x, c->y);
+        text += 1;
+        continue;
+      }
+      if(codepoint == '\r') { text += 1; continue; }
 
       // find the glyph
       for(int j = 0; j < this->glyph_count; j++) {
@@ -126,6 +150,7 @@ namespace picovector {
           draw_glyph(&this->glyphs[j], target, &transform, target->brush());
           float a = this->glyphs[j].advance;
           transform = transform.translate(a, 0);
+          c->x += a * s;
           break;
         }
       }

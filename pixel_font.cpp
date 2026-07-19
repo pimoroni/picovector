@@ -36,31 +36,31 @@ namespace picovector {
   }
 
   rect_t pixel_font_t::measure(image_t *target, const char *text, int scale) {
+    (void)target;
     if(scale < 1) scale = 1;
-    rect_t tb = target->clip();
-    rect_t b(tb.x + tb.w, tb.y + tb.h, 0, this->height * scale);
+    float x = 0, max_w = 0;
+    int lines = 1;
 
-    vec2_t caret(0, 0);
     while(*text != '\0') {
+      if(*text == '\n') { if(x > max_w) max_w = x; x = 0; lines++; text++; continue; }
+      if(*text == '\r') { text++; continue; }
       // special case for "space"
       if(*text == 32) {
-        caret.x += (this->width / 3) * scale;
+        x += (this->width / 3) * scale;
         text++;
         continue;
       }
 
       int glyph_index = this->glyph_index(*text);
       if(glyph_index != -1) {
-        pixel_font_glyph_t *glyph = &this->glyphs[glyph_index];
-        caret.x += (glyph->width + 1) * scale;
-
-        b.x = min(caret.x, b.x);
-        b.w = max(caret.x, b.w);
+        x += (this->glyphs[glyph_index].width + 1) * scale;
       }
 
       text += utf8_seq_len(*text);
     }
-    return b;
+    if(x > max_w) max_w = x;
+
+    return rect_t(0, 0, max_w, this->height * scale * lines);
   }
 
   void pixel_font_t::draw_glyph(image_t *target, const pixel_font_glyph_t *glyph, uint8_t *data, brush_t *brush, const rect_t &bounds, int x, int y, int scale) {
@@ -134,28 +134,37 @@ namespace picovector {
     return 0; // invalid
   }
 
-  void pixel_font_t::draw(image_t *target, const char *text, int x, int y, int scale) {
+  void pixel_font_t::draw(image_t *target, const char *text, int scale) {
     if(scale < 1) scale = 1;
-    // check if text is within clipping area
-    rect_t text_bounds = this->measure(target, text, scale);
-    text_bounds.x = x;
-    text_bounds.y = y;
 
-    // text isn't within the target bounds at all, escape early
-    if(!text_bounds.intersects(target->clip())) {
-      return;
-    }
+    // Draw from the image's text caret, advancing it per glyph and honouring
+    // '\n' (return to origin_x, drop one line). image.text() sets up the caret
+    // (x, y, origin_x, valid) before calling; line_height is height * scale.
+    text_cursor_t *c = target->text_cursor_state();
+    c->line_height = this->height * scale;
+
+    // Coarse whole-text visibility gate: if the multi-line box doesn't meet the
+    // clip at all we still advance the caret but skip the per-glyph draws.
+    rect_t text_bounds = this->measure(target, text, scale);
+    text_bounds.x = c->x;
+    text_bounds.y = c->y;
+    bool visible = text_bounds.intersects(target->clip());
 
     rect_t bounds = target->clip();
-
     brush_t *brush = target->brush();
-
     const char *end = text + strlen(text);
 
     while(*text != '\0') {
+      if(*text == '\n') {
+        c->x = c->origin_x;
+        c->y += c->line_height;
+        text++;
+        continue;
+      }
+      if(*text == '\r') { text++; continue; }
       // special case for "space"
       if(*text == 32) {
-        x += (this->width / 3) * scale;
+        c->x += (this->width / 3) * scale;
         text++;
         continue;
       }
@@ -166,14 +175,15 @@ namespace picovector {
         pixel_font_glyph_t *glyph = &this->glyphs[glyph_index];
         uint8_t *data = &this->glyph_data[this->glyph_data_size * glyph_index];
 
-        draw_glyph(target, glyph, data, brush, bounds, x, y, scale);
+        if(visible) {
+          draw_glyph(target, glyph, data, brush, bounds, (int)c->x, (int)c->y, scale);
+        }
 
-        x += (glyph->width + 1) * scale;
+        c->x += (glyph->width + 1) * scale;
       }
 
       text += utf8_seq_len(*text);
     }
-
   }
 
 }

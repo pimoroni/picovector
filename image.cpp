@@ -203,6 +203,17 @@ namespace picovector {
     this->_pixel_font = pixel_font;
   }
 
+  vec2_t image_t::text_cursor() {
+    return vec2_t(this->_text_cursor.x, this->_text_cursor.y);
+  }
+
+  void image_t::text_cursor(vec2_t p) {
+    this->_text_cursor.x = p.x;
+    this->_text_cursor.y = p.y;
+    this->_text_cursor.origin_x = p.x;
+    this->_text_cursor.valid = true;
+  }
+
   image_t image_t::window(rect_t r) {
     rect_t i = _bounds.intersection(r);
     image_t window = image_t(this, rect_t(i.x, i.y, i.w, i.h));

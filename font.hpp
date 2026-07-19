@@ -41,7 +41,7 @@ namespace picovector {
     int glyph_count;
     glyph_t *glyphs;
 
-    void draw(image_t *target, const char *text, float x, float y, float size);
+    void draw(image_t *target, const char *text, float size);
     rect_t measure(image_t *target, const char *text, float size);
   };
 

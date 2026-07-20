@@ -229,8 +229,11 @@ namespace picovector {
       uint32_t sample(fx16_t sx, fx16_t sy, filter_t filter);
 
       // filters
-      void blur(float radius);
-      void bloom(int threshold, int intensity, float radius);
+      void blur(float radius, float strength = 1.0f);
+      void bloom(int threshold, int intensity, float radius, float strength = 1.0f);
+      void edgeglow(int strength);
+      void wave(int horizontal, int vertical, float strength = 1.0f, bool bilinear = false);
+      void zoom(int strength);
       void dither();
       void onebit();
       void monochrome();
@@ -239,12 +242,12 @@ namespace picovector {
       void saturation(int amount);
       void contrast(int amount);
       void duotone(color_t shadow, color_t highlight);
-      void crt(int spacing, int darkness);
-      void grid(int spacing, int darkness);
+      void crt(int spacing, int darkness, float strength = 1.0f);
+      void grid(int spacing, int darkness, float strength = 1.0f);
       void vignette(int strength);
       void gameboy();
-      void noise(int amount, int interval);
-      void glitch(int amount);
+      void noise(int amount, int interval, float strength = 1.0f);
+      void glitch(int amount, float strength = 1.0f);
       void oilpaint(int radius, int strength);
       void cga();
       void palette_dither(const uint32_t *colors, int n, int strength);
@@ -252,7 +255,7 @@ namespace picovector {
       void synthwave();
       void c64();
       void nightvision();
-      void chromatic(int offset);
+      void chromatic(int offset, float strength = 1.0f);
 
       // blitting
       void blit(image_t *t, const vec2_t p);

@@ -195,8 +195,8 @@ namespace picovector {
   // corner/edge falloff.
   class crt_brush_t : public brush_t {
   public:
-    int spacing, darkness;
-    crt_brush_t(int spacing, int darkness);
+    int spacing, darkness, str;   // str: Q8 overall-darkening scale (256 = full)
+    crt_brush_t(int spacing, int darkness, int str = 256);
     void blend_spans(image_t *target, int i0, int i1, int step) override;
     void blend_masked_spans(image_t *target, int i0, int i1, int step) override;
   };

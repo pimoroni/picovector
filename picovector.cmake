@@ -28,6 +28,9 @@ list(APPEND SOURCES
   ${CMAKE_CURRENT_LIST_DIR}/brushes/brightness.cpp
   ${CMAKE_CURRENT_LIST_DIR}/filters/blur.cpp
   ${CMAKE_CURRENT_LIST_DIR}/filters/bloom.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/filters/edgeglow.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/filters/wave.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/filters/zoom.cpp
   ${CMAKE_CURRENT_LIST_DIR}/brushes/dither.cpp
   ${CMAKE_CURRENT_LIST_DIR}/brushes/monochrome.cpp
   ${CMAKE_CURRENT_LIST_DIR}/brushes/invert.cpp

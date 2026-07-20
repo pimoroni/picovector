@@ -20,8 +20,9 @@ namespace picovector {
     return f < 40 ? 40 : f;
   }
 
-  crt_brush_t::crt_brush_t(int spacing, int darkness)
-    : spacing(spacing < 1 ? 1 : spacing), darkness(darkness) {}
+  crt_brush_t::crt_brush_t(int spacing, int darkness, int str)
+    : spacing(spacing < 1 ? 1 : spacing), darkness(darkness),
+      str(str < 0 ? 0 : (str > 256 ? 256 : str)) {}
 
   void crt_brush_t::blend_spans(image_t *target, int i0, int i1, int step) {
     const pv_span *spans = _spans();
@@ -33,6 +34,7 @@ namespace picovector {
       uint8_t *p = (uint8_t*)target->ptr(x, y);
       for(int w = spans[i].w; w; w--) {
         int f = line * tube(x, y, W, H) / 255;
+        f = 255 - (((255 - f) * str) >> 8);              // scale the darkening by strength
         p[0] = (uint8_t)((p[0] * f) >> 8);
         p[1] = (uint8_t)((p[1] * f) >> 8);
         p[2] = (uint8_t)((p[2] * f) >> 8);
@@ -54,6 +56,7 @@ namespace picovector {
       for(int w = spans[i].w; w; w--) {
         int m = *mask++;
         int f = line * tube(x, y, W, H) / 255;
+        f = 255 - (((255 - f) * str) >> 8);              // scale the darkening by strength
         int n0 = (p[0] * f) >> 8, n1 = (p[1] * f) >> 8, n2 = (p[2] * f) >> 8;
         p[0] = (uint8_t)(p[0] + (((n0 - p[0]) * m) >> 8));
         p[1] = (uint8_t)(p[1] + (((n1 - p[1]) * m) >> 8));

@@ -50,7 +50,7 @@ namespace picovector {
 
   // ── helpers ─────────────────────────────────────────────────────────────────
   static int dither_level(const uint8_t *p, int x, int y) {
-    int pixel = (p[0] + p[1] * 2 + p[2]) >> 2;          // green-biased luminance
+    int pixel = luminance(p);
     int scale = dither_bayer[((y & 0b11) << 2) | (x & 0b11)];
     int a = dither_hi[pixel >> 6];
     int b = dither_lo[pixel >> 6];

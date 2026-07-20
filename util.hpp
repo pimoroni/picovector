@@ -19,4 +19,9 @@ namespace picovector {
   template<typename T>
   constexpr T clamp(T v, T lo, T hi) { return v < lo ? lo : (v > hi ? hi : v); }
 
+  // Perceptual luminance (Rec. 601: 0.299 R + 0.587 G + 0.114 B) of an RGBA
+  // pixel, 0..255. Integer weights /256; the multiplies are single-cycle on the
+  // Cortex-M33 so this costs about the same as a cruder shift-only estimate.
+  inline int luminance(const uint8_t *p) { return (77 * p[0] + 150 * p[1] + 29 * p[2]) >> 8; }
+
 }

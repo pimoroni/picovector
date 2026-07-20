@@ -271,14 +271,85 @@ namespace picovector {
     _brush = saved;
   }
 
-  // 1-bit filter: fill the image bounds with the onebit brush.
+  // 1-bit filter: a luminance threshold at mid-grey to black/white.
   void image_t::onebit() {
-    onebit_brush_t brush;
-    brush_t *saved = _brush;
-    _brush = &brush;
-    rectangle(_bounds);
-    _brush = saved;
+    threshold(128, rgb_color_t(0, 0, 0, 255), rgb_color_t(255, 255, 255, 255));
   }
+
+  // The per-pixel colour filters below are each just "fill the image bounds with
+  // the matching brush" - the brush (brushes/<name>.cpp) does the work, and the
+  // same brush drives brush.<name>() on arbitrary shapes.
+  void image_t::invert()              { invert_brush_t b;            brush_t *s = _brush; _brush = &b; rectangle(_bounds); _brush = s; }
+  void image_t::threshold(int level, color_t lo, color_t hi) { threshold_brush_t b(level, lo, hi); brush_t *s = _brush; _brush = &b; rectangle(_bounds); _brush = s; }
+  void image_t::saturation(int amount){ saturation_brush_t b(amount); brush_t *s = _brush; _brush = &b; rectangle(_bounds); _brush = s; }
+  void image_t::contrast(int amount)  { contrast_brush_t b(amount);   brush_t *s = _brush; _brush = &b; rectangle(_bounds); _brush = s; }
+  void image_t::duotone(color_t shadow, color_t highlight) { duotone_brush_t b(shadow, highlight); brush_t *s = _brush; _brush = &b; rectangle(_bounds); _brush = s; }
+  void image_t::crt(int spacing, int darkness) { crt_brush_t b(spacing, darkness); brush_t *s = _brush; _brush = &b; rectangle(_bounds); _brush = s; }
+  void image_t::grid(int spacing, int darkness) { grid_brush_t b(spacing, darkness); brush_t *s = _brush; _brush = &b; rectangle(_bounds); _brush = s; }
+  void image_t::vignette(int strength){ vignette_brush_t b(strength); brush_t *s = _brush; _brush = &b; rectangle(_bounds); _brush = s; }
+  void image_t::gameboy() {
+    auto pk = [](int r, int g, int b) { return (uint32_t)(r | (g << 8) | (b << 16) | (255u << 24)); };
+    // DMG olive, warmed toward yellow (raised red, lowered blue)
+    uint32_t pal[4] = { pk(40, 44, 8), pk(56, 74, 14), pk(104, 114, 30), pk(182, 172, 60) };
+    brush_t *s = _brush;
+    palette_dither_brush_t b(pal, 4, 30);
+    _brush = &b; rectangle(_bounds);
+    grid_brush_t g(2, 22);                            // gentle LCD pixel grid (every other pixel)
+    _brush = &g; rectangle(_bounds);
+    _brush = s;
+  }
+  void image_t::noise(int amount, int interval) { noise_brush_t b(amount, interval); brush_t *s = _brush; _brush = &b; rectangle(_bounds); _brush = s; }
+  void image_t::glitch(int amount)    { glitch_brush_t b(amount);    brush_t *s = _brush; _brush = &b; rectangle(_bounds); _brush = s; }
+  void image_t::oilpaint(int radius, int strength) { oilpaint_brush_t b(radius, strength); brush_t *s = _brush; _brush = &b; rectangle(_bounds); _brush = s; }
+  void image_t::cga() {
+    auto pk = [](int r, int g, int b) { return (uint32_t)(r | (g << 8) | (b << 16) | (255u << 24)); };
+    uint32_t pal[4] = { pk(0, 0, 0), pk(85, 255, 255), pk(255, 85, 255), pk(255, 255, 255) };
+    brush_t *s = _brush;
+    palette_dither_brush_t b(pal, 4, 16);            // light dither
+    _brush = &b; rectangle(_bounds); _brush = s;
+    bloom(50, 220, 4);                               // glow first (low threshold so cyan/magenta catch)
+    crt_brush_t cb(2, 70);                           // scanlines last, so the bloom can't fill them in
+    _brush = &cb; rectangle(_bounds); _brush = s;
+  }
+  void image_t::palette_dither(const uint32_t *colors, int n, int strength) { palette_dither_brush_t b(colors, n, strength); brush_t *s = _brush; _brush = &b; rectangle(_bounds); _brush = s; }
+  void image_t::phosphor(color_t tint) {
+    brush_t *s = _brush;
+    phosphor_brush_t pb(tint);                       // luminance -> kelly green
+    _brush = &pb; rectangle(_bounds); _brush = s;
+    crt_brush_t cb(2, 50);                            // scanlines + tube
+    _brush = &cb; rectangle(_bounds); _brush = s;
+    bloom(35, 420, 7);                                // hot, wide glow
+  }
+  // Synthwave sunset: dither to a dark-blue / purple / magenta / pale-cyan /
+  // warm-white palette at low strength, then bloom for the neon glow.
+  void image_t::synthwave() {
+    auto pk = [](int r, int g, int b) { return (uint32_t)(r | (g << 8) | (b << 16) | (255u << 24)); };
+    uint32_t pal[12] = {
+      pk(252, 248, 211), pk(124, 11, 127), pk(70, 13, 110),  pk(249, 7, 153),
+      pk(136, 28, 176),  pk(76, 19, 148),  pk(44, 16, 129),  pk(41, 236, 255),
+      pk(8, 6, 53),      pk(255, 156, 99), pk(253, 218, 66), pk(253, 250, 93),
+    };
+    brush_t *s = _brush;
+    palette_dither_brush_t b(pal, 12, 20);           // low dither
+    _brush = &b; rectangle(_bounds); _brush = s;
+    bloom(100, 320, 6);                              // hard glow on the neons
+  }
+  void image_t::c64() {
+    auto pk = [](int r, int g, int b) { return (uint32_t)(r | (g << 8) | (b << 16) | (255u << 24)); };
+    uint32_t pal[16] = {
+      pk(0, 0, 0),       pk(255, 255, 255), pk(136, 0, 0),     pk(170, 255, 238),
+      pk(204, 68, 204),  pk(0, 204, 85),    pk(0, 0, 170),     pk(238, 238, 119),
+      pk(221, 136, 85),  pk(102, 68, 0),    pk(255, 119, 119), pk(51, 51, 51),
+      pk(119, 119, 119), pk(170, 255, 102), pk(0, 136, 255),   pk(187, 187, 187),
+    };
+    brush_t *s = _brush;
+    saturation_brush_t sat(280);                     // punch saturation so content reaches the vivid C64 colours
+    _brush = &sat; rectangle(_bounds);
+    palette_dither_brush_t b(pal, 16, 40);
+    _brush = &b; rectangle(_bounds); _brush = s;
+  }
+  void image_t::nightvision()         { nightvision_brush_t b;       brush_t *s = _brush; _brush = &b; rectangle(_bounds); _brush = s; }
+  void image_t::chromatic(int offset) { chromatic_brush_t b(offset); brush_t *s = _brush; _brush = &b; rectangle(_bounds); _brush = s; }
 
   void image_t::rectangle(rect_t r) {
     r = r.intersection(_clip);

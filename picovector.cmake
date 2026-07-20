@@ -27,9 +27,24 @@ list(APPEND SOURCES
   ${CMAKE_CURRENT_LIST_DIR}/brushes/blur.cpp
   ${CMAKE_CURRENT_LIST_DIR}/brushes/brightness.cpp
   ${CMAKE_CURRENT_LIST_DIR}/filters/blur.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/filters/bloom.cpp
   ${CMAKE_CURRENT_LIST_DIR}/brushes/dither.cpp
   ${CMAKE_CURRENT_LIST_DIR}/brushes/monochrome.cpp
-  ${CMAKE_CURRENT_LIST_DIR}/brushes/onebit.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/brushes/invert.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/brushes/threshold.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/brushes/saturation.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/brushes/contrast.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/brushes/duotone.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/brushes/crt.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/brushes/grid.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/brushes/vignette.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/brushes/noise.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/brushes/glitch.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/brushes/oilpaint.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/brushes/palette_dither.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/brushes/phosphor.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/brushes/nightvision.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/brushes/chromatic.cpp
 )
 
 # The MicroPython bindings, decoders, allocator config and build knobs live in

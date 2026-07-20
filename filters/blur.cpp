@@ -154,7 +154,8 @@ namespace picovector {
   static const int PV_BLUR_MIN_SPLIT = 64;
 #endif
 
-  void image_t::blur(float radius) {
+  void image_t::blur(float radius, float strength) {
+    radius *= strength;
     if (radius <= 0) return;
     const uint32_t k = blur_k_from_radius_q16(radius);
     if (k == 0) return;

@@ -284,8 +284,8 @@ namespace picovector {
   void image_t::saturation(int amount){ saturation_brush_t b(amount); brush_t *s = _brush; _brush = &b; rectangle(_bounds); _brush = s; }
   void image_t::contrast(int amount)  { contrast_brush_t b(amount);   brush_t *s = _brush; _brush = &b; rectangle(_bounds); _brush = s; }
   void image_t::duotone(color_t shadow, color_t highlight) { duotone_brush_t b(shadow, highlight); brush_t *s = _brush; _brush = &b; rectangle(_bounds); _brush = s; }
-  void image_t::crt(int spacing, int darkness) { crt_brush_t b(spacing, darkness); brush_t *s = _brush; _brush = &b; rectangle(_bounds); _brush = s; }
-  void image_t::grid(int spacing, int darkness) { grid_brush_t b(spacing, darkness); brush_t *s = _brush; _brush = &b; rectangle(_bounds); _brush = s; }
+  void image_t::crt(int spacing, int darkness, float strength) { crt_brush_t b(spacing, darkness, (int)(strength * 256)); brush_t *s = _brush; _brush = &b; rectangle(_bounds); _brush = s; }
+  void image_t::grid(int spacing, int darkness, float strength) { grid_brush_t b(spacing, (int)(darkness * strength)); brush_t *s = _brush; _brush = &b; rectangle(_bounds); _brush = s; }
   void image_t::vignette(int strength){ vignette_brush_t b(strength); brush_t *s = _brush; _brush = &b; rectangle(_bounds); _brush = s; }
   void image_t::gameboy() {
     auto pk = [](int r, int g, int b) { return (uint32_t)(r | (g << 8) | (b << 16) | (255u << 24)); };
@@ -298,8 +298,8 @@ namespace picovector {
     _brush = &g; rectangle(_bounds);
     _brush = s;
   }
-  void image_t::noise(int amount, int interval) { noise_brush_t b(amount, interval); brush_t *s = _brush; _brush = &b; rectangle(_bounds); _brush = s; }
-  void image_t::glitch(int amount)    { glitch_brush_t b(amount);    brush_t *s = _brush; _brush = &b; rectangle(_bounds); _brush = s; }
+  void image_t::noise(int amount, int interval, float strength) { noise_brush_t b((int)(amount * strength), interval); brush_t *s = _brush; _brush = &b; rectangle(_bounds); _brush = s; }
+  void image_t::glitch(int amount, float strength) { glitch_brush_t b((int)(amount * strength)); brush_t *s = _brush; _brush = &b; rectangle(_bounds); _brush = s; }
   void image_t::oilpaint(int radius, int strength) { oilpaint_brush_t b(radius, strength); brush_t *s = _brush; _brush = &b; rectangle(_bounds); _brush = s; }
   void image_t::cga() {
     auto pk = [](int r, int g, int b) { return (uint32_t)(r | (g << 8) | (b << 16) | (255u << 24)); };
@@ -349,7 +349,7 @@ namespace picovector {
     _brush = &b; rectangle(_bounds); _brush = s;
   }
   void image_t::nightvision()         { nightvision_brush_t b;       brush_t *s = _brush; _brush = &b; rectangle(_bounds); _brush = s; }
-  void image_t::chromatic(int offset) { chromatic_brush_t b(offset); brush_t *s = _brush; _brush = &b; rectangle(_bounds); _brush = s; }
+  void image_t::chromatic(int offset, float strength) { chromatic_brush_t b((int)(offset * strength)); brush_t *s = _brush; _brush = &b; rectangle(_bounds); _brush = s; }
 
   void image_t::rectangle(rect_t r) {
     r = r.intersection(_clip);

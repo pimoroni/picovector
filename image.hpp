@@ -3,10 +3,12 @@
 #include <stdint.h>
 #include <string>
 #include <vector>
+#include <new>   // placement new (make_scratch_image)
 
 #include "config.hpp"
 #include "types.hpp"
 #include "blend.hpp"
+#include "picovector_working_buffer.h"   // make_scratch_image()
 
 using std::vector;
 
@@ -228,9 +230,29 @@ namespace picovector {
 
       // filters
       void blur(float radius);
+      void bloom(int threshold, int intensity, float radius);
       void dither();
       void onebit();
       void monochrome();
+      void invert();
+      void threshold(int level, color_t lo, color_t hi);
+      void saturation(int amount);
+      void contrast(int amount);
+      void duotone(color_t shadow, color_t highlight);
+      void crt(int spacing, int darkness);
+      void grid(int spacing, int darkness);
+      void vignette(int strength);
+      void gameboy();
+      void noise(int amount, int interval);
+      void glitch(int amount);
+      void oilpaint(int radius, int strength);
+      void cga();
+      void palette_dither(const uint32_t *colors, int n, int strength);
+      void phosphor(color_t tint);
+      void synthwave();
+      void c64();
+      void nightvision();
+      void chromatic(int offset);
 
       // blitting
       void blit(image_t *t, const vec2_t p);
@@ -248,5 +270,25 @@ namespace picovector {
       // shared span buffer (no blend). Shared by span() and circle().
       void _span(int x, int y, int w);
   };
+
+  // Allocate a w x h scratch image to work in: it wraps the shared working
+  // buffer when the pixels fit (no pixel allocation), else owns a managed buffer.
+  // Returns nullptr on allocation failure. Pass the result to free_scratch_image()
+  // when done (the working buffer is shared and left alone; a managed buffer is
+  // freed).
+  inline image_t *make_scratch_image(int w, int h) {
+    if(w < 1 || h < 1) return nullptr;
+    void *mem = PV_MALLOC(sizeof(image_t));
+    if(!mem) return nullptr;
+    if((size_t)w * h * sizeof(uint32_t) <= working_buffer_size)
+      return new (mem) image_t((void*)PicoVector_working_buffer, w, h);
+    return new (mem) image_t(w, h);
+  }
+
+  inline void free_scratch_image(image_t *img) {
+    if(!img) return;
+    img->~image_t();
+    PV_FREE(img);
+  }
 
 }

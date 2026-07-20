@@ -5,6 +5,7 @@
 #include "image.hpp"
 #include "blend.hpp"
 #include "color.hpp"
+#include "util.hpp"   // luminance()
 
 namespace picovector {
 
@@ -140,14 +141,170 @@ namespace picovector {
     void blend_masked_spans(image_t *target, int i0, int i1, int step) override;
   };
 
-  // 1-bit filter as a brush: threshold each covered pixel to black or white by
-  // luminance. image.onebit() fills bounds with it.
-  class onebit_brush_t : public brush_t {
+  // ── per-pixel colour filters (each also image.<name>()) ─────────────────────
+
+  // Photonegative: rgb -> 255 - rgb (alpha kept).
+  class invert_brush_t : public brush_t {
   public:
-    onebit_brush_t();
+    invert_brush_t();
     void blend_spans(image_t *target, int i0, int i1, int step) override;
     void blend_masked_spans(image_t *target, int i0, int i1, int step) override;
   };
+
+  // Two-level threshold on luminance: <= level -> lo, else hi (premultiplied).
+  class threshold_brush_t : public brush_t {
+  public:
+    int level;
+    uint32_t lo, hi; // premultiplied packed colours
+    threshold_brush_t(int level, const color_t &lo, const color_t &hi);
+    void blend_spans(image_t *target, int i0, int i1, int step) override;
+    void blend_masked_spans(image_t *target, int i0, int i1, int step) override;
+  };
+
+  // Push each channel away from (amount>0) or toward (amount<0) its luminance.
+  // amount == -256 is a full greyscale; factor is Q8 (256 = identity).
+  class saturation_brush_t : public brush_t {
+  public:
+    int factor;
+    saturation_brush_t(int amount);
+    void blend_spans(image_t *target, int i0, int i1, int step) override;
+    void blend_masked_spans(image_t *target, int i0, int i1, int step) override;
+  };
+
+  // Expand (amount>0) / compress (amount<0) each channel around mid-grey (128).
+  // factor is Q8 (256 = identity).
+  class contrast_brush_t : public brush_t {
+  public:
+    int factor;
+    contrast_brush_t(int amount);
+    void blend_spans(image_t *target, int i0, int i1, int step) override;
+    void blend_masked_spans(image_t *target, int i0, int i1, int step) override;
+  };
+
+  // Map luminance onto a shadow->highlight two-colour ramp (sepia etc). LUT of
+  // premultiplied colours built in the ctor.
+  class duotone_brush_t : public brush_t {
+  public:
+    uint32_t lut[256];
+    duotone_brush_t(const color_t &shadow, const color_t &highlight);
+    void blend_spans(image_t *target, int i0, int i1, int step) override;
+    void blend_masked_spans(image_t *target, int i0, int i1, int step) override;
+  };
+
+  // CRT tube: darken every `spacing`-th row by `darkness` (0..255) plus a rounded
+  // corner/edge falloff.
+  class crt_brush_t : public brush_t {
+  public:
+    int spacing, darkness;
+    crt_brush_t(int spacing, int darkness);
+    void blend_spans(image_t *target, int i0, int i1, int step) override;
+    void blend_masked_spans(image_t *target, int i0, int i1, int step) override;
+  };
+
+  // Gentle pixel grid: darken every `spacing`-th row and column by `darkness`.
+  class grid_brush_t : public brush_t {
+  public:
+    int spacing, darkness;
+    grid_brush_t(int spacing, int darkness);
+    void blend_spans(image_t *target, int i0, int i1, int step) override;
+    void blend_masked_spans(image_t *target, int i0, int i1, int step) override;
+  };
+
+  // Darken by distance from the image (target-bounds) centre, `strength` 0..255.
+  class vignette_brush_t : public brush_t {
+  public:
+    int strength;
+    vignette_brush_t(int strength);
+    void blend_spans(image_t *target, int i0, int i1, int step) override;
+    void blend_masked_spans(image_t *target, int i0, int i1, int step) override;
+  };
+
+  // ── playful / retro filters (each also image.<name>()) ──────────────────────
+
+  // Deterministic per-pixel film grain: +/- up to `amount`, keyed on (x, y).
+  class noise_brush_t : public brush_t {
+  public:
+    int amount, frame;
+    // interval is the grain refresh period in ms (0 = static)
+    noise_brush_t(int amount, int interval);
+    void blend_spans(image_t *target, int i0, int i1, int step) override;
+    void blend_masked_spans(image_t *target, int i0, int i1, int step) override;
+  };
+
+  // VHS glitch: on hashed y-bands (frequency from `amount`), rotate the colour
+  // channels for a torn-signal look.
+  class glitch_brush_t : public brush_t {
+  public:
+    int amount;
+    uint32_t t;   // PV_TICKS captured at construction (animation phase)
+    glitch_brush_t(int amount);
+    void blend_spans(image_t *target, int i0, int i1, int step) override;
+    void blend_masked_spans(image_t *target, int i0, int i1, int step) override;
+  };
+
+  // ── artwork / painterly ─────────────────────────────────────────────────────
+
+  // Oil paint: replace each pixel with the dominant colour in a `radius`
+  // neighbourhood - reads the target, so chunk-buffered like the blur brush.
+  class oilpaint_brush_t : public brush_t {
+  public:
+    int radius, strength, sstep;
+    oilpaint_brush_t(int radius, int strength);
+    void blend_spans(image_t *target, int i0, int i1, int step) override;
+    void blend_masked_spans(image_t *target, int i0, int i1, int step) override;
+  };
+
+  // ── retro computing ─────────────────────────────────────────────────────────
+
+  // CRT phosphor: monochrome glow toward `tint` (green/amber terminals).
+  class phosphor_brush_t : public brush_t {
+  public:
+    uint32_t tint; // premultiplied
+    phosphor_brush_t(const color_t &tint);
+    void blend_spans(image_t *target, int i0, int i1, int step) override;
+    void blend_masked_spans(image_t *target, int i0, int i1, int step) override;
+  };
+
+  // Ordered dither to an arbitrary palette. An 8x8 Bayer pattern nudges each
+  // pixel across quantisation boundaries so flat areas dither between the
+  // nearest palette colours. A 4KB cube (top 4 bits per channel -> palette
+  // index) turns the per-pixel nearest search into one lookup, so cost is flat
+  // regardless of palette size. strength scales the dither spread (128 = the
+  // palette's mean spacing).
+  class palette_dither_brush_t : public brush_t {
+  public:
+    uint32_t pal[64];
+    int n;
+    int spread;
+    uint8_t *cube;    // 4096 entries, 12-bit rgb -> palette index
+
+    palette_dither_brush_t(const uint32_t *colors, int n, int strength);
+    ~palette_dither_brush_t();
+    void blend_spans(image_t *target, int i0, int i1, int step) override;
+    void blend_masked_spans(image_t *target, int i0, int i1, int step) override;
+  };
+
+  // ── futuristic / sci-fi ─────────────────────────────────────────────────────
+
+  // Night vision: amplify to green + grain + edge darkening.
+  class nightvision_brush_t : public brush_t {
+  public:
+    int frame;   // PV_TICKS-derived, animates the grain
+    nightvision_brush_t();
+    void blend_spans(image_t *target, int i0, int i1, int step) override;
+    void blend_masked_spans(image_t *target, int i0, int i1, int step) override;
+  };
+
+  // Chromatic aberration: shift R left / B right by `offset` px - reads the row,
+  // so chunk-buffered.
+  class chromatic_brush_t : public brush_t {
+  public:
+    int offset;
+    chromatic_brush_t(int offset);
+    void blend_spans(image_t *target, int i0, int i1, int step) override;
+    void blend_masked_spans(image_t *target, int i0, int i1, int step) override;
+  };
+
 
   // SVG-style linear/radial gradient. Geometry (p1, p2) lives in the gradient's
   // own coordinate space; `transform` maps that space onto device pixels (for

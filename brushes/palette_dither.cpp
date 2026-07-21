@@ -51,7 +51,13 @@ namespace picovector {
           cube[(r << 8) | (g << 4) | b] = (uint8_t)nearest_index(pal, n, (r << 4) | 8, (g << 4) | 8, (b << 4) | 8);
   }
 
-  palette_dither_brush_t::~palette_dither_brush_t() { PV_FREE(cube); }
+  palette_dither_brush_t::~palette_dither_brush_t() { 
+#if MICROPY_MALLOC_USES_ALLOCATED_SIZE
+    PV_FREE(cube, 4096);
+#else
+    PV_FREE(cube);
+#endif
+  }
 
   void palette_dither_brush_t::blend_spans(image_t *target, int i0, int i1, int step) {
     const pv_span *spans = _spans();

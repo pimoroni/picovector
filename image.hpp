@@ -291,7 +291,11 @@ namespace picovector {
   inline void free_scratch_image(image_t *img) {
     if(!img) return;
     img->~image_t();
+#if MICROPY_MALLOC_USES_ALLOCATED_SIZE
+    PV_FREE(img, sizeof(image_t));
+#else
     PV_FREE(img);
+#endif
   }
 
 }

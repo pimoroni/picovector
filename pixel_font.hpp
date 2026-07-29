@@ -41,6 +41,12 @@ namespace picovector {
     void draw(image_t *target, const char *text, int scale = 1);
     void draw_glyph(image_t *target, const pixel_font_glyph_t *glyph, uint8_t *data, brush_t *brush, const rect_t &bounds, int x, int y, int scale = 1);
     rect_t measure(image_t *target, const char *text, int scale = 1);
+
+    // Length-bounded variants for drawing/measuring a substring (e.g. one
+    // word span) without a NUL terminator, so the text layout path stays
+    // zero-copy over the source buffer. `end` is one past the last byte.
+    void draw(image_t *target, const char *text, const char *end, int scale = 1);
+    rect_t measure(image_t *target, const char *text, const char *end, int scale = 1);
   };
 
 }

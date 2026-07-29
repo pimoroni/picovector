@@ -41,6 +41,10 @@ namespace picovector {
   static inline uint8_t utf8_seq_len(uint8_t b0);
 
   rect_t font_t::measure(image_t *target, const char *text, float size) {
+    return this->measure(target, text, text + strlen(text), size);
+  }
+
+  rect_t font_t::measure(image_t *target, const char *text, const char *end, float size) {
     (void)target;
     float x = 0.0f, max_w = 0.0f;
     int lines = 1;
@@ -48,8 +52,7 @@ namespace picovector {
 
     // Walk UTF-8 codepoints so widths match draw() for non-ASCII glyphs.
     const char *p = text;
-    const char *end = text + strlen(text);
-    while(p != end) {
+    while(p < end) {
       uint16_t cp = get_utf8_char(p, end);
       if(cp == '\n') { if(x > max_w) max_w = x; x = 0.0f; lines++; p += 1; continue; }
       if(cp == '\r') { p += 1; continue; }
@@ -118,6 +121,10 @@ namespace picovector {
   }
 
   void font_t::draw(image_t *target, const char *text, float size) {
+    this->draw(target, text, text + strlen(text), size);
+  }
+
+  void font_t::draw(image_t *target, const char *text, const char *end, float size) {
     // Draw from the image's text caret, advancing it per glyph and honouring
     // '\n' (return to origin_x, drop one line). image.text() sets up the caret
     // (x, y, origin_x, valid) before calling; line_height for a vector font is
@@ -138,9 +145,7 @@ namespace picovector {
     };
     mat3_t transform = build_transform(c->x, c->y);
 
-    const char *end = text + strlen(text);
-
-    while(text != end) {
+    while(text < end) {
       uint16_t codepoint = get_utf8_char(text, end);
 
       if(codepoint == '\n') {

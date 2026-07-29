@@ -43,6 +43,12 @@ namespace picovector {
 
     void draw(image_t *target, const char *text, float size);
     rect_t measure(image_t *target, const char *text, float size);
+
+    // Length-bounded variants for drawing/measuring a substring (e.g. one
+    // word span) without a NUL terminator, so the text layout path stays
+    // zero-copy over the source buffer. `end` is one past the last byte.
+    void draw(image_t *target, const char *text, const char *end, float size);
+    rect_t measure(image_t *target, const char *text, const char *end, float size);
   };
 
 }

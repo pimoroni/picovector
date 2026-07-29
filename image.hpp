@@ -88,6 +88,21 @@ namespace picovector {
     BICUBIC  = 2  // 4x4 cubic (Catmull-Rom) blend
   } filter_t;
 
+  // Text alignment within image.text()'s bounds. One shared axis so a single
+  // CENTER reads for both: LEFT/CENTER/RIGHT horizontally, TOP/MIDDLE/BOTTOM
+  // vertically (the aliases share a value so align=(CENTER, CENTER) works).
+  typedef enum text_align_t {
+    LEFT   = 0, TOP    = 0,
+    CENTER = 1, MIDDLE = 1,
+    RIGHT  = 2, BOTTOM = 2
+  } text_align_t;
+
+  // How image.text() handles text that overflows its bounds vertically.
+  typedef enum text_overflow_t {
+    CLIP     = 0, // clip to the bounds
+    ELLIPSES = 1  // truncate the last visible line with a trailing "..."
+  } text_overflow_t;
+
   typedef std::vector<uint32_t, PV_STD_ALLOCATOR<uint32_t>> palette_t;
 
   class mat3_t;

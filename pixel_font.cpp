@@ -39,14 +39,17 @@ namespace picovector {
   static inline uint8_t utf8_seq_len(uint8_t b0);
 
   rect_t pixel_font_t::measure(image_t *target, const char *text, int scale) {
+    return this->measure(target, text, text + strlen(text), scale);
+  }
+
+  rect_t pixel_font_t::measure(image_t *target, const char *text, const char *end, int scale) {
     (void)target;
     if(scale < 1) scale = 1;
     float x = 0, max_w = 0;
     int lines = 1;
 
     // Walk UTF-8 codepoints so widths match draw() for non-ASCII glyphs.
-    const char *end = text + strlen(text);
-    while(*text != '\0') {
+    while(text < end) {
       if(*text == '\n') { if(x > max_w) max_w = x; x = 0; lines++; text++; continue; }
       if(*text == '\r') { text++; continue; }
       // special case for "space"
@@ -141,6 +144,10 @@ namespace picovector {
   }
 
   void pixel_font_t::draw(image_t *target, const char *text, int scale) {
+    this->draw(target, text, text + strlen(text), scale);
+  }
+
+  void pixel_font_t::draw(image_t *target, const char *text, const char *end, int scale) {
     if(scale < 1) scale = 1;
 
     // Draw from the image's text caret, advancing it per glyph and honouring
@@ -151,16 +158,15 @@ namespace picovector {
 
     // Coarse whole-text visibility gate: if the multi-line box doesn't meet the
     // clip at all we still advance the caret but skip the per-glyph draws.
-    rect_t text_bounds = this->measure(target, text, scale);
+    rect_t text_bounds = this->measure(target, text, end, scale);
     text_bounds.x = c->x;
     text_bounds.y = c->y;
     bool visible = text_bounds.intersects(target->clip());
 
     rect_t bounds = target->clip();
     brush_t *brush = target->brush();
-    const char *end = text + strlen(text);
 
-    while(*text != '\0') {
+    while(text < end) {
       if(*text == '\n') {
         c->x = c->origin_x;
         c->y += c->line_height;

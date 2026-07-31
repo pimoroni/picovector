@@ -96,9 +96,16 @@ namespace picovector {
     return 0; // invalid
   }
 
-  // Scratch for converting one glyph contour's compact int8 points to vec2_t
-  // before handing them to the geometry-agnostic renderer.
-  static vec2_t glyph_point_buf[256];
+  // Scratch for converting one glyph contour's compact int8 points to vec2_t before handing
+  // them to the geometry-agnostic renderer. Static rather than carved out of the working
+  // buffer, which would be the tidier home for it: the rasteriser assumes it owns that
+  // buffer, and sharing it is a larger change than a glyph's worth of scratch is worth.
+  //
+  // A contour longer than this is dropped below, and dropped in silence: the glyph draws
+  // with a piece missing, or with nothing at all when it had one contour. So the size is
+  // what decides how detailed a font may be, and 256 was not enough for ordinary text - a
+  // converted digit reached 259 points and vanished.
+  static vec2_t glyph_point_buf[512];
 
   // Draw a single glyph through the retained renderer (begin / add_path / flush).
   // This is the old render_glyph, hoisted out of picovector so the renderer

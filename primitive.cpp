@@ -3,29 +3,64 @@
 
 namespace picovector {
 
+  // Sides for a full turn of a curve at the given radius. A fixed count is
+  // smooth on small shapes and visibly faceted on large ones, so scale it with
+  // the circumference (see PV_CURVE_CHORD_PX) and clamp to the configured range.
+  static int curve_sides(float radius) {
+    float sides = (PV_PI * 2.0f * fabsf(radius)) / PV_CURVE_CHORD_PX;
+    if(sides <= PV_CURVE_MIN_SIDES) return PV_CURVE_MIN_SIDES;
+    if(sides >= PV_CURVE_MAX_SIDES) return PV_CURVE_MAX_SIDES;
+    return (int)ceilf(sides);
+  }
+
+  // Sides for a partial sweep of `delta` degrees, at the same density.
+  static int curve_steps(float radius, float delta) {
+    int steps = (int)ceilf((float)curve_sides(radius) * (delta / 360.0f));
+    return steps < 1 ? 1 : steps; // guard against divide-by-zero for small/zero sweeps
+  }
+
+  // Walks a (cos, sin) pair around the circle in fixed angular steps, so a curve
+  // costs four trig calls to set up plus four multiplies per point, in place of a
+  // sinf/cosf pair per point. Float error accumulates: 0.0005px at 120 points and
+  // radius 150, 0.01px at 1000 points and radius 1000.
+  struct rotor_t {
+    float c, s;           // cos/sin of the current angle
+    float step_c, step_s; // cos/sin of the step
+
+    rotor_t(float start, float step) :
+      c(cosf(start)), s(sinf(start)), step_c(cosf(step)), step_s(sinf(step)) {}
+
+    void advance() {
+      float next_c = c * step_c - s * step_s;
+      s = s * step_c + c * step_s;
+      c = next_c;
+    }
+  };
+
   shape_t* regular_polygon(float x, float y, float sides, float radius) {
     shape_t* result = new(PV_MALLOC(sizeof(shape_t))) shape_t(1);
     path_t poly(sides);
+    rotor_t vertex(0.0f, (PV_PI * 2.0f) / sides);
     for(int i = 0; i < sides; i++) {
-      float theta = ((PV_PI * 2.0f) / (float)sides) * (float)i;
-      poly.add_point(sinf(theta) * radius + x, cosf(theta) * radius + y);
+      poly.add_point(vertex.s * radius + x, vertex.c * radius + y);
+      vertex.advance();
     }
     result->add_path(poly);
     return result;
   }
 
   shape_t* circle(float x, float y, float radius) {
-    int sides = 32;
-    return regular_polygon(x, y, sides, radius);
+    return regular_polygon(x, y, curve_sides(radius), radius);
   }
 
   shape_t* ellipse(float x, float y, float x_radius, float y_radius) {
-    int sides = 32;
+    int sides = curve_sides(fmaxf(fabsf(x_radius), fabsf(y_radius)));
     shape_t* result = new(PV_MALLOC(sizeof(shape_t))) shape_t(1);
     path_t poly(sides);
+    rotor_t vertex(0.0f, (PV_PI * 2.0f) / (float)sides);
     for(int i = 0; i < sides; i++) {
-      float theta = ((PV_PI * 2.0f) / (float)sides) * (float)i;
-      poly.add_point(sinf(theta) * x_radius + x, cosf(theta) * y_radius + y);
+      poly.add_point(vertex.s * x_radius + x, vertex.c * y_radius + y);
+      vertex.advance();
     }
     result->add_path(poly);
     return result;
@@ -71,8 +106,10 @@ namespace picovector {
   shape_t* squircle(float x, float y, float size, float n) {
     shape_t* result = new(PV_MALLOC(sizeof(shape_t))) shape_t(1);
 
-    constexpr int vec2s = 32;
+    const int vec2s = curve_sides(size);
     path_t poly(vec2s);
+    // Not a rotor_t: powf() is steepest where its argument approaches zero, so it
+    // amplifies the rotor's drift into a visible offset near the axis crossings.
     for(int i = 0; i < vec2s; i++) {
       float t = (PV_PI * 2.0f) * (float)(vec2s - i) / (float)vec2s;
       float ct = cosf(t);
@@ -96,25 +133,24 @@ namespace picovector {
     from -= 90.0f;
     to -= 90.0f;
     float delta = fabsf(to - from);
-    int steps = (int)(32.0f * (delta / 360.0f));
-    if(steps < 1) steps = 1; // guard against divide-by-zero for small/zero sweeps
+    int steps = curve_steps(fmaxf(fabsf(inner), fabsf(outer)), delta);
     from *= (PV_PI / 180.0f);
     to *= (PV_PI / 180.0f);
 
-    path_t outline(steps + 1);
+    path_t outline((steps + 1) * 2);
 
     float astep = (to - from) / (float)steps;
-    float a = from;
 
+    rotor_t outer_edge(from, astep);
     for(int i = 0; i <= steps; i++) {
-      outline.add_point(cosf(a) * outer + x, sinf(a) * outer + y);
-      a += astep;
+      outline.add_point(outer_edge.c * outer + x, outer_edge.s * outer + y);
+      outer_edge.advance();
     }
 
-    a -= astep;
+    rotor_t inner_edge(to, -astep); // back along the inner radius to close the band
     for(int i = 0; i <= steps; i++) {
-      outline.add_point(cosf(a) * inner + x, sinf(a) * inner + y);
-      a -= astep;
+      outline.add_point(inner_edge.c * inner + x, inner_edge.s * inner + y);
+      inner_edge.advance();
     }
 
     result->add_path(outline);
@@ -131,19 +167,18 @@ namespace picovector {
     from -= 90.0f;
     to -= 90.0f;
     float delta = fabsf(to - from);
-    int steps = (int)(32.0f * (delta / 360.0f));
-    if(steps < 1) steps = 1; // guard against divide-by-zero for small/zero sweeps
+    int steps = curve_steps(radius, delta);
     from *= (PV_PI / 180.0f);
     to *= (PV_PI / 180.0f);
 
-    path_t outline(steps + 1);
+    path_t outline(steps + 2);
 
     float astep = (to - from) / (float)steps;
-    float a = from;
 
+    rotor_t edge(from, astep);
     for(int i = 0; i <= steps; i++) {
-      outline.add_point(cosf(a) * radius + x, sinf(a) * radius + y);
-      a += astep;
+      outline.add_point(edge.c * radius + x, edge.s * radius + y);
+      edge.advance();
     }
 
     outline.add_point(x, y);

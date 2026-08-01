@@ -72,6 +72,22 @@
 #define PV_DUAL_CORE_BLEND_MIN_PX 64
 #endif
 
+// ── curve tessellation ──────────────────────────────────────────────────────
+// The curved primitives (circle, ellipse, squircle, arc, pie) are polygons, and
+// the side count is chosen to keep each side near PV_CURVE_CHORD_PX pixels of
+// circumference, so a shape looks equally smooth at any radius. The clamps bound
+// the cost on tiny shapes and on shapes larger than the screen; both are factors
+// of 360, so arc and pie step counts land exactly on the common sweeps.
+#ifndef PV_CURVE_CHORD_PX
+#define PV_CURVE_CHORD_PX 8.0f
+#endif
+#ifndef PV_CURVE_MIN_SIDES
+#define PV_CURVE_MIN_SIDES 30
+#endif
+#ifndef PV_CURVE_MAX_SIDES
+#define PV_CURVE_MAX_SIDES 120
+#endif
+
 // ── clock source ────────────────────────────────────────────────────────────
 // Current time, used by the tween module's self-timing helpers (start/now/done).
 // Expands to an expression yielding the current time in whatever unit tween

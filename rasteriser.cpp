@@ -520,9 +520,22 @@ namespace picovector {
 
     PV_T0(_t_deposit);
     vec2_t off((float)sx, (float)sy);
+    float fw = (float)w, fh = (float)h;
     for(int e = 0; e < edge_count; e++) {
       const edge_t &ed = edge_buffer[e];
-      signed_area_line(w, h, ed.x0 - off.x, ed.y0 - off.y, ed.x1 - off.x, ed.y1 - off.y);
+      float x0 = ed.x0 - off.x, y0 = ed.y0 - off.y;
+      float x1 = ed.x1 - off.x, y1 = ed.y1 - off.y;
+      // Every tile deposits from the whole batch, so at hires - where a shape
+      // wider or taller than 160x120 is rasterised in two or four passes - most
+      // edges are nothing to do with the tile in hand. Rejecting those here saves
+      // the call, its divide, and its per-row walk.
+      //
+      // Only a miss above/below or wholly to the right can be dropped: an edge
+      // off to the LEFT still carries winding that the row's first column has to
+      // pick up as its backdrop.
+      if((y0 <= 0.0f && y1 <= 0.0f) || (y0 >= fh && y1 >= fh)) continue;
+      if(x0 >= fw && x1 >= fw) continue;
+      signed_area_line(w, h, x0, y0, x1, y1);
     }
     PV_ADD(pv_t_deposit, _t_deposit);
 

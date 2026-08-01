@@ -84,6 +84,7 @@ namespace picovector {
       // ease each channel toward the palette colour by coverage so AA edges feather in
       for(int w = spans[i].w; w; w--) {
         int m = *mask++;
+        if(!m) { p += 4; x++; continue; }
         int bias = ((row[x & 7] - 32) * spread) >> 6;
         int r = clamp8(p[0] + bias), g = clamp8(p[1] + bias), b = clamp8(p[2] + bias);
         uint32_t t = pal[cube[((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4)]];

@@ -51,6 +51,20 @@ uint32_t _premul_mul_alpha_channel(uint32_t c, uint32_t a) {
   return (c * a + 128) >> 8;
 }
 
+// Composite a premultiplied source over one pixel under coverage `m`.
+//
+// Zero coverage returns without touching dst at all. That matters more than it
+// looks: the rasteriser emits one span per row, running from the first to the
+// last covered pixel, so a hollow shape - an arc, a ring, a stroked outline -
+// leaves most of that run uncovered. Blending those pixels reads and writes back
+// the same value. The brushes guard their per-pixel work on the same test, so
+// coverage the shape never reaches costs a compare.
+static inline __attribute__((always_inline))
+void blend_masked_over_premul(uint32_t *dst, uint32_t src, uint32_t m) {
+  if(m == 0u) return;
+  *dst = blend_over_premul(*dst, m == 255u ? src : _premul_mul_alpha(src, m));
+}
+
 typedef uint32_t (*blend_func_t)(uint32_t dst, uint32_t r, uint32_t g, uint32_t b, uint32_t a);
 
 // unpacked-args wrapper kept for the sample()-based span paths (blit_span et al)

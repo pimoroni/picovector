@@ -32,14 +32,32 @@ namespace picovector {
     }
   }
 
+  // Fold coverage into the premultiplied colour (SWAR), then composite. Uncovered
+  // pixels are left alone - a span runs from the first to the last covered pixel
+  // on its row, so a hollow shape (an arc, a ring, a stroked outline) leaves most
+  // of that run at zero. The opaque test is hoisted like blend_spans' is, which
+  // makes a fully covered pixel a plain store.
   void color_brush_t::blend_masked_spans(image_t *target, int i0, int i1, int step) {
     uint32_t src = color_src(target, this);
     const pv_masked_span *spans = _masked_spans();
+    bool opaque = _a(src) == 255;
     for(int i = i0; i < i1; i += step) {
       uint32_t *dst = (uint32_t*)target->ptr(spans[i].x, spans[i].y);
       const uint8_t *mask = spans[i].mask;
-      // fold coverage into the premultiplied colour (SWAR), then composite
-      for(int w = spans[i].w; w; w--) { *dst = blend_over_premul(*dst, _premul_mul_alpha(src, *mask)); dst++; mask++; }
+      if(opaque) {
+        for(int w = spans[i].w; w; w--, dst++, mask++) {
+          uint32_t m = *mask;
+          if(m == 0u) continue;
+          if(m == 255u) { *dst = src; continue; }
+          *dst = blend_over_premul(*dst, _premul_mul_alpha(src, m));
+        }
+      } else {
+        for(int w = spans[i].w; w; w--, dst++, mask++) {
+          uint32_t m = *mask;
+          if(m == 0u) continue;
+          *dst = blend_over_premul(*dst, _premul_mul_alpha(src, m));
+        }
+      }
     }
   }
 

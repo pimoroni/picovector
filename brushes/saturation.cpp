@@ -32,7 +32,9 @@ namespace picovector {
       const uint8_t *mask = spans[i].mask;
       // ease each channel toward its saturated value by coverage so AA edges feather in
       for(int w = spans[i].w; w; w--) {
-        int lum = luminance(p), m = *mask++;
+        int m = *mask++;
+        if(!m) { p += 4; continue; }
+        int lum = luminance(p);
         int nr = clamp8(lum + (((p[0] - lum) * factor) >> 8));
         int ng = clamp8(lum + (((p[1] - lum) * factor) >> 8));
         int nb = clamp8(lum + (((p[2] - lum) * factor) >> 8));

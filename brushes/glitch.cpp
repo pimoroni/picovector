@@ -89,6 +89,7 @@ namespace picovector {
       // ease each channel toward the glitched value by coverage so AA edges feather in
       for(int w = spans[i].w; w; w--) {
         int m = *mask++, nr, ng, nb;
+        if(!m) { p += 4; x++; continue; }
         if(line) {   // 50% opaque line, then feathered by coverage
           nr = p[0] + (((lr - p[0]) * 128) >> 8);
           ng = p[1] + (((lg - p[1]) * 128) >> 8);

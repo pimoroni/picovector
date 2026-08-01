@@ -39,8 +39,9 @@ namespace picovector {
       const uint8_t *mask = spans[i].mask;
       // ease each channel toward the ramp colour by coverage so AA edges feather in
       for(int w = spans[i].w; w; w--) {
-        int lum = luminance(p), m = *mask++;
-        uint32_t tgt = lut[lum];
+        int m = *mask++;
+        if(!m) { p += 4; continue; }
+        uint32_t tgt = lut[luminance(p)];
         p[0] = (uint8_t)(p[0] + ((((int)(tgt & 0xff)) - p[0]) * m >> 8));
         p[1] = (uint8_t)(p[1] + ((((int)((tgt >> 8) & 0xff)) - p[1]) * m >> 8));
         p[2] = (uint8_t)(p[2] + ((((int)((tgt >> 16) & 0xff)) - p[2]) * m >> 8)); // leave alpha

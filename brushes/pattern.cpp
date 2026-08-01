@@ -88,16 +88,16 @@ namespace picovector {
       uint32_t c2 = p->c2._p;
 
       while(w--) {
-        uint8_t u = 7 - (x & 0b111);
-        uint8_t v = y & 0b111;
-        uint8_t bit = p->p[v];
+        uint32_t m = *mask++;
+        if(m) {
+          uint8_t u = 7 - (x & 0b111);
+          uint8_t v = y & 0b111;
+          uint8_t bit = p->p[v];
 
-        uint32_t src = bit & (1 << u) ? c1 : c2;
-
-        *dst = blend_over_premul(*dst, _premul_mul_alpha(src, *mask));
+          blend_masked_over_premul(dst, bit & (1 << u) ? c1 : c2, m);
+        }
         dst++;
         x++;
-        mask++;
       }
     }
   }

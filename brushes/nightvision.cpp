@@ -48,6 +48,7 @@ namespace picovector {
       // ease each channel toward the night-vision value by coverage so AA edges feather in
       for(int w = spans[i].w; w; w--) {
         int m = *mask++;
+        if(!m) { p += 4; x++; continue; }
         int lum = luminance(p);
         int g = clamp8(lum * 2);
         int r = lum / 4, b = lum / 4;

@@ -44,11 +44,12 @@ namespace picovector {
       const uint8_t *mask = spans[i].mask;
       while(w > 0) {
         int n = w < CH ? w : CH;
-        for(int k = 0; k < n; k++) tmp[k] = chroma_at(target, x + k, y, offset, W, H);
+        for(int k = 0; k < n; k++) if(mask[k]) tmp[k] = chroma_at(target, x + k, y, offset, W, H);
         uint8_t *p = (uint8_t*)target->ptr(x, y);
         // ease each channel toward the shifted sample by coverage so AA edges feather in
         for(int k = 0; k < n; k++) {
           int m = *mask++;
+          if(!m) { p += 4; continue; }
           p[0] = (uint8_t)(p[0] + ((((int)(tmp[k] & 0xff)) - p[0]) * m >> 8));
           p[1] = (uint8_t)(p[1] + ((((int)((tmp[k] >> 8) & 0xff)) - p[1]) * m >> 8));
           p[2] = (uint8_t)(p[2] + ((((int)((tmp[k] >> 16) & 0xff)) - p[2]) * m >> 8));

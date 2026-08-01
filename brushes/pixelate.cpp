@@ -32,6 +32,7 @@ namespace picovector {
       uint32_t *dst = (uint32_t*)target->ptr(x, y);
       int by = (y / size) * size;
       for(int j = 0; j < w; j++) {
+        if(!mask[j]) continue;
         int bx = ((x + j) / size) * size;
         uint32_t src = *(uint32_t*)target->ptr(bx, by);
         // inlined mask_lerp(dst[j], src, mask[j]): straight per-channel coverage lerp

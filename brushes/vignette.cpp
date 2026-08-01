@@ -41,6 +41,7 @@ namespace picovector {
       // ease each channel toward the darkened value by coverage (leave alpha)
       for(int w = spans[i].w; w; w--) {
         int m = *mask++;
+        if(!m) { p += 4; x++; continue; }
         int dx = x - cx, dy = y - cy;
         int dark = (int)((long)strength * (dx * dx + dy * dy) / maxd2); if(dark > 255) dark = 255;
         int f = 255 - dark;

@@ -128,9 +128,20 @@ namespace picovector {
     uint32_t tmp[BLUR_CHUNK];
     while(w > 0) {
       int n = w < BLUR_CHUNK ? w : BLUR_CHUNK;
-      blur_row(target, x, y, n, r, W, H, tmp);
-      uint32_t *dst = (uint32_t*)target->ptr(x, y);
-      for(int i = 0; i < n; i++) dst[i] = mask ? blur_mask_lerp(dst[i], tmp[i], mask[i]) : tmp[i];
+      bool covered = true;
+      if(mask) {
+        covered = false;
+        for(int i = 0; i < n && !covered; i++) covered = mask[i] != 0;
+      }
+      if(covered) {
+        blur_row(target, x, y, n, r, W, H, tmp);
+        uint32_t *dst = (uint32_t*)target->ptr(x, y);
+        if(mask) {
+          for(int i = 0; i < n; i++) if(mask[i]) dst[i] = blur_mask_lerp(dst[i], tmp[i], mask[i]);
+        } else {
+          for(int i = 0; i < n; i++) dst[i] = tmp[i];
+        }
+      }
       x += n;
       w -= n;
       if(mask) mask += n;

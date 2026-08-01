@@ -37,7 +37,9 @@ namespace picovector {
       const uint8_t *mask = spans[i].mask;
       // ease each channel toward the grained value by coverage so AA edges feather in
       for(int w = spans[i].w; w; w--) {
-        int d = grain(x, y, frame, amount), m = *mask++;
+        int m = *mask++;
+        if(!m) { p += 4; x++; continue; }
+        int d = grain(x, y, frame, amount);
         int nr = clamp8(p[0] + d), ng = clamp8(p[1] + d), nb = clamp8(p[2] + d);
         p[0] = (uint8_t)(p[0] + (((nr - p[0]) * m) >> 8));
         p[1] = (uint8_t)(p[1] + (((ng - p[1]) * m) >> 8));

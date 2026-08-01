@@ -66,11 +66,12 @@ namespace picovector {
       const uint8_t *mask = spans[i].mask;
       while(w > 0) {
         int n = w < CH ? w : CH;
-        for(int k = 0; k < n; k++) tmp[k] = oil_at(target, x + k, y, radius, sstep, W, H);
+        for(int k = 0; k < n; k++) if(mask[k]) tmp[k] = oil_at(target, x + k, y, radius, sstep, W, H);
         uint8_t *p = (uint8_t*)target->ptr(x, y);
         // ease toward the (strength-scaled) dominant colour by coverage so AA edges feather in
         for(int k = 0; k < n; k++) {
           int m = *mask++;
+          if(!m) { p += 4; continue; }
           int pr = (int)(tmp[k] & 0xff), pg = (int)((tmp[k] >> 8) & 0xff), pb = (int)((tmp[k] >> 16) & 0xff);
           int nr = p[0] + ((pr - p[0]) * strength >> 8);
           int ng = p[1] + ((pg - p[1]) * strength >> 8);

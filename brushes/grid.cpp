@@ -39,7 +39,7 @@ namespace picovector {
       // on grid lines, ease each channel toward the darkened value by coverage
       for(int w = spans[i].w; w; w--) {
         int m = *mask++;
-        if(yline || (x % spacing) == 0) {
+        if(m && (yline || (x % spacing) == 0)) {
           int n0 = (p[0] * f) >> 8, n1 = (p[1] * f) >> 8, n2 = (p[2] * f) >> 8;
           p[0] = (uint8_t)(p[0] + (((n0 - p[0]) * m) >> 8));
           p[1] = (uint8_t)(p[1] + (((n1 - p[1]) * m) >> 8));

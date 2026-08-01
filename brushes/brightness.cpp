@@ -33,6 +33,7 @@ namespace picovector {
       uint8_t *c = (uint8_t*)target->ptr(x, y);
       for(int j = 0; j < w; j++) {
         int m = mask[j];
+        if(!m) { c += 4; continue; }
         // ease the adjustment in by the coverage mask at the shape edge
         c[0] = c[0] + (((int)clamp8(c[0] + amt) - c[0]) * m >> 8);
         c[1] = c[1] + (((int)clamp8(c[1] + amt) - c[1]) * m >> 8);

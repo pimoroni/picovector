@@ -55,6 +55,7 @@ namespace picovector {
       // ease each channel toward the darkened value by coverage (leave alpha)
       for(int w = spans[i].w; w; w--) {
         int m = *mask++;
+        if(!m) { p += 4; x++; continue; }
         int f = line * tube(x, y, W, H) / 255;
         f = 255 - (((255 - f) * str) >> 8);              // scale the darkening by strength
         int n0 = (p[0] * f) >> 8, n1 = (p[1] * f) >> 8, n2 = (p[2] * f) >> 8;

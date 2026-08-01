@@ -29,6 +29,7 @@ namespace picovector {
       // ease each channel toward the thresholded colour by coverage (leave alpha)
       for(int w = spans[i].w; w; w--) {
         int m = *mask++;
+        if(!m) { p += 4; continue; }
         uint32_t tgt = (luminance(p) > level) ? hi : lo;
         p[0] = (uint8_t)(p[0] + ((((int)(tgt & 0xff)) - p[0]) * m >> 8));
         p[1] = (uint8_t)(p[1] + ((((int)((tgt >> 8) & 0xff)) - p[1]) * m >> 8));

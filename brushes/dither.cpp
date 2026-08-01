@@ -39,7 +39,9 @@ namespace picovector {
       const uint8_t *mask = spans[i].mask;
       // ease toward the dithered level by coverage so AA edges feather in
       for(int w = spans[i].w; w; w--) {
-        int v = dither_level(p, x, y), m = *mask++;
+        int m = *mask++;
+        if(!m) { p += 4; x++; continue; }
+        int v = dither_level(p, x, y);
         p[0] = (uint8_t)(p[0] + (((v - p[0]) * m) >> 8));
         p[1] = (uint8_t)(p[1] + (((v - p[1]) * m) >> 8));
         p[2] = (uint8_t)(p[2] + (((v - p[2]) * m) >> 8));

@@ -142,11 +142,12 @@ namespace picovector {
     float dt = (dpx * dx + dpy * dy) * inv_len2;
 
     while(w--) {
-      int idx = (int)(t * 255.0f + 0.5f);
-      if(idx < 0) idx = 0; else if(idx > 255) idx = 255;
-      uint32_t c = lut[idx];
-      if(mask){ c = _premul_mul_alpha(c, *mask); mask++; }
-      *dst = blend_over_premul(*dst, c);
+      uint32_t m = mask ? *mask++ : 255u;
+      if(m) {
+        int idx = (int)(t * 255.0f + 0.5f);
+        if(idx < 0) idx = 0; else if(idx > 255) idx = 255;
+        blend_masked_over_premul(dst, lut[idx], m);
+      }
       dst++;
       t += dt;
     }
@@ -169,14 +170,15 @@ namespace picovector {
 
     float px = pt.x, py = pt.y;
     while(w--) {
-      float ex = px - p->p1.x;
-      float ey = py - p->p1.y;
-      float t = sqrtf(ex * ex + ey * ey) * inv_r;
-      int idx = (int)(t * 255.0f + 0.5f);
-      if(idx < 0) idx = 0; else if(idx > 255) idx = 255;
-      uint32_t c = lut[idx];
-      if(mask){ c = _premul_mul_alpha(c, *mask); mask++; }
-      *dst = blend_over_premul(*dst, c);
+      uint32_t m = mask ? *mask++ : 255u;
+      if(m) {
+        float ex = px - p->p1.x;
+        float ey = py - p->p1.y;
+        float t = sqrtf(ex * ex + ey * ey) * inv_r;
+        int idx = (int)(t * 255.0f + 0.5f);
+        if(idx < 0) idx = 0; else if(idx > 255) idx = 255;
+        blend_masked_over_premul(dst, lut[idx], m);
+      }
       dst++;
       px += dpx;
       py += dpy;

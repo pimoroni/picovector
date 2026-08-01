@@ -32,6 +32,7 @@ namespace picovector {
       // ease each channel toward its contrasted value by coverage so AA edges feather in
       for(int w = spans[i].w; w; w--) {
         int m = *mask++;
+        if(!m) { p += 4; continue; }
         int nr = clamp8(128 + (((p[0] - 128) * factor) >> 8));
         int ng = clamp8(128 + (((p[1] - 128) * factor) >> 8));
         int nb = clamp8(128 + (((p[2] - 128) * factor) >> 8));

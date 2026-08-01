@@ -77,14 +77,16 @@ namespace picovector {
       int th = int(b.h);
 
       for(int j = 0; j < w; j++) {
+        // the source position steps whether or not the pixel is covered
         pt.x += pd.x;
         pt.y += pd.y;
-        int u = ((int(pt.x) >> 16) % tw + tw) % tw;
-        int v = ((int(pt.y) >> 16) % th + th) % th;
-        uint32_t c = p->src->get_unsafe(u, v);
-        *dst = blend_over_premul(*dst, _premul_mul_alpha(c, *mask));
+        uint32_t m = *mask++;
+        if(m) {
+          int u = ((int(pt.x) >> 16) % tw + tw) % tw;
+          int v = ((int(pt.y) >> 16) % th + th) % th;
+          blend_masked_over_premul(dst, p->src->get_unsafe(u, v), m);
+        }
         dst++;
-        mask++;
       }
     }
   }

@@ -9,6 +9,7 @@ void test_blit();
 void test_blend();
 void test_font();
 void test_robustness();
+void test_palette();
 
 int main() {
   test_geometry();
@@ -18,5 +19,6 @@ int main() {
   test_blend();
   test_font();
   test_robustness();
+  test_palette();
   return pvtest::summary();
 }

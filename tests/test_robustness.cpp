@@ -234,3 +234,71 @@ void test_robustness() {
     CHECK_MSG(sane, "an accepted font described itself inconsistently");
   }
 }
+
+// Indexed images: the storage is shared with sub-views and sized to the source,
+// which is what makes a paletted spritesheet worth having.
+void test_palette() {
+  printf("palette: an indexed image is one byte a pixel\n");
+  {
+    image_t img(64, 64, RGBA8888, true, 16);
+    CHECK(img.has_palette());
+    CHECK(img.palette_size() == 16);
+    CHECK(img.buffer_size() == 64 * 64);            // not 64*64*4
+  }
+
+  printf("palette: the table is sized to what was asked for\n");
+  {
+    for(auto n : {2, 4, 16, 256}) {
+      image_t img(8, 8, RGBA8888, true, n);
+      CHECK(img.palette_size() == n);
+    }
+    image_t clamped(8, 8, RGBA8888, true, 4000);
+    CHECK(clamped.palette_size() == 256);           // a byte index reaches no further
+    image_t none(8, 8, RGBA8888, false, 256);
+    CHECK(none.palette_size() == 0);                // no table when not indexed
+  }
+
+  printf("palette: an out-of-range index is ignored, not written\n");
+  {
+    image_t img(8, 8, RGBA8888, true, 4);
+    img.palette(0, 0xff112233u);
+    img.palette(200, 0xffaabbccu);                  // past the end of a 4-entry table
+    CHECK(img.palette(0) == 0xff112233u);
+    CHECK(img.palette(200) == 0);
+  }
+
+  printf("palette: sub-views share the table rather than copying it\n");
+  {
+    image_t sheet(64, 64, RGBA8888, true, 16);
+    sheet.palette(3, 0xff445566u);
+    image_t sprite = sheet.window(rect_t(16, 16, 16, 16));
+    CHECK(sprite.has_palette());
+    CHECK(sprite.palette_size() == 16);
+    CHECK(sprite.palette_data() == sheet.palette_data());   // the same storage
+    CHECK(sprite.palette(3) == 0xff445566u);
+    // and a later change on the parent is visible through the view
+    sheet.palette(3, 0xff778899u);
+    CHECK(sprite.palette(3) == 0xff778899u);
+  }
+
+  printf("palette: an indexed image blits its colours, not its indices\n");
+  {
+    image_t src(8, 8, RGBA8888, true, 4);
+    src.palette(0, 0xff0000ffu);
+    src.palette(1, 0xff00ff00u);
+    for(int y = 0; y < 8; y++)
+      for(int x = 0; x < 8; x++)
+        ((uint8_t *)src.ptr(0, y))[x] = (x < 4) ? 0 : 1;
+
+    canvas_t dst(16, 16);
+    dst.flat(0xff000000u);
+    src.blit(&dst.img, vec2_t(0, 0));
+    CHECK(dst.at(1, 1) == 0xff0000ffu);
+    CHECK(dst.at(6, 1) == 0xff00ff00u);
+
+    // and a palette write recolours everything indexing it
+    src.palette(0, 0xffff00ffu);
+    src.blit(&dst.img, vec2_t(0, 0));
+    CHECK(dst.at(1, 1) == 0xffff00ffu);
+  }
+}

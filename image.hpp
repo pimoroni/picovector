@@ -103,7 +103,6 @@ namespace picovector {
     ELLIPSES = 1  // truncate the last visible line with a trailing "..."
   } text_overflow_t;
 
-  typedef std::vector<uint32_t, PV_STD_ALLOCATOR<uint32_t>> palette_t;
 
   class mat3_t;
   class font_t;
@@ -127,11 +126,17 @@ namespace picovector {
       fill_rule_t        _fill_rule = EVEN_ODD;
       pixel_format_t     _pixel_format = RGBA8888;
       bool               _has_palette = false;
+      // Sized to what the source actually needs (a 4-bit PNG has 16 entries, not
+      // 256) and shared with sub-views rather than copied: a spritesheet exists
+      // to be sliced, and a view already depends on its parent outliving it for
+      // the pixels, so the palette rides along on the same contract.
+      uint32_t          *_palette = nullptr;
+      uint16_t           _palette_size = 0;
+      bool               _owns_palette = false;
       brush_t           *_brush = nullptr;
       font_t            *_font = nullptr;
       pixel_font_t      *_pixel_font = nullptr;
       text_cursor_t      _text_cursor;
-      palette_t          _palette;
       uint32_t               _rows = 1, _cols = 1;   // spritesheet grid (1x1 = not a sheet)
 
     public:
@@ -139,15 +144,14 @@ namespace picovector {
 
       image_t();
       image_t(image_t *source, rect_t r);
-      image_t(int w, int h, pixel_format_t pixel_format=RGBA8888, bool has_palette=false);
-      image_t(int w, int h, int rows, int cols, pixel_format_t pixel_format=RGBA8888, bool has_palette=false);
-      image_t(void *buffer, int w, int h, pixel_format_t pixel_format=RGBA8888, bool has_palette=false);
-      image_t(void *buffer, int w, int h, int rows, int cols, pixel_format_t pixel_format=RGBA8888, bool has_palette=false);
+      image_t(int w, int h, pixel_format_t pixel_format=RGBA8888, bool has_palette=false, int palette_entries=256);
+      image_t(int w, int h, int rows, int cols, pixel_format_t pixel_format=RGBA8888, bool has_palette=false, int palette_entries=256);
+      image_t(void *buffer, int w, int h, pixel_format_t pixel_format=RGBA8888, bool has_palette=false, int palette_entries=256);
+      image_t(void *buffer, int w, int h, int rows, int cols, pixel_format_t pixel_format=RGBA8888, bool has_palette=false, int palette_entries=256);
       ~image_t();
 
       size_t buffer_size();
       size_t bytes_per_pixel();
-      bool is_compatible(image_t *other);
       void window(image_t *source, rect_t viewport);
       image_t window(rect_t r);
       // return the sprite at grid cell (x, y) as a window, using the sheet's
@@ -181,8 +185,9 @@ namespace picovector {
       void palette(uint8_t i, uint32_t c);
       uint32_t palette(uint8_t i);
       // raw palette storage for hot blit loops: skips the per-pixel out-of-line
-      // palette(i) call and the by-value palette_t (std::vector) copy per span.
-      inline const uint32_t* palette_data() const { return _palette.data(); }
+      // palette(i) call.
+      inline const uint32_t* palette_data() const { return _palette; }
+      inline int palette_size() const { return _palette_size; }
 
       uint8_t alpha();
       void alpha(uint8_t alpha);
@@ -298,6 +303,8 @@ namespace picovector {
       // Clip one horizontal run to _clip and, if any remains, add it to the
       // shared span buffer (no blend). Shared by span() and circle().
       void _span(int x, int y, int w);
+      // allocate this image's own palette (owner only)
+      void alloc_palette(int entries);
   };
 
   // Allocate a w x h scratch image to work in: it wraps the shared working

@@ -57,13 +57,13 @@ namespace picovector {
     struct pv_blit_ctx {
       image_t *src; image_t *dst; blend_func_t bf;
       int srx, sry, trx, try_, trw;
-      bool has_palette; const palette_t *palette;
+      bool has_palette; const uint32_t *palette;
     };
     void pv_blit_rows(void *v, int y0, int y1, int step) {
       pv_blit_ctx *c = (pv_blit_ctx *)v;
       if(c->has_palette) {
         for(int y = y0; y < y1; y += step)
-          span_blit(c->src, c->dst, c->bf, c->srx, c->sry + y, c->trx, c->try_ + y, c->trw, *c->palette);
+          span_blit(c->src, c->dst, c->bf, c->srx, c->sry + y, c->trx, c->try_ + y, c->trw, c->palette);
       } else {
         for(int y = y0; y < y1; y += step)
           span_blit(c->src, c->dst, c->bf, c->srx, c->sry + y, c->trx, c->try_ + y, c->trw);
@@ -108,7 +108,7 @@ namespace picovector {
     // large enough to amortise the inter-core handshake: split rows across cores
     if((int)tr.w * (int)tr.h >= PV_DUAL_CORE_BLIT_MIN_PX) {
       pv_blit_ctx ctx{ this, target, bf, (int)sr.x, (int)sr.y, (int)tr.x, (int)tr.y, (int)tr.w,
-                       _has_palette, &_palette };
+                       _has_palette, _palette };
       pv_parallel_rows(pv_blit_rows, &ctx, 0, (int)tr.h);
       return;
     }

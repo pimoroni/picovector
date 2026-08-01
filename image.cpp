@@ -30,12 +30,13 @@ namespace picovector {
     _clip = rect_t(0, 0, i.w, i.h);
     _buffer = source->ptr(i.x, i.y);
     _managed_buffer = false;
+    _owns_palette = false;      // shared with the parent, not copied
   }
 
-  image_t::image_t(int w, int h, pixel_format_t pixel_format, bool has_palette)
-    : image_t(w, h, 1, 1, pixel_format, has_palette) {}
+  image_t::image_t(int w, int h, pixel_format_t pixel_format, bool has_palette, int palette_entries)
+    : image_t(w, h, 1, 1, pixel_format, has_palette, palette_entries) {}
 
-  image_t::image_t(int w, int h, int rows, int cols, pixel_format_t pixel_format, bool has_palette) {
+  image_t::image_t(int w, int h, int rows, int cols, pixel_format_t pixel_format, bool has_palette, int palette_entries) {
     _bounds = rect_t(0, 0, w, h);
     _clip = rect_t(0, 0, w, h);
     _brush = nullptr;
@@ -47,15 +48,24 @@ namespace picovector {
     _bytes_per_pixel = this->_has_palette ? sizeof(uint8_t) : sizeof(uint32_t);
     _row_stride = w * _bytes_per_pixel;
     _buffer = PV_MALLOC_NO_SCAN(this->buffer_size());
-    if(_has_palette) {
-      _palette.resize(256);
-    }
+    alloc_palette(palette_entries);
   }
 
-  image_t::image_t(void *buffer, int w, int h, pixel_format_t pixel_format, bool has_palette)
-    : image_t(buffer, w, h, 1, 1, pixel_format, has_palette) {}
+  image_t::image_t(void *buffer, int w, int h, pixel_format_t pixel_format, bool has_palette, int palette_entries)
+    : image_t(buffer, w, h, 1, 1, pixel_format, has_palette, palette_entries) {}
 
-  image_t::image_t(void *buffer, int w, int h, int rows, int cols, pixel_format_t pixel_format, bool has_palette) {
+  // Owned palette storage. Entries are clamped to what a byte index can reach.
+  void image_t::alloc_palette(int entries) {
+    if(!_has_palette) return;
+    if(entries < 1) entries = 1;
+    if(entries > 256) entries = 256;
+    _palette = (uint32_t *)PV_MALLOC_NO_SCAN(sizeof(uint32_t) * entries);
+    _palette_size = _palette ? (uint16_t)entries : 0;
+    _owns_palette = _palette != nullptr;
+    for(int i = 0; i < _palette_size; i++) _palette[i] = 0;
+  }
+
+  image_t::image_t(void *buffer, int w, int h, int rows, int cols, pixel_format_t pixel_format, bool has_palette, int palette_entries) {
     _bounds = rect_t(0, 0, w, h);
     _clip = rect_t(0, 0, w, h);
     _brush = nullptr;
@@ -67,9 +77,7 @@ namespace picovector {
     _managed_buffer = false;
     _bytes_per_pixel = this->_has_palette ? sizeof(uint8_t) : sizeof(uint32_t);
     _row_stride = w * _bytes_per_pixel;
-    if(_has_palette) {
-      _palette.resize(256);
-    }
+    alloc_palette(palette_entries);
   }
 
   image_t::~image_t() {
@@ -80,6 +88,13 @@ namespace picovector {
       PV_FREE(this->_buffer);
 #endif
     }
+    if(this->_owns_palette && this->_palette) {
+#if MICROPY_MALLOC_USES_ALLOCATED_SIZE
+      PV_FREE(this->_palette, sizeof(uint32_t) * this->_palette_size);
+#else
+      PV_FREE(this->_palette);
+#endif
+    }
   }
 
   size_t image_t::buffer_size() {
@@ -88,10 +103,6 @@ namespace picovector {
 
   size_t image_t::bytes_per_pixel() {
     return this->_bytes_per_pixel;
-  }
-
-  bool image_t::is_compatible(image_t *other) {
-    return this->_palette == other->_palette && this->_pixel_format == other->_pixel_format;
   }
 
   uint32_t image_t::row_stride() {
@@ -122,11 +133,11 @@ namespace picovector {
   // }
 
   void image_t::palette(uint8_t i, uint32_t c) {
-    this->_palette[i] = c;
+    if(i < _palette_size) this->_palette[i] = c;
   }
 
   uint32_t image_t::palette(uint8_t i) {
-    return this->_palette[i];
+    return i < _palette_size ? this->_palette[i] : 0;
   }
 
   uint8_t image_t::alpha() {

@@ -11,7 +11,7 @@ namespace picovector {
   // span. Templating the span cores over these lets the RGBA vs palette split be
   // a compile-time choice instead of a per-pixel branch, and lets the palette
   // path index a raw uint32_t* (no per-pixel out-of-line palette(i) call, no
-  // by-value palette_t/std::vector copy per span).
+  // by-value palette copy per span).
   struct src_rgba {
     const uint32_t *base;
     inline __attribute__((always_inline)) uint32_t operator[](int i) const { return base[i]; }
@@ -85,11 +85,11 @@ namespace picovector {
     else                  span_over<true >(src_rgba{ps}, pd, w, dst_alpha);
   }
 
-  inline void span_blit(image_t *src, image_t *dst, blend_func_t bf, int sx, int sy, int dx, int dy, int w, const palette_t &palette) {
+  inline void span_blit(image_t *src, image_t *dst, blend_func_t bf, int sx, int sy, int dx, int dy, int w, const uint32_t *palette) {
     (void)bf;
     uint8_t  *ps  = (uint8_t *)src->ptr(sx, sy);
     uint32_t *pd  = (uint32_t *)dst->ptr(dx, dy);
-    const uint32_t *pal = palette.data();
+    const uint32_t *pal = palette;
     uint32_t dst_alpha = dst->alpha();
 
     if(dst_alpha == 255u) span_over<false>(src_pal{ps, pal}, pd, w, 255u);
@@ -138,7 +138,7 @@ namespace picovector {
 
   // palette images can't be interpolated, so sample() resolves them NEAREST;
   // the palette argument is no longer needed but kept for call-site compatibility
-  inline void span_blit_scale(image_t *src, image_t *dst, blend_func_t bf, fx16_t sx, fx16_t sx_step, fx16_t sy, int dx, int dy, int w, const palette_t &palette, filter_t filter = NEAREST) {
+  inline void span_blit_scale(image_t *src, image_t *dst, blend_func_t bf, fx16_t sx, fx16_t sx_step, fx16_t sy, int dx, int dy, int w, const uint32_t *palette, filter_t filter = NEAREST) {
     (void)palette;
     span_blit_scale(src, dst, bf, sx, sx_step, sy, dx, dy, w, filter);
   }

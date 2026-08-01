@@ -54,21 +54,36 @@ struct edge_t { float x0, y0, x1, y1; };
 #define EDGE_BUFFER_SIZE (MAX_EDGES * (int)sizeof(edge_t))          // 16kB
 #define SA_ACC_SIZE      (TILE_WIDTH * TILE_HEIGHT * (int)sizeof(int16_t)) // Q11 accumulator
 
+// One bit per accumulator cell, marking the columns an edge deposited into. The
+// prefix sum still has to start at column 0 (that's where the backdrop winding
+// lands), but once the running winding returns to zero a row cannot produce
+// coverage again until the next deposit — so the scan jumps straight there
+// instead of walking. Without it the scan costs the bounding box, which for a
+// hollow shape (an arc, a ring, a stroked outline) is mostly empty: a 220px ring
+// measured 5.3ms of bounding-box cost against 0.2ms of actual ink.
+#define SA_BITS_STRIDE ((TILE_WIDTH + 31) / 32)                     // words per row
+#define SA_BITS_SIZE   (SA_BITS_STRIDE * TILE_HEIGHT * (int)sizeof(uint32_t))
+// Gap worth breaking a span for. Below this the two extra span setups in the
+// blend cost more than walking the uncovered pixels.
+#define SA_MIN_GAP 8
+
 // Working-buffer layout. tile_buffer (coverage) and edge_buffer are used by both
 // rasteriser paths. The node buffers (aa==0 path) and the signed-area accumulator
 // sa_acc are mutually exclusive - a render_flush is either aa==0 (nodes) or aa>0
 // (signed area) - so they overlay ONE shared region rather than each costing SRAM.
 #define AA_REGION_OFF    (TILE_BUFFER_SIZE + EDGE_BUFFER_SIZE)
 #define NODE_REGION_SIZE (NODE_BUFFER_SIZE + NODE_COUNT_BUFFER_SIZE)
-#define AA_REGION_SIZE   (NODE_REGION_SIZE > SA_ACC_SIZE ? NODE_REGION_SIZE : SA_ACC_SIZE)
+#define SA_REGION_SIZE   (SA_ACC_SIZE + SA_BITS_SIZE)
+#define AA_REGION_SIZE   (NODE_REGION_SIZE > SA_REGION_SIZE ? NODE_REGION_SIZE : SA_REGION_SIZE)
 static_assert(AA_REGION_OFF + AA_REGION_SIZE <= PV_WORKING_BUFFER_SIZE,
               "PicoVector working buffer too small for a full-screen tile");
 
-uint8_t *tile_buffer       = (uint8_t *)&PicoVector_working_buffer[0];
-edge_t  *edge_buffer       = (edge_t *)&PicoVector_working_buffer[TILE_BUFFER_SIZE];
-int16_t *node_buffer       = (int16_t *)&PicoVector_working_buffer[AA_REGION_OFF];
-uint8_t *node_count_buffer = (uint8_t *)&PicoVector_working_buffer[AA_REGION_OFF + NODE_BUFFER_SIZE];
-int16_t *sa_acc            = (int16_t *)&PicoVector_working_buffer[AA_REGION_OFF]; // shares the node region
+uint8_t  *tile_buffer       = (uint8_t *)&PicoVector_working_buffer[0];
+edge_t   *edge_buffer       = (edge_t *)&PicoVector_working_buffer[TILE_BUFFER_SIZE];
+int16_t  *node_buffer       = (int16_t *)&PicoVector_working_buffer[AA_REGION_OFF];
+uint8_t  *node_count_buffer = (uint8_t *)&PicoVector_working_buffer[AA_REGION_OFF + NODE_BUFFER_SIZE];
+int16_t  *sa_acc            = (int16_t *)&PicoVector_working_buffer[AA_REGION_OFF]; // shares the node region
+uint32_t *sa_bits           = (uint32_t *)&PicoVector_working_buffer[AA_REGION_OFF + SA_ACC_SIZE];
 static int edge_count = 0;
 static float acc_minx, acc_miny, acc_maxx, acc_maxy; // running device-space bounds
 
@@ -80,6 +95,10 @@ extern "C" uint64_t time_us_64(void);
 extern "C" void mp_hal_stdout_tx_strn_cooked(const char *str, size_t len); // MicroPython REPL output
 static uint32_t pv_paths = 0, pv_edges = 0, pv_pixels = 0;
 static uint64_t pv_t_transform = 0, pv_t_build = 0, pv_t_raster = 0;
+// The signed-area path, split: clearing the accumulator, depositing the edges,
+// the prefix-sum scan, and the blend. `raster` is their sum, which on its own
+// can't say which of them a slow shape is spending its time in.
+static uint64_t pv_t_clear = 0, pv_t_deposit = 0, pv_t_scan = 0, pv_t_blend = 0;
 static uint64_t pv_last_print = 0;
 static uint64_t pv_last_clear = 0; // timestamp of the previous clear() — for whole-frame FPS
 #define PV_T0(v)       uint64_t v = time_us_64()
@@ -253,15 +272,19 @@ namespace picovector {
       unsigned long fps_x10 = frame_us ? (unsigned long)(10000000ull / frame_us) : 0;
       char buf[256];
       int n = snprintf(buf, sizeof(buf),
-        "[pv] fps=%lu.%lu frame=%luus | transform=%luus build=%luus raster=%luus | paths=%lu edges=%lu pixels=%lu\n",
+        "[pv] fps=%lu.%lu frame=%luus | transform=%luus build=%luus raster=%luus "
+        "(clear=%lu deposit=%lu scan=%lu blend=%lu) | paths=%lu edges=%lu pixels=%lu\n",
         fps_x10 / 10, fps_x10 % 10, (unsigned long)frame_us,
         (unsigned long)pv_t_transform, (unsigned long)pv_t_build, (unsigned long)pv_t_raster,
+        (unsigned long)pv_t_clear, (unsigned long)pv_t_deposit,
+        (unsigned long)pv_t_scan, (unsigned long)pv_t_blend,
         (unsigned long)pv_paths, (unsigned long)pv_edges, (unsigned long)pv_pixels);
       mp_hal_stdout_tx_strn_cooked(buf, n);
       pv_last_print = now;
     }
     pv_paths = pv_edges = pv_pixels = 0;
     pv_t_transform = pv_t_build = pv_t_raster = 0;
+    pv_t_clear = pv_t_deposit = pv_t_scan = pv_t_blend = 0;
 #endif
   }
 
@@ -340,15 +363,20 @@ namespace picovector {
       float xnext = x + dxdy * dy;
       float d = dy * dir;
       int16_t *ln = &sa_acc[yi * w];
-      // Deposit v at column i. Off-left columns (i<0) fold into column 0: the
-      // per-row prefix sum starts there, so that column is the backdrop and must
-      // carry the full winding from everything to its left (a shape running off the
-      // left edge). Off-right columns (i>=w) have no pixels and no carry, so drop.
-      auto dep = [&](int i, float v) { if(i < 0) i = 0; if(i < w) ln[i] += (int16_t)(v * SA_SCALEF); };
+      uint32_t *bits = &sa_bits[yi * SA_BITS_STRIDE];
+      // Deposit v at column i, and mark the column so the scan knows to stop
+      // there. Off-left columns (i<0) fold into column 0: the per-row prefix sum
+      // starts there, so that column is the backdrop and must carry the full
+      // winding from everything to its left (a shape running off the left edge).
+      // Off-right columns (i>=w) have no pixels and no carry, so drop.
+      auto dep = [&](int i, float v) {
+        if(i < 0) i = 0;
+        if(i < w) { ln[i] += (int16_t)(v * SA_SCALEF); bits[i >> 5] |= 1u << (i & 31); }
+      };
 
       float xa = x, xb = xnext;
       if(xa > xb) { float t = xa; xa = xb; xb = t; }
-      if(xb <= 0.0f) { ln[0] += (int16_t)(d * SA_SCALEF); x = xnext; continue; } // wholly left
+      if(xb <= 0.0f) { ln[0] += (int16_t)(d * SA_SCALEF); bits[0] |= 1u; x = xnext; continue; } // wholly left
       if(xa >= (float)w) { x = xnext; continue; }           // wholly right
 
       float x0floor = floorf(xa);
@@ -381,45 +409,109 @@ namespace picovector {
     }
   }
 
+  // Prefix-sum one row of the accumulator into coverage bytes and emit its spans.
+  // The fill rule is a template parameter because it's constant for the whole
+  // flush and the M33 has no branch predictor - a per-pixel branch on it costs a
+  // pipeline refill every time.
+  //
+  // Uncovered stretches are skipped rather than walked: where the running winding
+  // is zero, the row stays uncovered until the next deposited column, which
+  // sa_bits locates a word at a time. A gap worth breaking a span for ends the
+  // current span; a short one is filled with zero coverage and kept in it.
+  template<fill_rule_t RULE>
+  static void sa_scan_row(int16_t *arow, const uint32_t *bits, uint8_t *cov, int w,
+                          int sx, int y, image_t *target, brush_t *brush) {
+    int32_t acc = 0;
+    int span_start = -1, span_end = -1;
+
+    auto emit = [&]() {
+      if(span_start < 0) return;
+      if(_num_spans() >= PV_MASKED_SPAN_CAP) {   // buffer full: blend what we have
+        _blend_masked_spans(target, brush);
+        _reset_spans();
+      }
+      _add_masked_span(sx + span_start, y, span_end - span_start + 1, &cov[span_start]);
+      span_start = -1;
+    };
+
+    int x = 0;
+    while(x < w) {
+      // Coverage is (|acc| + 4) >> 3, so anything this small emits nothing. Testing
+      // the threshold rather than zero matters: the Q11 deposits truncate, so the
+      // winding either side of a shape settles a unit or two off zero as often as
+      // on it, and an exact test would leave the row walking its hole regardless.
+      // Skipping is still exact - the skipped columns carry no deposit, so acc is
+      // the same when the scan resumes.
+      if(acc <= 3 && acc >= -3) {
+        // Nothing worth carrying, so find the next column an edge touched.
+        int word = x >> 5;
+        uint32_t m = bits[word] & (0xffffffffu << (x & 31));
+        while(m == 0u) {
+          if(++word >= SA_BITS_STRIDE) break;
+          m = bits[word];
+        }
+        if(word >= SA_BITS_STRIDE) break;            // nothing further on this row
+        int next = (word << 5) + (int)__builtin_ctz(m);
+        if(next >= w) break;
+        if(next > x) {
+          if(span_start >= 0) {
+            if(next - x >= SA_MIN_GAP) emit();
+            else memset(&cov[x], 0, (size_t)(next - x)); // short gap stays in the span
+          }
+          x = next;
+        }
+      }
+
+      acc += arow[x];
+      int32_t c = acc < 0 ? -acc : acc;           // |winding| in Q11
+      // Fast path: coverage <= 1 (no self-overlap) - both fill rules agree.
+      // Only overlapping winding (>1) needs the rule applied.
+      if(c > SA_ONE) {
+        if(RULE == NON_ZERO) {
+          c = SA_ONE;
+        } else {                                    // even-odd: integer triangle wave
+          c &= (2 * SA_ONE - 1);                    // mod 2.0
+          if(c > SA_ONE) c = 2 * SA_ONE - c;
+        }
+      }
+      int a = (c + 4) >> 3;                         // Q11 -> 0..256, rounded
+      if(a > 255) a = 255;
+      cov[x] = (uint8_t)a;
+      if(a) { if(span_start < 0) span_start = x; span_end = x; }
+      x++;
+    }
+    emit();
+  }
+
   // Rasterise the antialiased tile with the signed-area method: clear the
   // accumulator, deposit every edge (device -> tile-local, output resolution),
-  // then prefix-sum each row into coverage bytes and emit a masked span. No node
+  // then prefix-sum each row into coverage bytes and emit masked spans. No node
   // build, no supersample scaling. Coverage is analytic (256 levels).
-  static void emit_sa_spans(int sx, int sy, int sw, int sh, fill_rule_t fill_rule) {
+  static void emit_sa_spans(int sx, int sy, int sw, int sh, fill_rule_t fill_rule,
+                            image_t *target, brush_t *brush) {
     int w = sw, h = sh;
+    PV_T0(_t_clear);
     memset(sa_acc, 0, (size_t)(w * h) * sizeof(int16_t));
+    memset(sa_bits, 0, (size_t)h * SA_BITS_STRIDE * sizeof(uint32_t));
+    PV_ADD(pv_t_clear, _t_clear);
 
+    PV_T0(_t_deposit);
     vec2_t off((float)sx, (float)sy);
     for(int e = 0; e < edge_count; e++) {
       const edge_t &ed = edge_buffer[e];
       signed_area_line(w, h, ed.x0 - off.x, ed.y0 - off.y, ed.x1 - off.x, ed.y1 - off.y);
     }
+    PV_ADD(pv_t_deposit, _t_deposit);
 
+    PV_T0(_t_scan);
     for(int y = 0; y < h; y++) {
       int16_t *arow = &sa_acc[y * w];
+      const uint32_t *bits = &sa_bits[y * SA_BITS_STRIDE];
       uint8_t *cov = &tile_buffer[y * TILE_WIDTH];
-      int32_t acc = 0;
-      int minx = -1, maxx = -1;
-      for(int x = 0; x < w; x++) {
-        acc += arow[x];
-        int32_t c = acc < 0 ? -acc : acc;         // |winding| in Q11
-        // Fast path: coverage <= 1 (no self-overlap) - both fill rules agree.
-        // Only overlapping winding (>1) needs the rule applied.
-        if(c > SA_ONE) {
-          if(fill_rule == NON_ZERO) {
-            c = SA_ONE;
-          } else {                                  // even-odd: integer triangle wave
-            c &= (2 * SA_ONE - 1);                  // mod 2.0
-            if(c > SA_ONE) c = 2 * SA_ONE - c;
-          }
-        }
-        int a = (c + 4) >> 3;                       // Q11 -> 0..256, rounded
-        if(a > 255) a = 255;
-        cov[x] = (uint8_t)a;
-        if(a) { if(minx < 0) minx = x; maxx = x; }
-      }
-      if(minx >= 0) _add_masked_span(sx + minx, sy + y, maxx - minx + 1, &cov[minx]);
+      if(fill_rule == NON_ZERO) sa_scan_row<NON_ZERO>(arow, bits, cov, w, sx, sy + y, target, brush);
+      else                      sa_scan_row<EVEN_ODD>(arow, bits, cov, w, sx, sy + y, target, brush);
     }
+    PV_ADD(pv_t_scan, _t_scan);
   }
 
   // Rasterise the whole accumulated batch, one screen-sized tile at a time.
@@ -456,8 +548,10 @@ namespace picovector {
         if(is_aa) {
           // Analytic signed-area: deposit edges at output resolution, prefix-sum
           // each row to coverage, emit masked spans, then blend.
-          emit_sa_spans(sx, sy, sw, sh, fill_rule);
+          emit_sa_spans(sx, sy, sw, sh, fill_rule, target, brush);
+          PV_T0(_t_blend);
           _blend_masked_spans(target, brush);
+          PV_ADD(pv_t_blend, _t_blend);
         } else {
           // Hard edges: build scanline crossings, emit solid spans, then blend.
           memset(node_count_buffer, 0, NODE_COUNT_BUFFER_SIZE);

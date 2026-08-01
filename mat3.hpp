@@ -136,6 +136,11 @@ namespace picovector {
           m01 * (m10 * m22 - m12 * m20) +
           m02 * (m10 * m21 - m11 * m20);
 
+      // A singular matrix has no inverse - a zero scale is the easy way to get
+      // one, and an animation passing through zero does it by accident. Leave the
+      // matrix alone rather than filling it with NaN, which then propagates into
+      // every coordinate it touches (gradients invert a caller's transform).
+      if(det == 0.0f) return *this;
       float inv_det = 1.0f / det;
 
       // Adjugate (transpose of cofactor matrix),
@@ -154,6 +159,11 @@ namespace picovector {
       // the third row is 0, 0, 1.
       float det = m00 * m11 - m01 * m10;
 
+      // A singular matrix has no inverse - a zero scale is the easy way to get
+      // one, and an animation passing through zero does it by accident. Leave the
+      // matrix alone rather than filling it with NaN, which then propagates into
+      // every coordinate it touches (gradients invert a caller's transform).
+      if(det == 0.0f) return *this;
       float inv_det = 1.0f / det;
 
       // Invert the linear part, then carry the translation through it

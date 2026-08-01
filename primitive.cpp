@@ -8,9 +8,12 @@ namespace picovector {
   // the circumference (see PV_CURVE_CHORD_PX) and clamp to the configured range.
   static int curve_sides(float radius) {
     float sides = (PV_PI * 2.0f * fabsf(radius)) / PV_CURVE_CHORD_PX;
-    if(sides <= PV_CURVE_MIN_SIDES) return PV_CURVE_MIN_SIDES;
-    if(sides >= PV_CURVE_MAX_SIDES) return PV_CURVE_MAX_SIDES;
-    return (int)ceilf(sides);
+    // Written as the in-range test rather than two rejections: NaN compares
+    // false against everything, so a NaN radius would fall past both and reach
+    // the cast, and casting NaN to int is undefined. This way it takes the floor
+    // along with everything else that isn't a sensible size.
+    if(sides > PV_CURVE_MIN_SIDES && sides < PV_CURVE_MAX_SIDES) return (int)ceilf(sides);
+    return sides >= PV_CURVE_MAX_SIDES ? PV_CURVE_MAX_SIDES : PV_CURVE_MIN_SIDES;
   }
 
   // Sides for a partial sweep of `delta` degrees, at the same density.

@@ -44,7 +44,6 @@ namespace picovector {
     void add_point(const vec2_t &point);
     void add_point(float x, float y);
     void edge_points(int edge, vec2_t &s, vec2_t &e);
-    void offset_edge(vec2_t &s, vec2_t &e, float offset);
     std::vector<vec2_t, PV_STD_ALLOCATOR<vec2_t>> offset_ring(float offset, bool closed = true, uint32_t join = JOIN_MITER, float miter_limit = 4.0f);
     void stroke(float thickness, uint32_t flags = 0, float miter_limit = 4.0f);
     void inflate(float offset);

@@ -539,16 +539,6 @@ namespace picovector {
     _blend_spans(this, this->_brush);
   }
 
-  void round_rectangle(const rect_t &r, int radius) {
-
-  }
-
-
-  void ellipse(const vec2_t &p, const int &rx, const int &ry) {
-
-  }
-
-
   void image_t::line(vec2_t p1, vec2_t p2) {
     rect_t b = this->_clip;
     b.w -= 1;

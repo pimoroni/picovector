@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cfloat>
+#include <cmath>
 
 // PV_PROFILE (rasteriser phase profiling) and PV_DUAL_CORE come from the picovector
 // config — both default OFF (see config_default.hpp). The Badgeware/MicroPython
@@ -192,12 +193,14 @@ namespace picovector {
   //   x' = a*x + c*y + e,  y' = b*x + d*y + f
   static void transform_points_range(const vec2_t *pts, int count, int i0, int i1, int base,
                                      float a, float b, float c, float d, float e, float f,
-                                     float &minx, float &miny, float &maxx, float &maxy) {
+                                     float &minx, float &miny, float &maxx, float &maxy,
+                                     bool &finite) {
     int pi = (i0 == 0) ? (count - 1) : (i0 - 1);
     float px = a * pts[pi].x + c * pts[pi].y + e;
     float py = b * pts[pi].x + d * pts[pi].y + f;
 
     float lminx = FLT_MAX, lminy = FLT_MAX, lmaxx = -FLT_MAX, lmaxy = -FLT_MAX;
+    bool lfinite = true;
     for(int i = i0; i < i1; i++) {
       float cx = a * pts[i].x + c * pts[i].y + e;
       float cy = b * pts[i].x + d * pts[i].y + f;
@@ -208,10 +211,16 @@ namespace picovector {
       if(cx > lmaxx) lmaxx = cx;
       if(cy < lminy) lminy = cy;
       if(cy > lmaxy) lmaxy = cy;
+      // A NaN loses every comparison above, so it would leave the bounds looking
+      // perfectly reasonable and still reach the float->int casts downstream,
+      // where converting one is undefined. Track it here, where the coordinate is
+      // already in a register.
+      lfinite &= std::isfinite(cx) && std::isfinite(cy);
 
       px = cx; py = cy;
     }
     minx = lminx; miny = lminy; maxx = lmaxx; maxy = lmaxy;
+    finite = lfinite;
   }
 
   // Transform a path's points once and append its edges to the batch, growing
@@ -243,7 +252,15 @@ namespace picovector {
     // the saving. (build wins from the same split only because it's one big batch.)
     int base = edge_count;
     float minx, miny, maxx, maxy;
-    transform_points_range(pts, count, 0, count, base, a, b, c, d, e, f, minx, miny, maxx, maxy);
+    bool finite = true;
+    transform_points_range(pts, count, 0, count, base, a, b, c, d, e, f, minx, miny, maxx, maxy, finite);
+    // Drop a path carrying a NaN or an infinity rather than rasterising it: there
+    // is no sensible geometry to draw, and every stage below casts coordinates to
+    // int. Reachable from Python, where float('nan') is a normal value.
+    if(!finite) {
+      PV_ADD(pv_t_transform, _t);
+      return MAX_EDGES - edge_count;
+    }
     edge_count = base + count;
 
     if(minx < acc_minx) acc_minx = minx;
@@ -286,10 +303,6 @@ namespace picovector {
     pv_t_transform = pv_t_build = pv_t_raster = 0;
     pv_t_clear = pv_t_deposit = pv_t_scan = pv_t_blend = 0;
 #endif
-  }
-
-  int compare_nodes(const void* a, const void* b) {
-    return *((int16_t*)a) - *((int16_t*)b);
   }
 
   // Emit a built tile's filled scanlines as opaque solid spans into the shared

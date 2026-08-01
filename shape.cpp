@@ -305,9 +305,13 @@ namespace picovector {
       edge_points(i + 1, p3, p4);
       offset_line_segment(p3, p4, offset);
 
-      // find intersection of the edges
+      // Find where the two offset edges meet. Parallel or coincident edges have
+      // no intersection - which two collinear segments, or a repeated point, give
+      // you - and intersection() leaves `pi` untouched, so taking it regardless
+      // stored an uninitialised coordinate. They meet at the shared offset
+      // endpoint in that case, which is what offset_ring() bevels to as well.
       vec2_t pi;
-      bool ok = intersection(p1, p2, p3, p4, pi);
+      if(!intersection(p1, p2, p3, p4, pi)) pi = p2;
       new_points[i] = pi;
     }
 

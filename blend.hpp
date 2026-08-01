@@ -70,7 +70,7 @@ typedef uint32_t (*blend_func_t)(uint32_t dst, uint32_t r, uint32_t g, uint32_t 
 // unpacked-args wrapper kept for the sample()-based span paths (blit_span et al)
 // that still hand callers r,g,b,a separately. Repacks and defers to the packed
 // blend so there's a single "over" implementation to maintain.
-static uint32_t blend_func_over(uint32_t dst, uint32_t r, uint32_t g, uint32_t b, uint32_t a) {
+static inline uint32_t blend_func_over(uint32_t dst, uint32_t r, uint32_t g, uint32_t b, uint32_t a) {
     return blend_over_premul(dst, r | (g << 8) | (b << 16) | (a << 24));
 }
 

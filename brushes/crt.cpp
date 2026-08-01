@@ -7,7 +7,6 @@ namespace picovector {
   // like a curved tube. Position-dependent (scanlines follow y; the falloff is
   // keyed on distance from the image centre).
 
-  static inline uint8_t clamp8(int v) { return v < 0 ? 0 : (v > 255 ? 255 : (uint8_t)v); }
   // rounded corner/edge darkening factor 0..255 for pixel (x,y) in a W x H image
   static inline int tube(int x, int y, int W, int H) {
     int dx = 2 * x - W; if(dx < 0) dx = -dx;              // 0 centre .. W edge

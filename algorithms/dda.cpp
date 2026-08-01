@@ -33,7 +33,6 @@ namespace picovector {
       t_max_y = ((float(iy) - p.y)) * inv_dy;
     }
 
-    int i = 0;
     while (true) {
       float t_exit = std::min(t_max_x, t_max_y);
 

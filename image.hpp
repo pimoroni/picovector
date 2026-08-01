@@ -132,7 +132,7 @@ namespace picovector {
       pixel_font_t      *_pixel_font = nullptr;
       text_cursor_t      _text_cursor;
       palette_t          _palette;
-      uint               _rows = 1, _cols = 1;   // spritesheet grid (1x1 = not a sheet)
+      uint32_t               _rows = 1, _cols = 1;   // spritesheet grid (1x1 = not a sheet)
 
     public:
       blend_func_t       _blend_func = blend_func_over;
@@ -181,10 +181,10 @@ namespace picovector {
       void fill_rule(fill_rule_t fill_rule);
 
       // spritesheet grid used by sprite(); 1x1 = not a sheet
-      uint rows();
-      void rows(uint rows);
-      uint cols();
-      void cols(uint cols);
+      uint32_t rows();
+      void rows(uint32_t rows);
+      uint32_t cols();
+      void cols(uint32_t cols);
 
       pixel_format_t pixel_format();
       void pixel_format(pixel_format_t pixel_format);
@@ -217,9 +217,7 @@ namespace picovector {
       void clear();
       void rectangle(rect_t r);
       void triangle(vec2_t p1, vec2_t p2, vec2_t p3);
-      void round_rectangle(const rect_t &r, int radius);
       void circle(const vec2_t &p, const int &r);
-      void ellipse(const vec2_t &p, const int &rx, const int &ry);
       void line(vec2_t p1, vec2_t p2);
 
       // vector shapes

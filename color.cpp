@@ -7,10 +7,6 @@ namespace picovector {
     uint8_t gp = (g * a) / 255;
     uint8_t bp = (b * a) / 255;
     _p = __builtin_bswap32((rp << 24) | (gp << 16) | (bp << 8) | a);
-
-    uint8_t* pp = (uint8_t*)&_p;
-    // printf("bytes as uint8 %d, %d, %d, %d\n", pp[0], pp[1], pp[2], pp[3]);
-    // printf("bytes as uint32 %d, %d, %d, %d\n", ((_p >> 24) & 0xff), ((_p >> 16) & 0xff), ((_p >> 8) & 0xff), ((_p >> 0) & 0xff));
   }
 
   rgb_color_t::rgb_color_t(uint8_t r, uint8_t g, uint8_t b, uint8_t a) : _r(r), _g(g), _b(b), _a(a) {

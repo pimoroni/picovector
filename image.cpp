@@ -74,10 +74,10 @@ namespace picovector {
 
   image_t::~image_t() {
     if(this->_managed_buffer) {
-#ifdef PICO
-      PV_FREE(this->_buffer);
-#else
+#if MICROPY_MALLOC_USES_ALLOCATED_SIZE
       PV_FREE(this->_buffer, this->buffer_size());
+#else
+      PV_FREE(this->_buffer);
 #endif
     }
   }
@@ -155,19 +155,19 @@ namespace picovector {
     this->_fill_rule = fill_rule;
   }
 
-  uint image_t::rows() {
+  uint32_t image_t::rows() {
     return this->_rows;
   }
 
-  void image_t::rows(uint rows) {
+  void image_t::rows(uint32_t rows) {
     this->_rows = rows;
   }
 
-  uint image_t::cols() {
+  uint32_t image_t::cols() {
     return this->_cols;
   }
 
-  void image_t::cols(uint cols) {
+  void image_t::cols(uint32_t cols) {
     this->_cols = cols;
   }
 

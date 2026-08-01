@@ -1,0 +1,61 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  tests:
+    name: Host tests (${{ matrix.compiler }})
+    runs-on: ubuntu-24.04
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - compiler: gcc
+          cc: gcc
+          cxx: g++
+        - compiler: clang
+          cc: clang
+          cxx: clang++
+
+    env:
+      CC: ${{ matrix.cc }}
+      CXX: ${{ matrix.cxx }}
+
+    steps:
+    - uses: actions/checkout@v5
+
+    - name: Configure
+      run: cmake -S tests -B build/tests -DCMAKE_BUILD_TYPE=Release
+
+    # The test build is -Wall -Wextra -Werror. Both compilers are run because
+    # they disagree about what is worth warning on, and the firmware toolchain is
+    # GCC while a lot of local work happens under clang.
+    - name: Build
+      run: cmake --build build/tests --parallel
+
+    - name: Test
+      run: ./build/tests/pv_tests
+
+  sanitizers:
+    name: Host tests (address + undefined)
+    runs-on: ubuntu-24.04
+
+    steps:
+    - uses: actions/checkout@v5
+
+    # The rasteriser carves fixed buffers out of one shared pool and the blit
+    # paths do their own bounds arithmetic, so an overrun is the failure mode
+    # worth spending a job on - it is what shipped in blit_hspan.
+    - name: Configure
+      run: >
+        cmake -S tests -B build/asan -DCMAKE_BUILD_TYPE=Debug
+        -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all"
+
+    - name: Build
+      run: cmake --build build/asan --parallel
+
+    - name: Test
+      run: ./build/asan/pv_tests

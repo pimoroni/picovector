@@ -409,15 +409,50 @@ namespace picovector {
     }
   }
 
+  // Coverage byte for a winding. The fill rule is a template parameter because
+  // it's constant for the whole flush and the M33 has no branch predictor - a
+  // per-pixel branch on it costs a pipeline refill every time. The 0..256 result
+  // is folded to 0..255 without a branch: 256 is the only value with bit 8 set.
+  template<fill_rule_t RULE>
+  static inline int sa_coverage(int32_t acc) {
+    int32_t c = acc < 0 ? -acc : acc;             // |winding| in Q11
+    // Fast path: coverage <= 1 (no self-overlap) - both fill rules agree.
+    // Only overlapping winding (>1) needs the rule applied.
+    if(c > SA_ONE) {
+      if(RULE == NON_ZERO) {
+        c = SA_ONE;
+      } else {                                    // even-odd: integer triangle wave
+        c &= (2 * SA_ONE - 1);                    // mod 2.0
+        if(c > SA_ONE) c = 2 * SA_ONE - c;
+      }
+    }
+    int a = (c + 4) >> 3;                         // Q11 -> 0..256, rounded
+    return a - (a >> 8);
+  }
+
+  // First column at or after `x` that an edge deposited into, or -1 if the rest
+  // of the row is untouched.
+  static inline int sa_next_deposit(const uint32_t *bits, int x, int w) {
+    int word = x >> 5;
+    uint32_t m = bits[word] & (0xffffffffu << (x & 31));
+    while(m == 0u) {
+      if(++word >= SA_BITS_STRIDE) return -1;
+      m = bits[word];
+    }
+    int next = (word << 5) + (int)__builtin_ctz(m);
+    return next >= w ? -1 : next;
+  }
+
   // Prefix-sum one row of the accumulator into coverage bytes and emit its spans.
-  // The fill rule is a template parameter because it's constant for the whole
-  // flush and the M33 has no branch predictor - a per-pixel branch on it costs a
-  // pipeline refill every time.
   //
-  // Uncovered stretches are skipped rather than walked: where the running winding
-  // is zero, the row stays uncovered until the next deposited column, which
-  // sa_bits locates a word at a time. A gap worth breaking a span for ends the
-  // current span; a short one is filled with zero coverage and kept in it.
+  // Only the columns an edge deposited into can change the winding, and sa_bits
+  // marks exactly those. Everywhere between two of them the winding is constant,
+  // so the whole run takes one coverage value: compute it once and memset the
+  // run. That covers a shape's hole (coverage zero, so nothing is written and the
+  // span breaks if the gap is worth it) and its solid interior (one value, which
+  // for an opaque fill is 255) with the same code. What's left to walk a pixel at
+  // a time is the antialiased fringe either side of an edge, which is the only
+  // part that genuinely varies.
   template<fill_rule_t RULE>
   static void sa_scan_row(int16_t *arow, const uint32_t *bits, uint8_t *cov, int w,
                           int sx, int y, image_t *target, brush_t *brush) {
@@ -436,49 +471,37 @@ namespace picovector {
 
     int x = 0;
     while(x < w) {
-      // Coverage is (|acc| + 4) >> 3, so anything this small emits nothing. Testing
-      // the threshold rather than zero matters: the Q11 deposits truncate, so the
-      // winding either side of a shape settles a unit or two off zero as often as
-      // on it, and an exact test would leave the row walking its hole regardless.
-      // Skipping is still exact - the skipped columns carry no deposit, so acc is
-      // the same when the scan resumes.
-      if(acc <= 3 && acc >= -3) {
-        // Nothing worth carrying, so find the next column an edge touched.
-        int word = x >> 5;
-        uint32_t m = bits[word] & (0xffffffffu << (x & 31));
-        while(m == 0u) {
-          if(++word >= SA_BITS_STRIDE) break;
-          m = bits[word];
-        }
-        if(word >= SA_BITS_STRIDE) break;            // nothing further on this row
-        int next = (word << 5) + (int)__builtin_ctz(m);
-        if(next >= w) break;
-        if(next > x) {
+      int next = sa_next_deposit(bits, x, w);
+      int run_end = next < 0 ? w : next;
+      if(run_end > x) {
+        // A constant-winding run. Skipping it is exact: it carries no deposit, so
+        // acc is unchanged when the scan resumes.
+        int a = sa_coverage<RULE>(acc);
+        if(a == 0) {
           if(span_start >= 0) {
-            if(next - x >= SA_MIN_GAP) emit();
-            else memset(&cov[x], 0, (size_t)(next - x)); // short gap stays in the span
+            if(run_end - x >= SA_MIN_GAP) emit();
+            else memset(&cov[x], 0, (size_t)(run_end - x)); // short gap stays in the span
           }
-          x = next;
+        } else {
+          memset(&cov[x], a, (size_t)(run_end - x));
+          if(span_start < 0) span_start = x;
+          span_end = run_end - 1;
         }
+        x = run_end;
+        if(next < 0) break;                      // nothing further on this row
       }
 
-      acc += arow[x];
-      int32_t c = acc < 0 ? -acc : acc;           // |winding| in Q11
-      // Fast path: coverage <= 1 (no self-overlap) - both fill rules agree.
-      // Only overlapping winding (>1) needs the rule applied.
-      if(c > SA_ONE) {
-        if(RULE == NON_ZERO) {
-          c = SA_ONE;
-        } else {                                    // even-odd: integer triangle wave
-          c &= (2 * SA_ONE - 1);                    // mod 2.0
-          if(c > SA_ONE) c = 2 * SA_ONE - c;
-        }
-      }
-      int a = (c + 4) >> 3;                         // Q11 -> 0..256, rounded
-      if(a > 255) a = 255;
-      cov[x] = (uint8_t)a;
-      if(a) { if(span_start < 0) span_start = x; span_end = x; }
-      x++;
+      // A deposited column: the winding changes here, so this one is per-pixel.
+      // Consecutive deposits - the antialiased fringe either side of an edge, and
+      // any near-horizontal stretch of one - stay in this loop on a single bit
+      // test, so the bitmap is only searched once per constant run.
+      do {
+        acc += arow[x];
+        int a = sa_coverage<RULE>(acc);
+        cov[x] = (uint8_t)a;
+        if(a) { if(span_start < 0) span_start = x; span_end = x; }
+        x++;
+      } while(x < w && ((bits[x >> 5] >> (x & 31)) & 1u));
     }
     emit();
   }

@@ -18,6 +18,13 @@ namespace picovector {
     );
   }
 
+  vec2_t glyph_path_point16_t::transform(mat3_t *transform) {
+    return vec2_t(
+      transform->v00 * float(x) + transform->v01 * float(y) + transform->v02,
+      transform->v10 * float(x) + transform->v11 * float(y) + transform->v12
+    );
+  }
+
   rect_t glyph_t::bounds(mat3_t *transform) {
     vec2_t p1(x, -y);
     vec2_t p2(x + w, -y);
@@ -48,7 +55,7 @@ namespace picovector {
     (void)target;
     float x = 0.0f, max_w = 0.0f;
     int lines = 1;
-    const float s = size / 128.0f;
+    const float s = size / this->units_per_em;
 
     // Walk UTF-8 codepoints so widths match draw() for non-ASCII glyphs.
     const char *p = text;
@@ -96,7 +103,7 @@ namespace picovector {
     return 0; // invalid
   }
 
-  // Scratch for converting one glyph contour's compact int8 points to vec2_t before handing
+  // Scratch for converting one glyph contour's packed points to vec2_t before handing
   // them to the geometry-agnostic renderer. Static rather than carved out of the working
   // buffer, which would be the tidier home for it: the rasteriser assumes it owns that
   // buffer, and sharing it is a larger change than a glyph's worth of scratch is worth.
@@ -109,8 +116,10 @@ namespace picovector {
 
   // Draw a single glyph through the retained renderer (begin / add_path / flush).
   // This is the old render_glyph, hoisted out of picovector so the renderer
-  // stays agnostic of the font's point representation.
-  static void draw_glyph(glyph_t *glyph, image_t *target, mat3_t *transform, brush_t *brush) {
+  // stays agnostic of the font's point representation. Points are a byte or 16
+  // bits wide per the font, picked once per contour.
+  static void draw_glyph(glyph_t *glyph, bool wide_points, image_t *target,
+                         mat3_t *transform, brush_t *brush) {
     if(!glyph->path_count) return;
 
     render_begin();
@@ -119,8 +128,16 @@ namespace picovector {
       int count = path.point_count;
       if(count < 2) continue;
       if(count > (int)(sizeof(glyph_point_buf) / sizeof(glyph_point_buf[0]))) continue; // too detailed to fit
-      for(int k = 0; k < count; k++) {
-        glyph_point_buf[k] = vec2_t((float)path.points[k].x, (float)path.points[k].y);
+      if(wide_points) {
+        glyph_path_point16_t *points = (glyph_path_point16_t *)path.points;
+        for(int k = 0; k < count; k++) {
+          glyph_point_buf[k] = vec2_t((float)points[k].x, (float)points[k].y);
+        }
+      } else {
+        glyph_path_point_t *points = (glyph_path_point_t *)path.points;
+        for(int k = 0; k < count; k++) {
+          glyph_point_buf[k] = vec2_t((float)points[k].x, (float)points[k].y);
+        }
       }
       render_add_path(glyph_point_buf, count, transform);
     }
@@ -138,11 +155,11 @@ namespace picovector {
     // the point size.
     text_cursor_t *c = target->text_cursor_state();
     c->line_height = size;
-    const float s = size / 128.0f;
+    const float s = size / this->units_per_em;
 
-    // A glyph's compact int8 contour is drawn through `transform`, which places
-    // the baseline at (x, y) and scales the 128-unit em to `size`. It's rebuilt
-    // from the caret whenever the position jumps (start / newline).
+    // A glyph's packed contour is drawn through `transform`, which places the
+    // baseline at (x, y) and scales the font's em to `size`. It's rebuilt from
+    // the caret whenever the position jumps (start / newline).
     auto build_transform = [size, s](float x, float y) {
       mat3_t t;
       t = t.translate(x, y);
@@ -167,7 +184,7 @@ namespace picovector {
       // find the glyph
       for(int j = 0; j < this->glyph_count; j++) {
         if(this->glyphs[j].codepoint == codepoint) {
-          draw_glyph(&this->glyphs[j], target, &transform, target->brush());
+          draw_glyph(&this->glyphs[j], this->wide_points, target, &transform, target->brush());
           float a = this->glyphs[j].advance;
           transform = transform.translate(a, 0);
           c->x += a * s;

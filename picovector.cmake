@@ -7,6 +7,7 @@ list(APPEND SOURCES
   ${CMAKE_CURRENT_LIST_DIR}/picovector_working_buffer.cpp
   ${CMAKE_CURRENT_LIST_DIR}/shape.cpp
   ${CMAKE_CURRENT_LIST_DIR}/font.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/font_parse.cpp
   ${CMAKE_CURRENT_LIST_DIR}/pixel_font.cpp
   ${CMAKE_CURRENT_LIST_DIR}/image.cpp
   ${CMAKE_CURRENT_LIST_DIR}/blit.cpp

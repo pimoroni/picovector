@@ -163,6 +163,19 @@ namespace picovector {
       rect_t clip();
       void clip(rect_t r);
 
+      // The integer pixel rect a whole-image filter may write: the clip,
+      // intersected with the bounds. Filters still *sample* the whole image -
+      // their geometry is image-relative, and a blur or a zoom legitimately
+      // reads neighbours from outside - so this bounds the writes only. Returns
+      // false when nothing is visible.
+      inline bool filter_rect(int &x0, int &y0, int &x1, int &y1) const {
+        rect_t cr = _clip.intersection(_bounds);
+        if(cr.empty()) return false;
+        x0 = (int)cr.x;            y0 = (int)cr.y;
+        x1 = (int)(cr.x + cr.w);   y1 = (int)(cr.y + cr.h);
+        return x1 > x0 && y1 > y0;
+      }
+
       bool has_palette();
       // void delete_palette();
       void palette(uint8_t i, uint32_t c);

@@ -24,10 +24,13 @@ namespace picovector {
     for(int y = 0; y < H; y++)
       memcpy(src->ptr(0, y), ptr(0, y), (size_t)W * 4);
 
-    for(int y = 0; y < H; y++) {
+    int fx0, fy0, fx1, fy1;
+    if(!filter_rect(fx0, fy0, fx1, fy1)) { free_scratch_image(src); return; }
+
+    for(int y = fy0; y < fy1; y++) {
       int y0 = y > 0 ? y - 1 : 0, y1 = y < H - 1 ? y + 1 : H - 1;
-      uint8_t *out = (uint8_t*)ptr(0, y);
-      for(int x = 0; x < W; x++) {
+      uint8_t *out = (uint8_t*)ptr(fx0, y);
+      for(int x = fx0; x < fx1; x++) {
         int x0 = x > 0 ? x - 1 : 0, x1 = x < W - 1 ? x + 1 : W - 1;
         // Sobel on luminance over the 3x3 neighbourhood
         int tl = luminance((uint8_t*)src->ptr(x0, y0)), tc = luminance((uint8_t*)src->ptr(x, y0)), tr = luminance((uint8_t*)src->ptr(x1, y0));

@@ -33,10 +33,13 @@ namespace picovector {
     int phase = (int)((uint32_t)PV_TICKS / 12);   // animation drift
     const int freq = 6;                            // phase step per pixel (wavelength)
 
-    for(int y = 0; y < H; y++) {
+    int fx0, fy0, fx1, fy1;
+    if(!filter_rect(fx0, fy0, fx1, fy1)) { free_scratch_image(src); return; }
+
+    for(int y = fy0; y < fy1; y++) {
       int dxrow = ampH ? (ampH * slut[(y * freq + phase) & 0xff]) >> 8 : 0;   // Q8 px
-      uint8_t *out = (uint8_t*)ptr(0, y);
-      for(int x = 0; x < W; x++) {
+      uint8_t *out = (uint8_t*)ptr(fx0, y);
+      for(int x = fx0; x < fx1; x++) {
         int dy = ampV ? (ampV * slut[(x * freq + phase + 64) & 0xff]) >> 8 : 0;  // Q8 px
         int sxq = (x << 8) + dxrow, syq = (y << 8) + dy;
         if(bilinear) {

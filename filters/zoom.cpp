@@ -19,14 +19,17 @@ namespace picovector {
     if(!src) return;
     for(int y = 0; y < H; y++) memcpy(src->ptr(0, y), ptr(0, y), (size_t)W * 4);
 
+    int fx0, fy0, fx1, fy1;
+    if(!filter_rect(fx0, fy0, fx1, fy1)) { free_scratch_image(src); return; }
+
     int cx = W / 2, cy = H / 2;
     const int steps = 8;
     int maxdz = (strength * 110) / 255;   // Q8 max zoom-in per sample line
 
-    for(int y = 0; y < H; y++) {
+    for(int y = fy0; y < fy1; y++) {
       int dy0 = y - cy;
-      uint8_t *out = (uint8_t*)ptr(0, y);
-      for(int x = 0; x < W; x++) {
+      uint8_t *out = (uint8_t*)ptr(fx0, y);
+      for(int x = fx0; x < fx1; x++) {
         int dx0 = x - cx, r = 0, g = 0, b = 0;
         for(int k = 0; k < steps; k++) {
           int scale = 256 - (maxdz * k) / (steps - 1);   // 256 (1.0) .. 256-maxdz

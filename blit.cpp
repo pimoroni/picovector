@@ -94,7 +94,10 @@ namespace picovector {
     rect_t tr(floorf(p.x), floorf(p.y), sr.w, sr.h); // target rect
 
     clip_blit_rect(sr, _bounds, tr);
-    clip_blit_rect(tr, target->_bounds, sr);
+    // against the clip, not the bounds: the clip is always within the bounds
+    // (the setter intersects), and clip_blit_rect walks the source rect along
+    // with it so the visible part still samples the right texels.
+    clip_blit_rect(tr, target->_clip, sr);
     if(sr.w <= 0 || sr.h <= 0 || tr.w <= 0 || tr.h <= 0) {
       return;
     }
@@ -142,7 +145,7 @@ namespace picovector {
     // rect is still snapped to whole pixels — that's the integer span loop.
     tr = tr.round();
     clip_blit_rect(sr, _bounds, tr);
-    clip_blit_rect(tr, target->_bounds, sr);
+    clip_blit_rect(tr, target->_clip, sr);   // clip, not bounds - see blit(p)
     if(sr.w <= 0 || sr.h <= 0 || tr.w <= 0 || tr.h <= 0) {
       return;
     }
@@ -208,6 +211,15 @@ namespace picovector {
     // of the integer step; the inner loop advances the rounded Q16 copy.
     float udf = (uv1.x - uv0.x) / len;
     float vdf = (uv1.y - uv0.y) / len;
+
+    // The span sits on one row (horizontal) or one column (vertical); if that
+    // line is outside the clip there is nothing to draw. Without this the span
+    // was clipped along its travel axis only, so a row past the bottom of the
+    // image still drew - off the end of the buffer.
+    float across = vertical ? p.x : p.y;
+    float ao = vertical ? b.x : b.y;
+    float as = vertical ? b.w : b.h;
+    if(across < ao || across >= ao + as) return;
 
     // clip against the travel axis (y for a vertical span, x for a horizontal one)
     float pp = vertical ? p.y : p.x;

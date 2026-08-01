@@ -35,12 +35,17 @@ namespace picovector {
 
     tmp->blur(radius * 0.5f);   // half res -> half the radius for the same spread
 
-    // add the nearest-upsampled halo back over the full-res original
-    for(int y = 0; y < H; y++) {
+    // add the nearest-upsampled halo back over the full-res original. The bright
+    // pass above reads the whole image on purpose - light outside the clip still
+    // bleeds into it - but only the clip is written.
+    int fx0, fy0, fx1, fy1;
+    if(!filter_rect(fx0, fy0, fx1, fy1)) { free_scratch_image(tmp); return; }
+
+    for(int y = fy0; y < fy1; y++) {
       int hy = y >> 1; if(hy >= hh) hy = hh - 1;
-      uint8_t *s = (uint8_t*)ptr(0, y);
+      uint8_t *s = (uint8_t*)ptr(fx0, y);
       uint8_t *hrow = (uint8_t*)tmp->ptr(0, hy);
-      for(int x = 0; x < W; x++) {
+      for(int x = fx0; x < fx1; x++) {
         int hx = x >> 1; if(hx >= hw) hx = hw - 1;
         uint8_t *h = hrow + hx * 4;
         int r = s[0] + ((h[0] * intensity) >> 8); if(r > 255) r = 255;

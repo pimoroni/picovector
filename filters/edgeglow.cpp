@@ -17,6 +17,8 @@ namespace picovector {
   static inline uint8_t clamp8(int v) { return v < 0 ? 0 : (v > 255 ? 255 : (uint8_t)v); }
 
   void image_t::edgeglow(int strength) {
+    // An indexed image is one byte a pixel; this writes four. See brush.cpp.
+    if(_has_palette) return;
     rect_t bd = bounds(); int W = (int)bd.w, H = (int)bd.h;
     if(W < 3 || H < 3) return;
     image_t *src = make_scratch_image(W, H);

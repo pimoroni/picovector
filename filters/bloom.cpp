@@ -13,6 +13,8 @@ namespace picovector {
   // invisible. `strength` scales the intensity. blur() is the separable IIR pass.
 
   void image_t::bloom(int threshold, int intensity, float radius, float strength) {
+    // An indexed image is one byte a pixel; this writes four. See brush.cpp.
+    if(_has_palette) return;
     intensity = (int)(intensity * strength);
     if(intensity <= 0) return;
     rect_t bd = bounds(); int W = (int)bd.w, H = (int)bd.h;

@@ -281,6 +281,60 @@ void test_palette() {
     CHECK(sprite.palette(3) == 0xff778899u);
   }
 
+  printf("palette: writing to an indexed image is refused, not attempted\n");
+  {
+    // Every brush and filter stores a four-byte pixel. An indexed image is one
+    // byte a pixel, so any of them would write four times past the end of every
+    // row - image.oilpaint() on a GIF was heap corruption, not a bad picture.
+    // A canary arena either side proves nothing lands outside the buffer.
+    const uint32_t guard = 0xDEADBEEFu;
+    const int w = 32, h = 32, pad = 1024;
+    std::vector<uint32_t> arena(pad * 2 + (size_t)w * h, guard);
+    uint8_t *pixels = (uint8_t *)(arena.data() + pad);
+
+    image_t sheet(pixels, w, h, RGBA8888, true, 8);
+    for(int i = 0; i < w * h; i++) pixels[i] = (uint8_t)(i % 8);
+    sheet.palette(3, rgb_color_t(10, 20, 30, 255)._p);
+
+    color_brush_t pen(rgb_color_t(255, 255, 255, 255));
+    sheet.brush(&pen);
+
+    sheet.clear();
+    sheet.rectangle(rect_t(2, 2, 8, 8));
+    sheet.circle(vec2_t(16, 16), 10);
+    sheet.line(vec2_t(0, 0), vec2_t(31, 31));
+    sheet.put(vec2_t(4, 4));
+    sheet.blur(3.0f, 1.0f);
+    sheet.bloom(180, 150, 4.0f);
+    sheet.wave(4, 4);
+    sheet.zoom(128);
+    sheet.edgeglow(220);
+    sheet.invert();
+    sheet.oilpaint(3, 128);
+
+    bool intact = true;
+    for(int i = 0; i < pad; i++) if(arena[i] != guard) intact = false;
+    for(size_t i = pad + (size_t)w * h; i < arena.size(); i++) if(arena[i] != guard) intact = false;
+    CHECK_MSG(intact, "a write to an indexed image ran outside its buffer");
+
+    // And the indices themselves are left exactly as they were.
+    bool unchanged = true;
+    for(int i = 0; i < w * h; i++) if(pixels[i] != (uint8_t)(i % 8)) unchanged = false;
+    CHECK_MSG(unchanged, "an indexed image was written to");
+
+    // Blitting into one is refused the same way; blitting out of one still works.
+    canvas_t dst(w, h);
+    dst.flat(0xff000000u);
+    sheet.blit(&dst.img, vec2_t(0, 0));
+    CHECK(dst.at(3, 0) == rgb_color_t(10, 20, 30, 255)._p);
+
+    canvas_t src(8, 8);
+    src.flat(0xffffffffu);
+    src.img.blit(&sheet, vec2_t(0, 0));
+    for(int i = 0; i < w * h; i++) if(pixels[i] != (uint8_t)(i % 8)) unchanged = false;
+    CHECK_MSG(unchanged, "an indexed image was blitted into");
+  }
+
   printf("palette: an indexed image blits its colours, not its indices\n");
   {
     image_t src(8, 8, RGBA8888, true, 4);

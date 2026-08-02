@@ -88,6 +88,9 @@ namespace picovector {
 #endif
 
   void image_t::blit(image_t *target, const vec2_t p) {
+    // An indexed image is one byte a pixel and every blit writes four; it can be
+    // the source of one but never the destination. See brush.cpp.
+    if(target->has_palette()) return;
     rect_t sr = _bounds;
     sr = sr.floor();
 
@@ -130,6 +133,9 @@ namespace picovector {
 
   // blit from source rectangle into target rectangle
   void image_t::blit(image_t *target, rect_t sr, rect_t tr, filter_t filter) {
+    // An indexed image is one byte a pixel and every blit writes four; it can be
+    // the source of one but never the destination. See brush.cpp.
+    if(target->has_palette()) return;
     bool flip_h = tr.w < 0;
     bool flip_v = tr.h < 0;
 
@@ -203,6 +209,9 @@ namespace picovector {
     vertical (stepping one row down a column). Shared by blit_hspan/blit_vspan.
   */
   void image_t::blit_span(image_t *target, vec2_t p, float len, vec2_t uv0, vec2_t uv1, filter_t filter, bool vertical) {
+    // An indexed image is one byte a pixel and every blit writes four; it can be
+    // the source of one but never the destination. See brush.cpp.
+    if(target->has_palette()) return;
     if(len <= 0.0f) return; // degenerate span (also guards the /len below)
     rect_t b = target->_clip;
 

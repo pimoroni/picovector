@@ -13,6 +13,8 @@ namespace picovector {
   // scratch image and read from there.
 
   void image_t::zoom(int strength) {
+    // An indexed image is one byte a pixel; this writes four. See brush.cpp.
+    if(_has_palette) return;
     rect_t bd = bounds(); int W = (int)bd.w, H = (int)bd.h;
     if(W < 1 || H < 1) return;
     image_t *src = make_scratch_image(W, H);

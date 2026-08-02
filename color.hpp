@@ -20,6 +20,18 @@ namespace picovector {
     COLOR_OKLCH = 2
   };
 
+  // Classical colour-wheel schemes, as offsets around the hue. A full turn is
+  // 256 counts, which divides exactly by two and four and by three to within
+  // half a degree, so these land where they should despite being bytes.
+  enum color_scheme_t : uint8_t {
+    SCHEME_COMPLEMENT = 0,  // 2 colours: opposite
+    SCHEME_SPLIT      = 1,  // 3: either side of the opposite
+    SCHEME_TRIAD      = 2,  // 3: evenly spaced thirds
+    SCHEME_TETRAD     = 3,  // 4: two complementary pairs, unevenly spaced
+    SCHEME_SQUARE     = 4,  // 4: evenly spaced quarters
+    SCHEME_ANALOGOUS  = 5   // 3: neighbours either side
+  };
+
   // A colour from the user's point of view: the three components it was authored
   // with, the space they belong to, and the resolved sRGB with its premultiplied
   // word cached alongside. Components are bytes in every space, which is what
@@ -53,6 +65,99 @@ namespace picovector {
     uint8_t v() const { return _c2; }
     uint8_t l() const { return _c0; }
     uint8_t c() const { return _c1; }
+
+    // ── changing space ────────────────────────────────────────────────────────
+    // The same colour authored in another space, so its components can be read
+    // and its arithmetic acts on the axis you meant. Returns *this when it is
+    // already in that space, which is the only exact case: anything else goes
+    // through the resolved sRGB and lands on the nearest byte in each axis.
+    //
+    // to_oklch() is what makes an OKLCH colour readable rather than only
+    // writable - a palette entry, a pixel read back, a gradient stop someone
+    // authored as channels can all report a lightness, a chroma and a hue. At
+    // very low chroma the hue is whatever the rounding left behind, because a
+    // near-grey has no meaningful one.
+    color_t to_oklch() const;
+    color_t to_rgb() const;
+
+    // ── measurement ───────────────────────────────────────────────────────────
+    // All three read the resolved sRGB and ignore alpha: contrast against a
+    // colour you can see through is not a question with an answer, so composite
+    // it with over() first and ask about the result.
+
+    // WCAG relative luminance, 0-1. The light the screen puts out, which is not
+    // lightness - a saturated yellow and a saturated blue at the same OKLCH l
+    // are nowhere near the same luminance.
+    float luminance() const;
+
+    // WCAG 2.1 contrast ratio against another colour, 1 (identical) to 21 (black
+    // against white). The thresholds that get audited are 3 for large text and
+    // interface components, 4.5 for body text at AA, and 7 at AAA. It is a
+    // crude perceptual model, notably at the dark end, and APCA is its intended
+    // replacement - but this is the number people are held to today.
+    float contrast(const color_t &other) const;
+
+    // Perceptual distance, as the straight-line distance in OKLab scaled so that
+    // black to white is 100. That puts it on the scale CIEDE2000 readers expect:
+    // about 2 is where a difference becomes noticeable, about 5 where it becomes
+    // obvious. Useful for "are these two too close to tell apart".
+    float difference(const color_t &other) const;
+
+    // ── gamut ─────────────────────────────────────────────────────────────────
+    // OKLCH can name colours sRGB cannot show, and the conversion clamps each
+    // channel independently when it happens, which shifts hue and lightness
+    // rather than simply dulling the colour. That matters most where it is least
+    // expected: the gamut is lopsided per hue, so rotating a hue at constant
+    // chroma walks in and out of it.
+
+    // Whether this colour survives the trip to sRGB intact. Always true for a
+    // colour authored as RGB or HSV, which cannot name anything unshowable.
+    bool in_gamut() const;
+
+    // The same colour with only as much chroma as sRGB can carry at its
+    // lightness and hue, which is the mapping that preserves what a reader
+    // actually identifies the colour by. Already-showable colours are returned
+    // unchanged, as are RGB and HSV ones.
+    color_t fit() const;
+
+    // The chroma ceiling at a given lightness and hue, found by bisection.
+    static uint8_t max_chroma(uint8_t l, uint8_t h);
+
+    // ── generating a palette ──────────────────────────────────────────────────
+    // Everything below reads the colour in OKLCH first, so it works off a
+    // palette entry or a pixel as readily as off a colour that was authored
+    // there - and everything it hands back is fitted, because a generated colour
+    // that the screen cannot show is of no use to anyone. What comes out is
+    // therefore OKLCH whatever went in.
+
+    // Rotate the hue, wrapping. Where with_component sets an absolute hue, this
+    // moves relative to the one it has.
+    color_t rotate(int counts) const;
+
+    // Move the chroma - OKLCH's c, or HSV's s. lighten's opposite number for the
+    // other axis a colour has. Clamps; a negative amount desaturates.
+    color_t saturate(int amount) const;
+
+    // The colour-wheel scheme around this colour, this colour first, written into
+    // `out`. Returns how many were written, never more than max_harmony. Takes
+    // the scheme as an int because it arrives from a binding: an unrecognised one
+    // has to be caught before it is an enum, not after.
+    static constexpr int max_harmony = 4;
+    int harmony(int scheme, color_t *out) const;
+
+    // A tonal ladder: `count` colours at evenly spaced lightness from black to
+    // white, holding this colour's hue and chroma. The ends fit down to almost
+    // nothing on their own, which is what a tonal palette looks like. `out` holds
+    // count colours.
+    void tones(color_t *out, int count) const;
+
+    // This colour moved along its lightness until it reaches `ratio` contrast
+    // against `background`, holding hue and chroma. Returns the receiver
+    // untouched when it already clears the ratio. When neither end of the
+    // lightness scale can reach it - a saturated mid-tone background does this -
+    // returns the most readable colour available rather than raising, because
+    // that is what a caller can actually use.
+    color_t readable_on(const color_t &background, float ratio) const;
 
     // ── arithmetic ────────────────────────────────────────────────────────────
     // All return a new colour in the receiver's authoring space, clamped to

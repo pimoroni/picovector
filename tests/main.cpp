@@ -13,6 +13,7 @@ void test_robustness();
 void test_palette();
 void test_color();
 void test_color_readback();
+void test_color_palette();
 void test_gradient();
 
 int main() {
@@ -27,6 +28,7 @@ int main() {
   test_palette();
   test_color();
   test_color_readback();
+  test_color_palette();
   test_gradient();
   return pvtest::summary();
 }

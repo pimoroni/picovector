@@ -126,8 +126,11 @@ namespace picovector {
     for(int i = 0; i < glyph->path_count; i++) {
       glyph_path_t &path = glyph->paths[i];
       int count = path.point_count;
-      if(count < 2) continue;
-      if(count > (int)(sizeof(glyph_point_buf) / sizeof(glyph_point_buf[0]))) continue; // too detailed to fit
+      if(count < 2) continue;                     // no edges either way
+      // A glyph is a shape, so it is all of its contours or none of it: an 'o'
+      // missing its outer contour is not a partial 'o', it is a filled blob
+      // where the counter should be. See render() in rasteriser.cpp.
+      if(count > (int)(sizeof(glyph_point_buf) / sizeof(glyph_point_buf[0]))) return;
       if(wide_points) {
         glyph_path_point16_t *points = (glyph_path_point16_t *)path.points;
         for(int k = 0; k < count; k++) {
@@ -139,7 +142,7 @@ namespace picovector {
           glyph_point_buf[k] = vec2_t((float)points[k].x, (float)points[k].y);
         }
       }
-      render_add_path(glyph_point_buf, count, transform);
+      if(render_add_path(glyph_point_buf, count, transform) < 0) return;
     }
     render_flush(target, brush);
   }

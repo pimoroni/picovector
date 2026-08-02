@@ -225,10 +225,12 @@ namespace picovector {
 
   // Transform a path's points once and append its edges to the batch, growing
   // the accumulated bounds. Returns the number of free edge slots remaining, or
-  // -1 if the path would overflow the buffer (nothing added — the caller should
-  // flush() and retry into a fresh batch). Callers pass vec2_t; the font module
-  // converts its compact glyph points before calling, so picovector stays
-  // geometry-agnostic.
+  // -1 if the path would not fit in the room left in the batch (nothing added).
+  // A caller drawing one shape has to abandon the whole shape: the fill rule is
+  // resolved over whatever is in the batch, so neither skipping a contour nor
+  // flushing and retrying it separately draws the shape correctly. Callers pass
+  // vec2_t; the font module converts its compact glyph points before calling,
+  // so picovector stays geometry-agnostic.
   int render_add_path(const vec2_t *pts, int count, mat3_t *transform) {
     if(count < 2) return MAX_EDGES - edge_count;            // no edges to add
     if(count > MAX_EDGES - edge_count) return -1;           // would overflow
@@ -631,8 +633,13 @@ namespace picovector {
 
     render_begin();
     for(auto &path : shape->paths) {
-      // a path returning -1 exceeds the whole edge buffer and is skipped
-      render_add_path(path.points.data(), (int)path.points.size(), transform);
+      // All of a shape's contours or none of it. The fill rule decides inside
+      // from the edges in the batch, so a shape missing a contour is not a
+      // partial drawing of itself: with even-odd, dropping a ring's outer
+      // contour leaves the inner one filling the hole it was there to cut.
+      // Splitting across two flushes has the same problem, since each flush
+      // resolves the rule over only its own edges.
+      if(render_add_path(path.points.data(), (int)path.points.size(), transform) < 0) return;
     }
     render_flush(target, brush);
   }

@@ -211,6 +211,129 @@ void test_robustness() {
     }
   }
 
+  printf("robust: a shape too big for the edge buffer draws nothing, not part of itself\n");
+  {
+    // MAX_EDGES is 1024 and a contour that doesn't fit is refused. What makes
+    // that dangerous is the fill rule: inside is decided from the edges in the
+    // batch, so a ring missing its inner contour is not a partial ring, it is a
+    // solid disc where the hole should be. Splitting across two flushes has the
+    // same problem, each flush seeing only its own edges - so it is the whole
+    // shape or none of it.
+    auto ring = [](int outer_pts, int inner_pts) {
+      shape_t *s = new(PV_MALLOC(sizeof(shape_t))) shape_t(2);
+      for(auto spec : {std::pair<int,float>{outer_pts, 100.0f},
+                       std::pair<int,float>{inner_pts, 50.0f}}) {
+        path_t p(spec.first);
+        for(int i = 0; i < spec.first; i++) {
+          float a = i * 6.2831853f / spec.first;
+          p.add_point(vec2_t(160 + cosf(a) * spec.second, 120 + sinf(a) * spec.second));
+        }
+        s->add_path(p);
+      }
+      return s;
+    };
+    auto lit_and_hole = [](shape_t *s, int &lit, bool &hole_open) {
+      canvas_t c(320, 240);
+      c.flat(0xff000000u);
+      rgb_color_t red(255, 0, 0, 255);
+      color_brush_t b(red);
+      c.img.brush(&b);
+      mat3_t t;
+      render(s, &c.img, &t, &b);
+      lit = c.changed_total();
+      hole_open = c.at(160, 120) != red._p;
+    };
+
+    int lit = 0; bool hole_open = false;
+
+    // comfortably inside the buffer: a ring, with its hole
+    lit_and_hole(ring(200, 100), lit, hole_open);
+    CHECK(lit > 0);
+    CHECK_MSG(hole_open, "a ring that fits lost its hole");
+    int good_lit = lit;
+
+    // right up to the limit, still a ring
+    lit_and_hole(ring(900, 100), lit, hole_open);
+    CHECK_MSG(hole_open, "a ring at the edge of the buffer lost its hole");
+    CHECK(lit > 0);
+
+    // over it: nothing at all, rather than a disc with the hole filled in
+    lit_and_hole(ring(1000, 100), lit, hole_open);
+    CHECK_MSG(lit == 0, "a shape too big for the edge buffer drew part of itself");
+
+    // and a single contour over the limit is refused the same way
+    lit_and_hole(ring(2000, 0), lit, hole_open);
+    CHECK(lit == 0);
+
+    (void)good_lit;
+  }
+
+  printf("robust: a glyph contour over the point buffer drops the glyph, not a piece of it\n");
+  {
+    // Same rule for text: the glyph scratch buffer holds 512 points and the
+    // edge buffer 1024, and a glyph over either is a shape that cannot be
+    // rasterised correctly. An 'o' missing its outer contour is a filled blob.
+    auto be16 = [](std::vector<uint8_t> &v, int n) {
+      v.push_back((uint8_t)((n >> 8) & 0xff));
+      v.push_back((uint8_t)(n & 0xff));
+    };
+    // One glyph whose contours have the given point counts, each a circle at a
+    // different radius so the geometry is real. Wide points, 16-bit contour
+    // counts. Mixed counts matter: a glyph where only *some* contours are over
+    // a limit is the case that tells a dropped piece from a dropped glyph.
+    auto build_af = [&](std::vector<int> contour_pts) {
+      int total = 0;
+      for(int p : contour_pts) total += p;
+      std::vector<uint8_t> v = { 'a','f','!','?' };
+      be16(v, 3);                       // flags: 16-bit point counts, wide
+      be16(v, 1);                       // glyph_count
+      be16(v, (int)contour_pts.size()); // path_count
+      be16(v, total);                   // point_count
+      be16(v, 128);                     // units_per_em
+      be16(v, 'A');                     // codepoint
+      be16(v, 0); be16(v, 0);           // x, y
+      be16(v, 100); be16(v, 100);       // w, h
+      be16(v, 110);                     // advance
+      v.push_back((uint8_t)contour_pts.size());
+      for(int p : contour_pts) be16(v, p);
+      for(size_t c = 0; c < contour_pts.size(); c++)
+        for(int i = 0; i < contour_pts[c]; i++) {
+          float a = i * 6.2831853f / contour_pts[c], r = 50.0f - (float)c * 10.0f;
+          be16(v, (int)(cosf(a) * r));
+          be16(v, (int)(sinf(a) * r));
+        }
+      return v;
+    };
+    auto ink = [](const std::vector<uint8_t> &blob) {
+      font_t f;
+      uint8_t *buf = nullptr;
+      size_t n = 0;
+      if(parse_vector_font(blob.data(), blob.size(), &f, &buf, &n) != FONT_OK) return -1;
+      canvas_t c(256, 256);
+      c.flat(0xff000000u);
+      rgb_color_t pen(255, 255, 255, 255);
+      color_brush_t b(pen);
+      c.img.brush(&b);
+      c.img.font(&f);
+      c.img.text_cursor(vec2_t(128, 128));   // clear of the edges at this size
+      c.snapshot();
+      f.draw(&c.img, "A", 80.0f);
+      int lit = c.changed_total();
+      PV_FREE(buf);
+      return lit;
+    };
+
+    // one contour over the 512-point scratch buffer, one comfortably under, so
+    // the survivor would draw on its own if the glyph were not dropped whole
+    CHECK_MSG(ink(build_af({300, 300})) > 0, "a glyph within both limits drew nothing");
+    CHECK_MSG(ink(build_af({100, 100})) > 0, "the control contours draw on their own");
+    CHECK_MSG(ink(build_af({600, 100})) == 0,
+              "a glyph with an over-long contour drew part of itself");
+    // each contour fits the scratch buffer, the three together exceed MAX_EDGES
+    CHECK_MSG(ink(build_af({400, 400, 400})) == 0,
+              "a glyph over the edge buffer drew part of itself");
+  }
+
   printf("robust: a primitive's vertex count is bounded before it allocates\n");
   {
     // These counts come straight off the Python API, so they reach reserve()

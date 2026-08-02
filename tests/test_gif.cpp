@@ -809,6 +809,96 @@ void test_gif() {
     CHECK(matched);
   }
 
+  printf("gif: one reader serves both passes\n");
+  {
+    // Everything else here goes through the memory overloads, which build a
+    // fresh source per call and so always start at byte zero. An embedder with
+    // an open file has one reader and hands it to both passes - the survey
+    // leaves it at the end of the file, and decode has to get back to the start
+    // by itself. Reading the file twice from one reader is the case the
+    // bindings actually have, and nothing was covering it.
+    gif_builder_t b(4, 2, 2);
+    b.pixels(0, 0, 4, 2, { 1, 1, 1, 1, 2, 2, 2, 2 });
+    b.pixels(0, 0, 4, 2, { 3, 3, 3, 3, 4, 4, 4, 4 });
+    b.trailer();
+
+    struct counted_t {
+      const uint8_t *data;
+      size_t size, pos;
+      int rewinds;
+    } source = { b.out.data(), b.out.size(), 0, 0 };
+
+    gif_reader_t reader = {
+      [](void *handle, void *dest, size_t len) -> size_t {
+        counted_t *s = (counted_t *)handle;
+        size_t available = s->size - s->pos;
+        if(len > available) len = available;
+        memcpy(dest, s->data + s->pos, len);
+        s->pos += len;
+        return len;
+      },
+      [](void *handle) -> bool {
+        counted_t *s = (counted_t *)handle;
+        s->pos = 0;
+        s->rewinds++;
+        return true;
+      },
+      &source
+    };
+
+    gif_info_t info;
+    scratch().restore = nullptr;
+    scratch().restore_size = 0;
+    CHECK(gif_survey(reader, &scratch(), &info, nullptr, 0) == GIF_OK);
+    CHECK(info.frame_count == 2);
+    CHECK_MSG(source.pos == source.size, "the survey should have read the whole file");
+
+    std::vector<uint8_t> restore(info.restore_bytes ? info.restore_bytes : 1, 0);
+    scratch().restore = restore.data();
+    scratch().restore_size = restore.size();
+    image_t sheet((int)info.width * info.frame_count, (int)info.height,
+                  1, (int)info.frame_count, RGBA8888, true, info.palette_size);
+
+    // Handed the same reader, sitting at the end of the file.
+    CHECK(gif_decode(reader, &scratch(), &info, &sheet) == GIF_OK);
+    CHECK_MSG(source.rewinds > 0, "decode should rewind rather than assume");
+    CHECK(((uint8_t *)sheet.ptr(0, 0))[0] == 1);
+    CHECK(((uint8_t *)sheet.ptr(4, 0))[0] == 3);
+  }
+
+  printf("gif: decode says so when it cannot re-read the file\n");
+  {
+    gif_builder_t b(4, 2, 2);
+    b.pixels(0, 0, 4, 2, { 1, 1, 1, 1, 2, 2, 2, 2 });
+    b.trailer();
+
+    gif_info_t info;
+    scratch().restore = nullptr;
+    scratch().restore_size = 0;
+    CHECK(gif_survey(b.out.data(), b.out.size(), &scratch(), &info, nullptr, 0) == GIF_OK);
+
+    // A reader that cannot go back cannot be decoded from, and that is reported
+    // rather than read as a file with no header.
+    struct once_t { const uint8_t *data; size_t size, pos; } source =
+      { b.out.data(), b.out.size(), 0 };
+    gif_reader_t stubborn = {
+      [](void *handle, void *dest, size_t len) -> size_t {
+        once_t *s = (once_t *)handle;
+        size_t available = s->size - s->pos;
+        if(len > available) len = available;
+        memcpy(dest, s->data + s->pos, len);
+        s->pos += len;
+        return len;
+      },
+      [](void *) -> bool { return false; },
+      &source
+    };
+
+    image_t sheet((int)info.width * info.frame_count, (int)info.height,
+                  1, (int)info.frame_count, RGBA8888, true, info.palette_size);
+    CHECK(gif_decode(stubborn, &scratch(), &info, &sheet) == GIF_NO_BUFFER);
+  }
+
   printf("gif: the parser against 20000 mutated files\n");
   {
     // Every field comes off a filesystem, so all of it is corruption- or

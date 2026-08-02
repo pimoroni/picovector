@@ -443,6 +443,12 @@ namespace picovector {
     if(info->restore_bytes > 0 &&
        (scratch->restore == nullptr || scratch->restore_size < info->restore_bytes)) return GIF_NO_BUFFER;
 
+    // The survey read to the end of the file, so this pass starts by going back
+    // to the beginning. Doing it here rather than leaving it to the caller is
+    // what makes a single reader work for both passes, which is how an embedder
+    // holding one open file naturally uses this.
+    if(!reader.rewind || !reader.rewind(reader.handle)) return GIF_NO_BUFFER;
+
     gif_read_t r = { reader, false };
     gif_header_t header;
     gif_status_t status = read_header(r, scratch, &header);

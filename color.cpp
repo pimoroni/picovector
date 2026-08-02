@@ -67,6 +67,16 @@ namespace picovector {
   // nothing and the byte spends its range where colours actually are.
   static constexpr float OKLCH_MAX_CHROMA = 0.35f;
 
+  // How far outside 0-1 a linear channel can stray before the clamp can actually
+  // move the output byte. Half a byte is worth very different amounts of linear
+  // light at the two ends - the transfer curve is 13x steeper near black than
+  // the channel scale, and far shallower near white - so the bounds are not
+  // symmetric. Constants, not expressions: the high one is srgb_decode(254.5/255)
+  // subtracted from 1, and working it out per call would put a powf in the
+  // middle of a bisection that runs it nine times.
+  static constexpr float SLACK_LOW = 0.5f / 255.0f / 12.92f;   // 0.000152
+  static constexpr float SLACK_HIGH = 0.00445475f;
+
   // `clipped`, when asked for, reports that a linear channel fell outside 0-1
   // and was truncated - the colour named does not exist in sRGB, and what comes
   // back has a shifted hue and lightness rather than a merely duller version of
@@ -102,16 +112,9 @@ namespace picovector {
     float b_lin = -0.0041960863f * l_ - 0.7034186147f * m_ + 1.7076147010f * s_;
 
     if(clipped) {
-      // Clipping that cannot move the output byte is not clipping. Half a byte
-      // is worth very different amounts of linear light at the two ends - the
-      // transfer curve is 13x steeper near black than the channel scale, and far
-      // shallower near white - so the two bounds are not symmetric.
-      const float slack_low = 0.5f / 255.0f / 12.92f;          // ~0.00015
-      const float slack_high = 1.0f - srgb_decode(254.5f / 255.0f);  // ~0.0045
-
-      *clipped = r_lin < -slack_low || r_lin > 1.0f + slack_high
-              || g_lin < -slack_low || g_lin > 1.0f + slack_high
-              || b_lin < -slack_low || b_lin > 1.0f + slack_high;
+      *clipped = r_lin < -SLACK_LOW || r_lin > 1.0f + SLACK_HIGH
+              || g_lin < -SLACK_LOW || g_lin > 1.0f + SLACK_HIGH
+              || b_lin < -SLACK_LOW || b_lin > 1.0f + SLACK_HIGH;
     }
 
     // Linear -> sRGB, then to 0-255

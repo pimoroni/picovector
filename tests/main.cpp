@@ -10,6 +10,7 @@ void test_blend();
 void test_font();
 void test_robustness();
 void test_palette();
+void test_color();
 void test_color_readback();
 
 int main() {
@@ -21,6 +22,7 @@ int main() {
   test_font();
   test_robustness();
   test_palette();
+  test_color();
   test_color_readback();
   return pvtest::summary();
 }

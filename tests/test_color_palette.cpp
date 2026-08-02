@@ -541,6 +541,27 @@ void test_color_palette() {
     CHECK_MSG(distinct, "a triad should be obviously three colours");
   }
 
+  printf("palette: a component out of range clamps, but a hue goes round\n");
+  {
+    // Generating a palette means computing components, and a computed one that
+    // overshoots must not come back as something else entirely: 300 lightness
+    // is white, not the dark grey that wrapping to 44 would give.
+    CHECK(oklch_color_t(300, 40, 21, 255).l() == 255);
+    CHECK(oklch_color_t(-20, 40, 21, 255).l() == 0);
+    CHECK(oklch_color_t(160, 400, 21, 255).c() == 255);
+    CHECK(rgb_color_t(300, -20, 128, 400).r() == 255);
+    CHECK(rgb_color_t(300, -20, 128, 400).g() == 0);
+    CHECK(rgb_color_t(300, -20, 128, 400).a() == 255);
+    CHECK(hsv_color_t(100, 300, -5, 255).s() == 255);
+    CHECK(hsv_color_t(100, 300, -5, 255).v() == 0);
+
+    // A hue is a wheel, so it wraps - which is what a rotation past the end of
+    // it should do.
+    CHECK(oklch_color_t(160, 40, 300, 255).h() == 44);
+    CHECK(oklch_color_t(160, 40, -20, 255).h() == 236);
+    CHECK(hsv_color_t(300, 200, 200, 255).h() == 44);
+  }
+
   printf("ramp: the count asked for is the count returned\n");
   {
     const float pos[2] = { 0.0f, 1.0f };

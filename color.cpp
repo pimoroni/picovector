@@ -156,16 +156,16 @@ namespace picovector {
     _p = premultiply(_sr, _sg, _sb, _a);
   }
 
-  rgb_color_t::rgb_color_t(uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
-    author(COLOR_RGB, r, g, b, a);
+  rgb_color_t::rgb_color_t(int r, int g, int b, int a) {
+    author(COLOR_RGB, clamp_byte(r), clamp_byte(g), clamp_byte(b), clamp_byte(a));
   }
 
-  hsv_color_t::hsv_color_t(uint8_t h, uint8_t s, uint8_t v, uint8_t a) {
-    author(COLOR_HSV, h, s, v, a);
+  hsv_color_t::hsv_color_t(int h, int s, int v, int a) {
+    author(COLOR_HSV, (uint8_t)(h & 0xff), clamp_byte(s), clamp_byte(v), clamp_byte(a));
   }
 
-  oklch_color_t::oklch_color_t(uint8_t l, uint8_t c, uint8_t h, uint8_t a) {
-    author(COLOR_OKLCH, l, c, h, a);
+  oklch_color_t::oklch_color_t(int l, int c, int h, int a) {
+    author(COLOR_OKLCH, clamp_byte(l), clamp_byte(c), (uint8_t)(h & 0xff), clamp_byte(a));
   }
 
   // ── changing space ──────────────────────────────────────────────────────────

@@ -206,17 +206,22 @@ namespace picovector {
 
   // The subclasses below exist only to construct. They add no state: a colour
   // records which of them made it in _space, so slicing to color_t is lossless.
+  //
+  // Each takes ints and handles its own out-of-range values, so a computed
+  // component cannot silently become a different one. A hue wraps, because that
+  // is what going round a wheel means; everything else clamps, the same way the
+  // arithmetic does.
 
   // r, g, b: 0-255.
   class rgb_color_t : public color_t {
   public:
-    rgb_color_t(uint8_t r, uint8_t g, uint8_t b, uint8_t a);
+    rgb_color_t(int r, int g, int b, int a);
   };
 
   // h, s, v: 0-255 each; hue is 256 counts to a full turn, and wraps.
   class hsv_color_t : public color_t {
   public:
-    hsv_color_t(uint8_t h, uint8_t s, uint8_t v, uint8_t a);
+    hsv_color_t(int h, int s, int v, int a);
   };
 
   // Recover straight components from a premultiplied word - what a framebuffer
@@ -255,7 +260,7 @@ namespace picovector {
   // Bytes throughout, so a lighten() step means the same thing in every space.
   class oklch_color_t : public color_t {
   public:
-    oklch_color_t(uint8_t l, uint8_t c, uint8_t h, uint8_t a);
+    oklch_color_t(int l, int c, int h, int a);
   };
 
 }

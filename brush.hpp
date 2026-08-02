@@ -343,9 +343,10 @@ namespace picovector {
     mat3_t base_inverse;       // device -> gradient for the brush's own transform only
     pixel_t lut[256];          // colours sampled along the gradient
 
-    // positions are 0..1 stop offsets, premul_colors are color_t::_p values
+    // positions are 0..1 stop offsets. The stops keep their colour_t so each
+    // segment can interpolate in the space its two ends were authored in.
     gradient_brush_t(gradient_type_t type, float x1, float y1, float x2, float y2,
-                     const float *positions, const pixel_t *premul_colors, int stop_count,
+                     const float *positions, const color_t *stops, int stop_count,
                      mat3_t *transform);
 
     // Move the gradient without rebuilding its lookup table. The stops are what

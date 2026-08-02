@@ -4,69 +4,57 @@
 
 namespace picovector {
 
-  // recover straight (non-premultiplied) channels from a premultiplied packed colour
-  static inline void unpremultiply(pixel_t packed, float &r, float &g, float &b, float &a) {
-    uint32_t pa = _a(packed);
-    if(pa == 0) { r = g = b = a = 0.0f; return; }
-    float inv = 255.0f / (float)pa;
-    r = (float)_r(packed) * inv;
-    g = (float)_g(packed) * inv;
-    b = (float)_b(packed) * inv;
-    a = (float)pa;
-  }
-
-  // pack straight channels back into the premultiplied layout color_t::premul uses
-  static inline pixel_t premultiply_pack(float r, float g, float b, float a) {
-    int ai = (int)(a + 0.5f);
-    if(ai < 0) ai = 0; else if(ai > 255) ai = 255;
-    int rp = (int)(r * ai / 255.0f + 0.5f); if(rp < 0) rp = 0; else if(rp > 255) rp = 255;
-    int gp = (int)(g * ai / 255.0f + 0.5f); if(gp < 0) gp = 0; else if(gp > 255) gp = 255;
-    int bp = (int)(b * ai / 255.0f + 0.5f); if(bp < 0) bp = 0; else if(bp > 255) bp = 255;
-    return __builtin_bswap32((rp << 24) | (gp << 16) | (bp << 8) | ai);
-  }
-
-  // Pre-render the gradient into the 256-entry LUT: interpolate stops in straight
-  // sRGB (the SVG default), then store premultiplied. Spread method is pad.
-  static void build_lut(pixel_t *lut, const float *positions, const pixel_t *premul_colors, int n) {
+  // Pre-render the gradient into the 256-entry LUT. Spread method is pad.
+  //
+  // Every segment interpolates through color_t::mix, so a gradient blends the way
+  // two colours blend anywhere else: through the components the stops were
+  // authored with when they share a space, taking a hue the short way round the
+  // wheel, and through sRGB when they do not. Two OKLCH stops therefore ramp
+  // through OKLCH, which is the whole point, and it costs nothing at render time
+  // because what the pixel loop reads is still a table of premultiplied words.
+  //
+  // Working in the table's own index domain rather than in 0..1 floats is what
+  // makes each stop land exactly on its entry, and it means the padded ends cost
+  // no interpolation at all.
+  static void build_lut(pixel_t *lut, const float *positions, const color_t *stops, int n) {
     if(n <= 0) {
       for(int i = 0; i < 256; i++) lut[i] = 0;
       return;
     }
 
-    // sanitise stop offsets: clamp to 0..1 and force non-decreasing (per SVG)
-    float pos[gradient_brush_t::max_stops];
-    float sr[gradient_brush_t::max_stops], sg[gradient_brush_t::max_stops];
-    float sb[gradient_brush_t::max_stops], sa[gradient_brush_t::max_stops];
-    float last = 0.0f;
+    if(n == 1) {
+      for(int i = 0; i < 256; i++) lut[i] = stops[0]._p;
+      return;
+    }
+
+    // Stop offsets to table indices: clamped to 0..1 and forced non-decreasing,
+    // both per SVG.
+    int at[gradient_brush_t::max_stops];
+    int last = 0;
     for(int i = 0; i < n; i++) {
       float pp = positions[i];
       if(pp < 0.0f) pp = 0.0f; else if(pp > 1.0f) pp = 1.0f;
-      if(pp < last) pp = last;
-      last = pp;
-      pos[i] = pp;
-      unpremultiply(premul_colors[i], sr[i], sg[i], sb[i], sa[i]);
+      int ai = (int)(pp * 255.0f + 0.5f);
+      if(ai < last) ai = last;
+      last = ai;
+      at[i] = ai;
     }
 
-    int j = 0; // current segment; advances monotonically as t increases
-    for(int i = 0; i < 256; i++) {
-      float t = (float)i / 255.0f;
-      float r, g, b, a;
+    for(int i = 0; i < at[0]; i++) lut[i] = stops[0]._p;
+    for(int i = at[n - 1] + 1; i < 256; i++) lut[i] = stops[n - 1]._p;
 
-      if(t <= pos[0]) {
-        r = sr[0]; g = sg[0]; b = sb[0]; a = sa[0];
-      } else if(t >= pos[n - 1]) {
-        r = sr[n - 1]; g = sg[n - 1]; b = sb[n - 1]; a = sa[n - 1];
-      } else {
-        while(j < n - 2 && pos[j + 1] < t) j++;
-        float span = pos[j + 1] - pos[j];
-        float f = span > 0.0f ? (t - pos[j]) / span : 0.0f;
-        r = sr[j] + (sr[j + 1] - sr[j]) * f;
-        g = sg[j] + (sg[j + 1] - sg[j]) * f;
-        b = sb[j] + (sb[j + 1] - sb[j]) * f;
-        a = sa[j] + (sa[j + 1] - sa[j]) * f;
+    for(int j = 0; j + 1 < n; j++) {
+      int span = at[j + 1] - at[j];
+
+      // Two stops sharing an entry are a hard stop; the later one wins it, which
+      // is the SVG rule for a discontinuity.
+      if(span <= 0) { lut[at[j + 1]] = stops[j + 1]._p; continue; }
+
+      // t hits 0 and 255 exactly at the ends, so both stops come out bit-exact
+      // whatever space they were authored in.
+      for(int i = at[j]; i <= at[j + 1]; i++) {
+        lut[i] = stops[j].mix(stops[j + 1], ((i - at[j]) * 255 + span / 2) / span)._p;
       }
-
-      lut[i] = premultiply_pack(r, g, b, a);
     }
   }
 
@@ -77,13 +65,13 @@ namespace picovector {
   static void gradient_conical_span(image_t *target, gradient_brush_t *p, int x, int y, int w, const uint8_t *mask);
 
   gradient_brush_t::gradient_brush_t(gradient_type_t type, float x1, float y1, float x2, float y2,
-                                     const float *positions, const pixel_t *premul_colors, int stop_count,
+                                     const float *positions, const color_t *stops, int stop_count,
                                      mat3_t *transform)
     // Store a known type rather than relying on every consumer's fallthrough:
     // the binding casts an int straight from Python.
     : type(type > GRADIENT_CONICAL ? GRADIENT_LINEAR : type) {
     geometry(x1, y1, x2, y2, transform);
-    build_lut(lut, positions, premul_colors, stop_count);
+    build_lut(lut, positions, stops, stop_count);
   }
 
   void gradient_brush_t::geometry(float x1, float y1, float x2, float y2, mat3_t *transform) {

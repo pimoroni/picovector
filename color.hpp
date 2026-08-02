@@ -37,6 +37,14 @@ namespace picovector {
     uint8_t a() const { return _a; }
   };
 
+  // Recover straight components from a premultiplied word - what a framebuffer
+  // holds. Exact at full alpha, which is the case that matters since a screen is
+  // opaque; below that only what the premultiplied byte retained can come back
+  // (at alpha 10 a channel was stored in 7 of 255 levels). Alpha 0 carries no
+  // colour at all - every colour premultiplies to zero - so it reads back as
+  // transparent black rather than pretending otherwise.
+  rgb_color_t color_from_premul(uint32_t premul);
+
   class oklch_color_t : public color_t {
     float _l, _c, _h, _a;
 

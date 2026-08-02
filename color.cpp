@@ -98,6 +98,19 @@ namespace picovector {
 
     premul(ri, gi, bi, a);
   }
+
+  rgb_color_t color_from_premul(uint32_t premul) {
+    uint32_t a = (premul >> 24) & 0xffu;
+    if(a == 0) return rgb_color_t(0, 0, 0, 0);
+    auto straight = [a](uint32_t c) -> uint8_t {
+      uint32_t v = (c * 255u + a / 2u) / a;   // rounded, and exact when a == 255
+      return (uint8_t)(v > 255u ? 255u : v);
+    };
+    return rgb_color_t(straight(premul & 0xffu),
+                       straight((premul >> 8) & 0xffu),
+                       straight((premul >> 16) & 0xffu),
+                       (uint8_t)a);
+  }
 }
 
 /*

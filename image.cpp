@@ -31,6 +31,11 @@ namespace picovector {
     _buffer = source->ptr(i.x, i.y);
     _managed_buffer = false;
     _owns_palette = false;      // shared with the parent, not copied
+    // A view of a sheet is not itself a sheet. Inheriting the grid would have a
+    // single sprite report its parent's column count, which is the wrong answer
+    // to "how many frames have you got".
+    _rows = 1;
+    _cols = 1;
   }
 
   image_t::image_t(int w, int h, pixel_format_t pixel_format, bool has_palette, int palette_entries)

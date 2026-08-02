@@ -647,6 +647,15 @@ void test_gif() {
     CHECK(frame.palette_data() == sheet.image.palette_data());   // shared, not copied
     CHECK(((uint8_t *)frame.ptr(0, 0))[0] == 2);
     CHECK(((uint8_t *)frame.ptr(3, 1))[0] == 2);
+
+    // The sheet knows how many frames it has, which is what bounds a loop.
+    CHECK(sheet.image.cols() == 2);
+    CHECK(sheet.image.rows() == 1);
+    // A single frame is not itself a sheet, so it does not claim its parent's
+    // grid - otherwise one sprite would report the whole animation's length.
+    CHECK(frame.cols() == 1);
+    CHECK(frame.rows() == 1);
+    CHECK(sheet.image.window(rect_t(0, 0, 4, 2)).cols() == 1);
   }
 
   printf("gif: a frame hanging off the canvas is consumed, not written\n");

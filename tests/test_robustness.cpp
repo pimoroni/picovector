@@ -211,6 +211,39 @@ void test_robustness() {
     }
   }
 
+  printf("robust: a primitive's vertex count is bounded before it allocates\n");
+  {
+    // These counts come straight off the Python API, so they reach reserve()
+    // unfiltered. A huge one is an unbounded allocation, a negative one
+    // reserves a huge size_t (std::length_error, which on a -fno-exceptions
+    // firmware build is an abort), and a NaN one is an undefined cast.
+    auto count = [](shape_t *s) {
+      size_t n = 0;
+      for(auto &p : s->paths) n += p.points.size();
+      return n;
+    };
+    float nan = std::nanf(""), inf = INFINITY;
+    arena_t a(64, 64);
+
+    // sane inputs are untouched
+    CHECK(count(regular_polygon(32, 32, 6, 20)) == 6);
+    CHECK(count(star(32, 32, 5, 20, 10)) == 10);
+    CHECK(count(rounded_rectangle(0, 0, 50, 50, 10, 10, 10, 10)) == 16);
+
+    for(auto s : {regular_polygon(32, 32, 1e9f, 20), regular_polygon(32, 32, -5, 20),
+                  regular_polygon(32, 32, nan, 20), regular_polygon(32, 32, inf, 20),
+                  star(32, 32, 100000, 20, 10),     star(32, 32, -5, 20, 10),
+                  rounded_rectangle(0, 0, 50, 50, 1e6f, 0, 0, 0),
+                  rounded_rectangle(0, 0, 50, 50, nan, nan, nan, nan),
+                  rounded_rectangle(0, 0, 50, 50, inf, 0, 0, 0)}) {
+      CHECK_MSG(count(s) >= 3, "a primitive degenerated below a drawable path");
+      CHECK_MSG(count(s) <= 4 * PV_CURVE_MAX_SIDES + 8,
+                "a primitive's vertex count was not bounded");
+      draw(&a.img, s);                 // and it still rasterises without incident
+    }
+    CHECK(a.intact());
+  }
+
   printf("robust: tiny images\n");
   {
     for(auto wh : {std::pair<int,int>{1, 1}, {1, 64}, {64, 1}, {2, 2}}) {

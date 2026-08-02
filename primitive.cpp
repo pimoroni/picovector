@@ -16,6 +16,18 @@ namespace picovector {
     return sides >= PV_CURVE_MAX_SIDES ? PV_CURVE_MAX_SIDES : PV_CURVE_MIN_SIDES;
   }
 
+  // A vertex count straight off the API, clamped before it reaches reserve().
+  // Written as the in-range test for the same reason as curve_sides: NaN
+  // compares false against everything, and casting it to int is undefined.
+  // Without the ceiling a large count is an unbounded allocation, and without
+  // the floor a negative one reserves a huge size_t; both are one call away in
+  // Python. The ceiling is curve_sides' own, past which a polygon and a circle
+  // rasterise the same.
+  static int clamp_sides(float sides) {
+    if(sides > 3.0f && sides < PV_CURVE_MAX_SIDES) return (int)sides;
+    return sides >= PV_CURVE_MAX_SIDES ? PV_CURVE_MAX_SIDES : 3;
+  }
+
   // Sides for a partial sweep of `delta` degrees, at the same density.
   static int curve_steps(float radius, float delta) {
     int steps = (int)ceilf((float)curve_sides(radius) * (delta / 360.0f));
@@ -40,10 +52,11 @@ namespace picovector {
     }
   };
 
-  shape_t* regular_polygon(float x, float y, float sides, float radius) {
+  shape_t* regular_polygon(float x, float y, float sides_in, float radius) {
+    int sides = clamp_sides(sides_in);
     shape_t* result = new(PV_MALLOC(sizeof(shape_t))) shape_t(1);
     path_t poly(sides);
-    rotor_t vertex(0.0f, (PV_PI * 2.0f) / sides);
+    rotor_t vertex(0.0f, (PV_PI * 2.0f) / (float)sides);
     for(int i = 0; i < sides; i++) {
       poly.add_point(vertex.s * radius + x, vertex.c * radius + y);
       vertex.advance();
@@ -82,7 +95,13 @@ namespace picovector {
 
   void _build_rounded_rectangle_corner(path_t* path, float x, float y, float r, int q) {
     float quality = 5; // higher the number, lower the quality - selected by experiment
-    int steps = ceilf(r / quality) + 1;
+    // Same in-range form as curve_sides, for the same two reasons: a NaN radius
+    // would otherwise reach a cast that is undefined for NaN, and a large one
+    // would ask for an unbounded number of points (r = 1e5 was 20,000).
+    float want = (r / quality) + 1.0f;
+    int steps = (want > 1.0f && want < PV_CURVE_MAX_SIDES)
+                  ? (int)ceilf(want)
+                  : (want >= PV_CURVE_MAX_SIDES ? PV_CURVE_MAX_SIDES : 1);
     float delta = -(PV_PI / 2) / float(steps);
     float theta = (PV_PI / 2) * q; // select start theta for this quadrant
     for(int i = 0; i <= steps; i++) {
@@ -191,7 +210,8 @@ namespace picovector {
     return result;
   }
 
-  shape_t* star(float x, float y, int spikes, float outer_radius, float inner_radius) {
+  shape_t* star(float x, float y, int spikes_in, float outer_radius, float inner_radius) {
+    int spikes = clamp_sides((float)spikes_in);
     shape_t* result = new(PV_MALLOC(sizeof(shape_t))) shape_t(1);
     path_t poly(spikes * 2);
     for(int i = 0; i < spikes * 2; i++) {

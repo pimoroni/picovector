@@ -83,10 +83,10 @@ namespace picovector {
     if((*text & 0x80) == 0x00) {
       codepoint = *text; // ASCII, codepoints U+0000...U007F
     }
-    else if( ((*text & 0xE0) == 0xC0) && (text+1 <= end) && ((*(text+1) & 0xC0) == 0x80) ) {
+    else if( ((*text & 0xE0) == 0xC0) && (text+1 < end) && ((*(text+1) & 0xC0) == 0x80) ) {
       codepoint = ((uint16_t)(*text & 0x1F) << 6) + (*(text+1) & 0x3F); //codepoints U+0080...U+07FF
     }
-    else if( ((*text & 0xF0) == 0xE0) && (text+2 <= end) && ((*(text+1) & 0xC0) == 0x80) && ((*(text+2) & 0xC0) == 0x80) ) {
+    else if( ((*text & 0xF0) == 0xE0) && (text+2 < end) && ((*(text+1) & 0xC0) == 0x80) && ((*(text+2) & 0xC0) == 0x80) ) {
       codepoint = ((uint16_t)(*text & 0x0F) << 12) + ((uint16_t)(*(text+1) & 0x3F) << 6) + (*(text+2) & 0x3F); // codepoints U+0800...U+FFFF
     }
     else {

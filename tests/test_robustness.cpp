@@ -279,6 +279,55 @@ void test_robustness() {
     CHECK(a.intact());
   }
 
+  printf("robust: a truncated UTF-8 sequence at the end of a bounded span\n");
+  {
+    // The length-bounded draw/measure overloads exist so a caller can point into
+    // the middle of a buffer with no NUL to stop on, which makes `end` the only
+    // thing standing between the decoder and the next allocation. A multi-byte
+    // lead byte as the last byte of the span is the case that tests it.
+    //
+    // Exact-sized heap allocations, so a read past the end is a sanitiser
+    // report rather than a byte that happened to be readable.
+    const std::vector<uint8_t> good = {
+      'a','f','!','?', 0,3, 0,1, 0,1, 0,4, 4,0,
+      0,'A', 0,2, 0,0, 0,40, 0,50, 0,44, 1,
+      0,4,
+      0,0, 0,0, 0,30, 0,0, 0,30, 0,40, 0,0, 0,40 };
+    font_t f;
+    uint8_t *fbuf = nullptr;
+    size_t fn = 0;
+    CHECK(parse_vector_font(good.data(), good.size(), &f, &fbuf, &fn) == FONT_OK);
+
+    canvas_t c(32, 32);
+    rgb_color_t pen(255, 255, 255, 255);
+    color_brush_t b(pen);
+    c.img.brush(&b);
+    c.img.font(&f);
+
+    pixel_font_glyph_t pg = { 'A', 8 };
+    uint8_t pgdata[8] = { 0xFF, 0x81, 0x81, 0xFF, 0x81, 0x81, 0x81, 0x00 };
+    pixel_font_t pf{};
+    pf.width = 8; pf.height = 8; pf.glyph_count = 1; pf.glyph_data_size = 8;
+    pf.glyphs = &pg; pf.glyph_data = pgdata;
+    c.img.pixel_font(&pf);
+
+    // 0xC3 leads a 2-byte sequence, 0xE0 a 3-byte one; both are the last byte.
+    for(uint8_t lead : {(uint8_t)0xC3, (uint8_t)0xE0}) {
+      for(int n : {1, 2}) {
+        char *span = new char[n];
+        for(int i = 0; i < n - 1; i++) span[i] = 'A';
+        span[n - 1] = (char)lead;                 // truncated sequence at the end
+        f.measure(&c.img, span, span + n, 10.0f);
+        f.draw(&c.img, span, span + n, 10.0f);
+        pf.measure(&c.img, span, span + n, 1);
+        c.img.text_cursor(vec2_t(0, 0));
+        pf.draw(&c.img, span, span + n, 1);
+        delete[] span;
+      }
+    }
+    PV_FREE(fbuf);
+  }
+
   printf("robust: the .af parser against 20000 mutated fonts\n");
   {
     // The parser reads a file off a filesystem, so every field in it is

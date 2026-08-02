@@ -83,7 +83,7 @@ namespace picovector {
       if(!r.truncated && units == 0) return FONT_BAD_HEADER; // would divide by zero
       units_per_em = (float)units;
     }
-    if(r.truncated) return FONT_TRUNCATED;
+    if(r.truncated) return FONT_TRUNCATED;   // nothing allocated yet
 
     size_t glyph_buffer_size = sizeof(glyph_t) * glyph_count;
     size_t path_buffer_size  = sizeof(glyph_path_t) * path_count;
@@ -98,6 +98,20 @@ namespace picovector {
     size_t total = glyph_buffer_size + path_buffer_size + point_buffer_size;
     uint8_t *block = (uint8_t *)PV_MALLOC_NO_SCAN(total);
     if(!block) return FONT_MEM_ERROR;
+
+    // The block is raw storage with no destructor behind it, and `font` is only
+    // written on FONT_OK, so a rejection past this point has to hand it back or
+    // it is gone. Under a tracing GC that is collectable; under the default
+    // PV_MALLOC it is a hard leak, and a device retrying a corrupt font leaks
+    // every attempt.
+    auto reject = [&](font_status_t status) {
+#if MICROPY_MALLOC_USES_ALLOCATED_SIZE
+      PV_FREE(block, total);
+#else
+      PV_FREE(block);
+#endif
+      return status;
+    };
 
     glyph_t *glyphs = (glyph_t *)block;
     glyph_path_t *paths = (glyph_path_t *)(block + glyph_buffer_size);
@@ -121,7 +135,7 @@ namespace picovector {
       paths += glyph->path_count;
       claimed_paths += glyph->path_count;
     }
-    if(claimed_paths > path_count) return FONT_BAD_HEADER;
+    if(claimed_paths > path_count) return reject(FONT_BAD_HEADER);
 
     size_t point_size = wide ? sizeof(glyph_path_point16_t) : sizeof(glyph_path_point_t);
     size_t claimed_points = 0;
@@ -136,7 +150,7 @@ namespace picovector {
         claimed_points += path->point_count;
       }
     }
-    if(claimed_points > point_count) return FONT_BAD_HEADER;
+    if(claimed_points > point_count) return reject(FONT_BAD_HEADER);
 
     for(int i = 0; i < glyph_count; i++) {
       glyph_t *glyph = &glyphs[i];
@@ -156,7 +170,7 @@ namespace picovector {
       }
     }
 
-    if(r.truncated) return FONT_TRUNCATED;
+    if(r.truncated) return reject(FONT_TRUNCATED);
 
     font->glyph_count = glyph_count;
     font->glyphs = glyphs;

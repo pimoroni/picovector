@@ -402,6 +402,53 @@ void test_robustness() {
     CHECK(rejected > 0);        // nor all harmless
     CHECK_MSG(sane, "an accepted font described itself inconsistently");
   }
+
+  printf("robust: a rejected font hands its block back\n");
+  {
+    // The parser allocates one block up front and only publishes it through
+    // `buffer` on FONT_OK, so a rejection after that point is the one path that
+    // has to free it itself. A device retrying a corrupt font does this on a
+    // loop, and under the default PV_MALLOC (no tracing GC) every attempt is
+    // gone for good.
+    //
+    // What is asserted here is the observable contract: rejected, and `buffer`
+    // left alone. The free itself is LSan's, which runs with ASan on the Linux
+    // CI leg - it is unsupported on macOS, so a local run proves the contract
+    // but not the free.
+    const std::vector<uint8_t> good = {
+      'a','f','!','?', 0,3, 0,1, 0,1, 0,4, 4,0,
+      0,'A', 0,2, 0,0, 0,40, 0,50, 0,44, 1,
+      0,4,
+      0,0, 0,0, 0,30, 0,0, 0,30, 0,40, 0,0, 0,40 };
+
+    // claimed_paths > path_count: the glyph says two contours, the header one.
+    // Byte 26 is the glyph's path_count: 14 of header, then a wide glyph's
+    // codepoint/x/y/w/h/advance at two bytes each.
+    std::vector<uint8_t> too_many_paths = good;
+    too_many_paths[26] = 2;
+    // truncated part-way through the point data
+    std::vector<uint8_t> truncated(good.begin(), good.end() - 6);
+
+    for(auto &bad : {too_many_paths, truncated}) {
+      font_t f;
+      uint8_t *buf = (uint8_t *)0x1;              // must stay untouched on failure
+      size_t n = 0;
+      font_status_t s = parse_vector_font(bad.data(), bad.size(), &f, &buf, &n);
+      CHECK_MSG(s != FONT_OK, "a malformed font was accepted");
+      CHECK_MSG(buf == (uint8_t *)0x1, "a rejected font published its block");
+    }
+
+    // Repeated, because that is how the leak presented: a font that fails to
+    // load once fails every time the caller retries it.
+    for(int i = 0; i < 64; i++) {
+      font_t f;
+      uint8_t *buf = nullptr;
+      size_t n = 0;
+      CHECK(parse_vector_font(too_many_paths.data(), too_many_paths.size(),
+                              &f, &buf, &n) != FONT_OK);
+      CHECK(buf == nullptr);
+    }
+  }
 }
 
 // Indexed images: the storage is shared with sub-views and sized to the source,

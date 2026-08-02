@@ -3,6 +3,7 @@
 #include <cmath>
 
 #include "test.hpp"
+#include "helpers.hpp"
 #include "picovector.hpp"
 #include "types.hpp"
 #include "mat3.hpp"
@@ -10,6 +11,7 @@
 #include "primitive.hpp"
 
 using namespace picovector;
+using namespace pvtest;
 
 static bool near(float a, float b, float eps = 0.001f) { return std::fabs(a - b) < eps; }
 
@@ -39,6 +41,58 @@ void test_geometry() {
     CHECK(r.intersection(rect_t(100, 100, 5, 5)).empty());
     CHECK(r.intersects(rect_t(20, 30, 5, 5)));
     CHECK(!r.intersects(rect_t(100, 100, 5, 5)));
+  }
+
+  printf("geometry: a negative extent is a rect wound the other way\n");
+  {
+    // (10, 10, -30, -30) is the region with its far corner at (10, 10), which
+    // is how the shape path already reads it: render(rectangle(10, 10, -30,
+    // -30)) fills that region. The rect maths has to agree.
+    rect_t neg(10, 10, -30, -30);
+    rect_t n = neg.normalise();
+    CHECK(near(n.x, -20.0f) && near(n.y, -20.0f) && near(n.w, 30.0f) && near(n.h, 30.0f));
+    CHECK(!neg.empty());                         // 30x30 of area is not nothing
+
+    // and it is normalised on the way into an intersection, either side
+    rect_t clip(0, 0, 64, 64);
+    rect_t i = neg.intersection(clip);
+    CHECK(near(i.x, 0.0f) && near(i.y, 0.0f) && near(i.w, 10.0f) && near(i.h, 10.0f));
+    rect_t j = clip.intersection(neg);
+    CHECK(near(j.x, 0.0f) && near(j.y, 0.0f) && near(j.w, 10.0f) && near(j.h, 10.0f));
+    CHECK(neg.intersects(clip));
+
+    // normalising twice is the same as once, and a positive rect is untouched
+    CHECK(n.normalise() == n);
+    CHECK(rect_t(10, 20, 30, 40).normalise() == rect_t(10, 20, 30, 40));
+
+    // one negative axis, and a genuinely disjoint negative rect
+    CHECK(rect_t(10, 0, -30, 10).normalise() == rect_t(-20, 0, 30, 10));
+    CHECK(rect_t(-100, -100, -10, -10).intersection(clip).empty());
+  }
+
+  printf("geometry: the two rectangle APIs agree on a negative extent\n");
+  {
+    // The span-based fill and the rasterised shape take the same numbers, so
+    // they have to paint the same pixels.
+    rgb_color_t red(255, 0, 0, 255);
+    rect_t neg(10, 10, -30, -30);
+
+    canvas_t a(64, 64);
+    a.flat(0xff000000u);
+    color_brush_t ba(red);
+    a.img.brush(&ba);
+    a.img.rectangle(neg);
+
+    canvas_t b(64, 64);
+    b.flat(0xff000000u);
+    color_brush_t bb(red);
+    b.img.brush(&bb);
+    mat3_t t;
+    render(rectangle(neg.x, neg.y, neg.w, neg.h), &b.img, &t, &bb);
+
+    CHECK(a.changed_total() == 100);             // the visible 10x10 corner
+    CHECK_MSG(a.changed_total() == b.changed_total(),
+              "image.rectangle() and render() disagree on a negative extent");
   }
 
   printf("geometry: mat3\n");

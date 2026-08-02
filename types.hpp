@@ -170,7 +170,10 @@ namespace picovector {
       return o.x >= x && o.y >= y && (o.x + o.w) <= (x + w) && (o.y + o.h) < (y + h);
     }
 
-    rect_t normalise() {
+    // A negative extent is a rect wound the other way, not a degenerate one:
+    // (10, 10, -30, -30) has its far corner at (10, 10). Returns the same
+    // region with positive extents, which is the form the maths below wants.
+    rect_t normalise() const {
       rect_t n = *this;
 
       if(n.w < 0) {
@@ -206,10 +209,8 @@ namespace picovector {
 
 
     rect_t intersection(const rect_t &r) const {
-      rect_t rn = r;
-      rn.normalise();
-      rect_t tn = *this;
-      tn.normalise();
+      rect_t rn = r.normalise();
+      rect_t tn = normalise();
 
       // Compute the edges of the intersection
       float x1 = max(tn.x, rn.x);

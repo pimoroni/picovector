@@ -99,7 +99,7 @@ namespace picovector {
     premul(ri, gi, bi, a);
   }
 
-  rgb_color_t color_from_premul(uint32_t premul) {
+  rgb_color_t color_from_premul(pixel_t premul) {
     uint32_t a = (premul >> 24) & 0xffu;
     if(a == 0) return rgb_color_t(0, 0, 0, 0);
     auto straight = [a](uint32_t c) -> uint8_t {

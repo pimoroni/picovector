@@ -30,7 +30,7 @@ namespace picovector {
 
   class color_brush_t : public brush_t {
   public:
-    color_t c;
+    pixel_t c;
 
     color_brush_t(const color_t& c);
     void blend_spans(image_t *target, int i0, int i1, int step) override;
@@ -46,7 +46,7 @@ namespace picovector {
   // this is bit-identical to a dst-out erase.
   class transparent_brush_t : public brush_t {
   public:
-    uint32_t tint; // premultiplied target colour; 0 == fully transparent (erase)
+    pixel_t tint; // target colour; 0 == fully transparent (erase)
 
     transparent_brush_t();                 // erase (fully transparent)
     transparent_brush_t(const color_t &c); // lerp destination toward colour c
@@ -57,14 +57,19 @@ namespace picovector {
   class pattern_brush_t : public brush_t {
   public:
     uint8_t p[8];
-    color_t c1;
-    color_t c2;
+    pixel_t c1;
+    pixel_t c2;
 
     pattern_brush_t(const color_t& c1, const color_t& c2, uint8_t pattern_index);
     pattern_brush_t(const color_t& c1, const color_t& c2, uint8_t *pattern);
     void blend_spans(image_t *target, int i0, int i1, int step) override;
     void blend_masked_spans(image_t *target, int i0, int i1, int step) override;
   };
+
+  // The widest of the small brushes, and the one that would spill first: it holds
+  // two colours, so keeping them as pixels rather than color_t is what keeps a
+  // pattern brush inside a single 32-byte GC block.
+  static_assert(sizeof(pattern_brush_t) <= 32, "pattern_brush_t now costs two GC blocks");
 
   class image_brush_t : public brush_t {
   public:
@@ -155,7 +160,7 @@ namespace picovector {
   class threshold_brush_t : public brush_t {
   public:
     int level;
-    uint32_t lo, hi; // premultiplied packed colours
+    pixel_t lo, hi;
     threshold_brush_t(int level, const color_t &lo, const color_t &hi);
     void blend_spans(image_t *target, int i0, int i1, int step) override;
     void blend_masked_spans(image_t *target, int i0, int i1, int step) override;
@@ -181,11 +186,11 @@ namespace picovector {
     void blend_masked_spans(image_t *target, int i0, int i1, int step) override;
   };
 
-  // Map luminance onto a shadow->highlight two-colour ramp (sepia etc). LUT of
-  // premultiplied colours built in the ctor.
+  // Map luminance onto a shadow->highlight two-colour ramp (sepia etc). LUT
+  // built in the ctor.
   class duotone_brush_t : public brush_t {
   public:
-    uint32_t lut[256];
+    pixel_t lut[256];
     duotone_brush_t(const color_t &shadow, const color_t &highlight);
     void blend_spans(image_t *target, int i0, int i1, int step) override;
     void blend_masked_spans(image_t *target, int i0, int i1, int step) override;
@@ -259,7 +264,7 @@ namespace picovector {
   // CRT phosphor: monochrome glow toward `tint` (green/amber terminals).
   class phosphor_brush_t : public brush_t {
   public:
-    uint32_t tint; // premultiplied
+    pixel_t tint;
     phosphor_brush_t(const color_t &tint);
     void blend_spans(image_t *target, int i0, int i1, int step) override;
     void blend_masked_spans(image_t *target, int i0, int i1, int step) override;
@@ -317,11 +322,11 @@ namespace picovector {
     vec2_t p1, p2;             // gradient endpoints in gradient coordinate space
     mat3_t inverse_transform;  // device pixels -> gradient coordinate space (incl. shape transform)
     mat3_t base_inverse;       // device -> gradient for the brush's own transform only
-    uint32_t lut[256];         // pre-multiplied packed colours sampled along the gradient
+    pixel_t lut[256];          // colours sampled along the gradient
 
     // positions are 0..1 stop offsets, premul_colors are color_t::_p values
     gradient_brush_t(gradient_type_t type, float x1, float y1, float x2, float y2,
-                     const float *positions, const uint32_t *premul_colors, int stop_count,
+                     const float *positions, const pixel_t *premul_colors, int stop_count,
                      mat3_t *transform);
     void blend_spans(image_t *target, int i0, int i1, int step) override;
     void blend_masked_spans(image_t *target, int i0, int i1, int step) override;

@@ -5,7 +5,7 @@
 namespace picovector {
 
   // recover straight (non-premultiplied) channels from a premultiplied packed colour
-  static inline void unpremultiply(uint32_t packed, float &r, float &g, float &b, float &a) {
+  static inline void unpremultiply(pixel_t packed, float &r, float &g, float &b, float &a) {
     uint32_t pa = _a(packed);
     if(pa == 0) { r = g = b = a = 0.0f; return; }
     float inv = 255.0f / (float)pa;
@@ -16,7 +16,7 @@ namespace picovector {
   }
 
   // pack straight channels back into the premultiplied layout color_t::premul uses
-  static inline uint32_t premultiply_pack(float r, float g, float b, float a) {
+  static inline pixel_t premultiply_pack(float r, float g, float b, float a) {
     int ai = (int)(a + 0.5f);
     if(ai < 0) ai = 0; else if(ai > 255) ai = 255;
     int rp = (int)(r * ai / 255.0f + 0.5f); if(rp < 0) rp = 0; else if(rp > 255) rp = 255;
@@ -27,7 +27,7 @@ namespace picovector {
 
   // Pre-render the gradient into the 256-entry LUT: interpolate stops in straight
   // sRGB (the SVG default), then store premultiplied. Spread method is pad.
-  static void build_lut(uint32_t *lut, const float *positions, const uint32_t *premul_colors, int n) {
+  static void build_lut(pixel_t *lut, const float *positions, const pixel_t *premul_colors, int n) {
     if(n <= 0) {
       for(int i = 0; i < 256; i++) lut[i] = 0;
       return;
@@ -76,7 +76,7 @@ namespace picovector {
   static void gradient_radial_span(image_t *target, gradient_brush_t *p, int x, int y, int w, const uint8_t *mask);
 
   gradient_brush_t::gradient_brush_t(gradient_type_t type, float x1, float y1, float x2, float y2,
-                                     const float *positions, const uint32_t *premul_colors, int stop_count,
+                                     const float *positions, const pixel_t *premul_colors, int stop_count,
                                      mat3_t *transform)
     : type(type), p1(x1, y1), p2(x2, y2) {
     if(transform) {

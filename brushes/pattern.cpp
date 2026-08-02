@@ -44,11 +44,11 @@ namespace picovector {
     {0b11111111,0b11110111,0b11101011,0b11010101,0b10101010,0b11010101,0b11101011,0b11110111}
   };
 
-  pattern_brush_t::pattern_brush_t(const color_t& c1, const color_t& c2, uint8_t pattern_index) : c1(c1), c2(c2) {
+  pattern_brush_t::pattern_brush_t(const color_t& c1, const color_t& c2, uint8_t pattern_index) : c1(c1._p), c2(c2._p) {
     memcpy(this->p, &patterns[pattern_index], sizeof(uint8_t) * 8);
   }
 
-  pattern_brush_t::pattern_brush_t(const color_t& c1, const color_t& c2, uint8_t *pattern) : c1(c1), c2(c2) {
+  pattern_brush_t::pattern_brush_t(const color_t& c1, const color_t& c2, uint8_t *pattern) : c1(c1._p), c2(c2._p) {
     memcpy(this->p, pattern, sizeof(uint8_t) * 8);
   }
 
@@ -59,8 +59,8 @@ namespace picovector {
       int x = spans[i].x, y = spans[i].y, w = spans[i].w;
       uint32_t *dst = (uint32_t*)target->ptr(x, y);
 
-      uint32_t c1 = p->c1._p;
-      uint32_t c2 = p->c2._p;
+      pixel_t c1 = p->c1;
+      pixel_t c2 = p->c2;
 
       while(w--) {
         uint8_t u = 7 - (x & 0b111);
@@ -84,8 +84,8 @@ namespace picovector {
       uint8_t *mask = (uint8_t*)spans[i].mask;
       uint32_t *dst = (uint32_t*)target->ptr(x, y);
 
-      uint32_t c1 = p->c1._p;
-      uint32_t c2 = p->c2._p;
+      pixel_t c1 = p->c1;
+      pixel_t c2 = p->c2;
 
       while(w--) {
         uint32_t m = *mask++;

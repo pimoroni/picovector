@@ -10,12 +10,12 @@ namespace picovector {
   // 4. blend_masked_spans() - coverage-masked (AA) batch
   // 5. helper bodies
 
-  static uint32_t color_src(image_t *target, brush_t *brush);
+  static pixel_t color_src(image_t *target, brush_t *brush);
 
-  color_brush_t::color_brush_t(const color_t& c) : c(c) {}
+  color_brush_t::color_brush_t(const color_t& c) : c(c._p) {}
 
   void color_brush_t::blend_spans(image_t *target, int i0, int i1, int step) {
-    uint32_t src = color_src(target, this);
+    pixel_t src = color_src(target, this);
     const pv_span *spans = _spans();
     if(_a(src) == 255) {
       // opaque: a straight copy - hoists blend_over_premul's a==255 early-out out
@@ -38,7 +38,7 @@ namespace picovector {
   // of that run at zero. The opaque test is hoisted like blend_spans' is, which
   // makes a fully covered pixel a plain store.
   void color_brush_t::blend_masked_spans(image_t *target, int i0, int i1, int step) {
-    uint32_t src = color_src(target, this);
+    pixel_t src = color_src(target, this);
     const pv_masked_span *spans = _masked_spans();
     bool opaque = _a(src) == 255;
     for(int i = i0; i < i1; i += step) {
@@ -63,8 +63,8 @@ namespace picovector {
 
   // ── helpers ─────────────────────────────────────────────────────────────────
   // the target's global alpha, folded into the premultiplied pen colour once
-  static uint32_t color_src(image_t *target, brush_t *brush) {
-    uint32_t src = ((color_brush_t*)brush)->c._p;
+  static pixel_t color_src(image_t *target, brush_t *brush) {
+    pixel_t src = ((color_brush_t*)brush)->c;
     if(target->alpha() != 255) src = _premul_mul_alpha(src, target->alpha());
     return src;
   }

@@ -6,9 +6,15 @@
 
 namespace picovector {
 
+  // A premultiplied packed RGBA word: the framebuffer's pixel format and what
+  // every blend consumes. A typedef, not a type, so it changes no signature - it
+  // names the role at the boundaries where "a colour" and "a pixel" are easy to
+  // confuse. Channel order matches blend.hpp's _r/_g/_b/_a extractors.
+  typedef uint32_t pixel_t;
+
   class color_t {
   public:
-    uint32_t _p; // pre-multiplied r, g, b, a
+    pixel_t _p; // pre-multiplied r, g, b, a
 
   public:
     virtual ~color_t() = default;
@@ -43,7 +49,7 @@ namespace picovector {
   // (at alpha 10 a channel was stored in 7 of 255 levels). Alpha 0 carries no
   // colour at all - every colour premultiplies to zero - so it reads back as
   // transparent black rather than pretending otherwise.
-  rgb_color_t color_from_premul(uint32_t premul);
+  rgb_color_t color_from_premul(pixel_t premul);
 
   class oklch_color_t : public color_t {
     float _l, _c, _h, _a;

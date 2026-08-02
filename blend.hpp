@@ -4,14 +4,17 @@
 
 #include "color.hpp"
 
+// These helpers are global, not namespaced; pull in the one name they need.
+using picovector::pixel_t;
+
 static inline __attribute__((always_inline))
-uint32_t _r(const uint32_t c) {return c & 0xffu;}
+uint32_t _r(const pixel_t c) {return c & 0xffu;}
 static inline __attribute__((always_inline))
-uint32_t _g(const uint32_t c) {return (c >> 8) & 0xffu;}
+uint32_t _g(const pixel_t c) {return (c >> 8) & 0xffu;}
 static inline __attribute__((always_inline))
-uint32_t _b(const uint32_t c) {return (c >> 16) & 0xffu;}
+uint32_t _b(const pixel_t c) {return (c >> 16) & 0xffu;}
 static inline __attribute__((always_inline))
-uint32_t _a(const uint32_t c) {return (c >> 24) & 0xffu;}
+uint32_t _a(const pixel_t c) {return (c >> 24) & 0xffu;}
 
 // takes a premultiplied packed color and applies alpha
 //
@@ -20,7 +23,7 @@ uint32_t _a(const uint32_t c) {return (c >> 24) & 0xffu;}
 // its neighbour, which sits 16 bits away. This is bit-identical to the scalar
 // (chan*a + 128) >> 8 form it replaces, at half the multiplies.
 static inline __attribute__((always_inline))
-uint32_t _premul_mul_alpha(uint32_t c, uint32_t a) {
+pixel_t _premul_mul_alpha(pixel_t c, uint32_t a) {
   uint32_t rb = ( c        & 0x00ff00ffu) * a;  // R in [0:15],  B in [16:31]
   uint32_t ga = ((c >>  8) & 0x00ff00ffu) * a;  // G in [0:15],  A in [16:31]
   rb = ((rb + 0x00800080u) >> 8) & 0x00ff00ffu;
@@ -34,7 +37,7 @@ uint32_t _premul_mul_alpha(uint32_t c, uint32_t a) {
 // the dst*(1-a) scale and the final add stay in the packed SWAR domain (a valid
 // premultiplied result is <= 255 per channel, so the add never carries).
 static inline __attribute__((always_inline))
-uint32_t blend_over_premul(uint32_t d, uint32_t c) {
+pixel_t blend_over_premul(pixel_t d, pixel_t c) {
   uint32_t a = c >> 24;
   if (a == 0u)   return d;   // source transparent: dst unchanged
   if (a == 255u) return c;   // source opaque: overwrite
@@ -60,17 +63,17 @@ uint32_t _premul_mul_alpha_channel(uint32_t c, uint32_t a) {
 // the same value. The brushes guard their per-pixel work on the same test, so
 // coverage the shape never reaches costs a compare.
 static inline __attribute__((always_inline))
-void blend_masked_over_premul(uint32_t *dst, uint32_t src, uint32_t m) {
+void blend_masked_over_premul(pixel_t *dst, pixel_t src, uint32_t m) {
   if(m == 0u) return;
   *dst = blend_over_premul(*dst, m == 255u ? src : _premul_mul_alpha(src, m));
 }
 
-typedef uint32_t (*blend_func_t)(uint32_t dst, uint32_t r, uint32_t g, uint32_t b, uint32_t a);
+typedef pixel_t (*blend_func_t)(pixel_t dst, uint32_t r, uint32_t g, uint32_t b, uint32_t a);
 
 // unpacked-args wrapper kept for the sample()-based span paths (blit_span et al)
 // that still hand callers r,g,b,a separately. Repacks and defers to the packed
 // blend so there's a single "over" implementation to maintain.
-static inline uint32_t blend_func_over(uint32_t dst, uint32_t r, uint32_t g, uint32_t b, uint32_t a) {
+static inline pixel_t blend_func_over(pixel_t dst, uint32_t r, uint32_t g, uint32_t b, uint32_t a) {
     return blend_over_premul(dst, r | (g << 8) | (b << 16) | (a << 24));
 }
 

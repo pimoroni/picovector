@@ -91,8 +91,9 @@ namespace picovector {
   };
 
   enum gradient_type_t {
-    GRADIENT_LINEAR = 0, // colour runs along the p1->p2 axis
-    GRADIENT_RADIAL = 1  // colour runs outward from p1, reaching the last stop at |p2-p1|
+    GRADIENT_LINEAR  = 0, // colour runs along the p1->p2 axis
+    GRADIENT_RADIAL  = 1, // colour runs outward from p1, reaching the last stop at |p2-p1|
+    GRADIENT_CONICAL = 2  // colour sweeps around p1, starting in the p1->p2 direction
   };
 
 
@@ -317,15 +318,27 @@ namespace picovector {
   };
 
 
-  // SVG-style linear/radial gradient. Geometry (p1, p2) lives in the gradient's
-  // own coordinate space; `transform` maps that space onto device pixels (for
-  // SVG objectBoundingBox the caller maps the unit square onto the shape bbox).
+  // SVG-style linear/radial gradient, plus a conical (angular sweep) one for
+  // gauges and dials. Geometry (p1, p2) lives in the gradient's own coordinate
+  // space; `transform` maps that space onto device pixels (for SVG
+  // objectBoundingBox the caller maps the unit square onto the shape bbox).
+  //
+  // What p1/p2 mean depends on the type:
+  //   LINEAR   p1 and p2 are the ends of the axis.
+  //   RADIAL   p1 is the centre, |p2 - p1| the radius.
+  //   CONICAL  p1 is the centre and the p1->p2 direction is where the ramp
+  //            starts; the distance is unused. Stop offsets are fractions of a
+  //            full turn, clockwise, so a 270 degree gauge puts its stops in
+  //            0..0.75. Angles run clockwise from the start direction, matching
+  //            shape.arc()/pie(), so a start direction of straight up lines up
+  //            with arc(cx, cy, r1, r2, 0, 270) without any fixup.
   class gradient_brush_t : public brush_t {
   public:
     static constexpr int max_stops = 16;
 
     gradient_type_t type;
     vec2_t p1, p2;             // gradient endpoints in gradient coordinate space
+    float dir_c, dir_s;        // normalised p1->p2, the conical sweep's zero angle
     mat3_t inverse_transform;  // device pixels -> gradient coordinate space (incl. shape transform)
     mat3_t base_inverse;       // device -> gradient for the brush's own transform only
     pixel_t lut[256];          // colours sampled along the gradient

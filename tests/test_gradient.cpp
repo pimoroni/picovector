@@ -9,6 +9,7 @@
 #include <cstring>
 
 #include "test.hpp"
+#include "helpers.hpp"
 #include "picovector.hpp"
 #include "color.hpp"
 #include "blend.hpp"
@@ -197,6 +198,56 @@ void test_gradient() {
     g.geometry(0, 0, 1, 0, nullptr);
     CHECK(g.base_inverse.v02 == 0.0f && g.base_inverse.v12 == 0.0f);
     CHECK(memcmp(before, g.lut, sizeof(before)) == 0);
+  }
+
+  printf("gradient: a conical sweep runs clockwise from its start direction\n");
+  {
+    // A 64x64 canvas with the sweep centred, starting straight up. Sampling the
+    // four compass points should walk a quarter of the ramp at a time,
+    // clockwise: up is the start, then right, down, left.
+    const float pos[2] = { 0.0f, 1.0f };
+    const pixel_t cols[2] = { rgb_color_t(0, 0, 0, 255)._p, rgb_color_t(255, 255, 255, 255)._p };
+
+    pvtest::canvas_t c(64, 64);
+    c.flat(0xff000000u);
+    gradient_brush_t g(GRADIENT_CONICAL, 32, 32, 32, 0, pos, cols, 2, nullptr);
+    c.img.brush(&g);
+    c.img.rectangle(rect_t(0, 0, 64, 64));
+
+    // p1 -> p2 is straight up, so up is angle 0 and the ramp climbs clockwise.
+    int up    = (int)_r(c.at(32, 6));
+    int right = (int)_r(c.at(58, 32));
+    int down  = (int)_r(c.at(32, 58));
+    int left  = (int)_r(c.at(6, 32));
+    CHECK_MSG(up < 8, "the sweep does not start at its start direction");
+    CHECK_MSG(right > 55 && right < 72, "a quarter turn clockwise is not a quarter of the ramp");
+    CHECK_MSG(down > 120 && down < 136, "a half turn is not half of the ramp");
+    CHECK_MSG(left > 185 && left < 201, "three quarters of a turn is not three quarters of the ramp");
+    CHECK(up < right && right < down && down < left);
+  }
+
+  printf("gradient: a conical sweep starts where p2 points\n");
+  {
+    const float pos[2] = { 0.0f, 1.0f };
+    const pixel_t cols[2] = { rgb_color_t(0, 0, 0, 255)._p, rgb_color_t(255, 255, 255, 255)._p };
+
+    // start to the right instead: the ramp's zero moves a quarter turn with it
+    pvtest::canvas_t c(64, 64);
+    c.flat(0xff000000u);
+    gradient_brush_t g(GRADIENT_CONICAL, 32, 32, 63, 32, pos, cols, 2, nullptr);
+    c.img.brush(&g);
+    c.img.rectangle(rect_t(0, 0, 64, 64));
+
+    CHECK((int)_r(c.at(58, 32)) < 8);          // right is now zero
+    CHECK((int)_r(c.at(32, 6)) > 185);         // up is three quarters round
+  }
+
+  printf("gradient: an unknown gradient type falls back to linear\n");
+  {
+    const float pos[2] = { 0.0f, 1.0f };
+    const pixel_t cols[2] = { red, blue };
+    gradient_brush_t g((gradient_type_t)7, 0, 0, 1, 0, pos, cols, 2, nullptr);
+    CHECK(g.type == GRADIENT_LINEAR);
   }
 
   printf("gradient: only a gradient answers as_gradient()\n");

@@ -318,7 +318,7 @@ void test_gradient() {
   {
     const float pos[2] = { 0.0f, 1.0f };
     const color_t cols[2] = { red, blue };
-    gradient_brush_t g((gradient_type_t)7, 0, 0, 1, 0, pos, cols, 2, nullptr);
+    gradient_brush_t g(7, 0, 0, 1, 0, pos, cols, 2, nullptr);
     CHECK(g.type == GRADIENT_LINEAR);
   }
 

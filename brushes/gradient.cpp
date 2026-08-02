@@ -64,12 +64,14 @@ namespace picovector {
   static void gradient_radial_span(image_t *target, gradient_brush_t *p, int x, int y, int w, const uint8_t *mask);
   static void gradient_conical_span(image_t *target, gradient_brush_t *p, int x, int y, int w, const uint8_t *mask);
 
-  gradient_brush_t::gradient_brush_t(gradient_type_t type, float x1, float y1, float x2, float y2,
+  gradient_brush_t::gradient_brush_t(int type, float x1, float y1, float x2, float y2,
                                      const float *positions, const color_t *stops, int stop_count,
                                      mat3_t *transform)
     // Store a known type rather than relying on every consumer's fallthrough:
-    // the binding casts an int straight from Python.
-    : type(type > GRADIENT_CONICAL ? GRADIENT_LINEAR : type) {
+    // the binding hands over an int straight from Python. Taken as an int and
+    // narrowed here, because an enum that never held an out-of-range value is
+    // the only kind whose value can be relied on afterwards.
+    : type(type < 0 || type > GRADIENT_CONICAL ? GRADIENT_LINEAR : (gradient_type_t)type) {
     geometry(x1, y1, x2, y2, transform);
     build_lut(lut, positions, stops, stop_count);
   }

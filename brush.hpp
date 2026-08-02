@@ -345,7 +345,9 @@ namespace picovector {
 
     // positions are 0..1 stop offsets. The stops keep their colour_t so each
     // segment can interpolate in the space its two ends were authored in.
-    gradient_brush_t(gradient_type_t type, float x1, float y1, float x2, float y2,
+    // `type` is an int, not the enum: it arrives from a binding and an
+    // out-of-range value has to be caught before it is one, not after.
+    gradient_brush_t(int type, float x1, float y1, float x2, float y2,
                      const float *positions, const color_t *stops, int stop_count,
                      mat3_t *transform);
 

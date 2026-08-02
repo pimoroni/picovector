@@ -13,6 +13,8 @@ namespace picovector {
   void _blend_spans(image_t *target, brush_t *brush);
   void _blend_masked_spans(image_t *target, brush_t *brush);
 
+  class gradient_brush_t;
+
   class brush_t {
   public:
     // Composite a whole list of pre-clipped spans in one call: blend_spans a solid
@@ -26,6 +28,10 @@ namespace picovector {
     // brush with geometry (e.g. a gradient) moves with the shape it fills.
     // Called by render() before flushing; no-op for brushes without geometry.
     virtual void set_render_transform(mat3_t *transform) { (void)transform; }
+
+    // A checked downcast, so a caller holding a brush_t can reach the gradient's
+    // geometry without RTTI. Costs one vtable entry and nothing per object.
+    virtual gradient_brush_t *as_gradient() { return nullptr; }
   };
 
   class color_brush_t : public brush_t {
@@ -328,9 +334,17 @@ namespace picovector {
     gradient_brush_t(gradient_type_t type, float x1, float y1, float x2, float y2,
                      const float *positions, const pixel_t *premul_colors, int stop_count,
                      mat3_t *transform);
+
+    // Move the gradient without rebuilding its lookup table. The stops are what
+    // the table encodes, so an animated gradient that only changes where it sits
+    // has no reason to pay for a rebuild - which at ~440us a time is most of the
+    // cost of using one.
+    void geometry(float x1, float y1, float x2, float y2, mat3_t *transform);
+
     void blend_spans(image_t *target, int i0, int i1, int step) override;
     void blend_masked_spans(image_t *target, int i0, int i1, int step) override;
     void set_render_transform(mat3_t *transform) override;
+    gradient_brush_t *as_gradient() override { return this; }
   };
 
 }

@@ -78,13 +78,23 @@ namespace picovector {
   gradient_brush_t::gradient_brush_t(gradient_type_t type, float x1, float y1, float x2, float y2,
                                      const float *positions, const pixel_t *premul_colors, int stop_count,
                                      mat3_t *transform)
-    : type(type), p1(x1, y1), p2(x2, y2) {
+    : type(type) {
+    geometry(x1, y1, x2, y2, transform);
+    build_lut(lut, positions, premul_colors, stop_count);
+  }
+
+  void gradient_brush_t::geometry(float x1, float y1, float x2, float y2, mat3_t *transform) {
+    p1 = vec2_t(x1, y1);
+    p2 = vec2_t(x2, y2);
+
     if(transform) {
       base_inverse = *transform;
       base_inverse.inverse();
+    } else {
+      base_inverse = mat3_t();
     }
+
     inverse_transform = base_inverse; // no shape transform applied yet
-    build_lut(lut, positions, premul_colors, stop_count);
   }
 
   // Fold the shape's transform into the gradient so it moves/scales/rotates with

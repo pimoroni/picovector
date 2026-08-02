@@ -175,6 +175,41 @@ void test_gradient() {
     CHECK(memcmp(lut, again, sizeof(lut)) == 0);
   }
 
+  printf("gradient: geometry() moves the brush and leaves the table alone\n");
+  {
+    const float pos[2] = { 0.0f, 1.0f };
+    const pixel_t cols[2] = { red, blue };
+    gradient_brush_t g(GRADIENT_LINEAR, 0, 0, 1, 0, pos, cols, 2, nullptr);
+
+    pixel_t before[256];
+    memcpy(before, g.lut, sizeof(before));
+
+    g.geometry(3, 4, 5, 6, nullptr);
+    CHECK(g.p1.x == 3.0f && g.p1.y == 4.0f);
+    CHECK(g.p2.x == 5.0f && g.p2.y == 6.0f);
+    CHECK(memcmp(before, g.lut, sizeof(before)) == 0);
+
+    // a transform is inverted on the way in, and dropping it restores identity
+    mat3_t m;
+    m = m.translate(10, 20);
+    g.geometry(0, 0, 1, 0, &m);
+    CHECK(g.base_inverse.v02 == -10.0f && g.base_inverse.v12 == -20.0f);
+    g.geometry(0, 0, 1, 0, nullptr);
+    CHECK(g.base_inverse.v02 == 0.0f && g.base_inverse.v12 == 0.0f);
+    CHECK(memcmp(before, g.lut, sizeof(before)) == 0);
+  }
+
+  printf("gradient: only a gradient answers as_gradient()\n");
+  {
+    const float pos[2] = { 0.0f, 1.0f };
+    const pixel_t cols[2] = { red, blue };
+    gradient_brush_t g(GRADIENT_LINEAR, 0, 0, 1, 0, pos, cols, 2, nullptr);
+    color_brush_t c(rgb_color_t(255, 0, 0, 255));
+    brush_t *bg = &g, *bc = &c;
+    CHECK(bg->as_gradient() == &g);
+    CHECK(bc->as_gradient() == nullptr);
+  }
+
   printf("gradient: the brush stays inside its expected footprint\n");
   {
     // 1KB of it is the LUT. Worth pinning because the menu allocates one of

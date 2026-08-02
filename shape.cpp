@@ -6,12 +6,23 @@ using std::vector;
 
 namespace picovector {
 
+  // Two edges are treated as parallel below this |sin t|. An order of magnitude
+  // above FLT_EPSILON (1.2e-7), so it clears the rounding noise that separates
+  // two edges that ought to be exactly collinear, and far below any turn worth
+  // drawing: 1e-6 is six ten-thousandths of a degree.
+  static constexpr float PV_PARALLEL_EPSILON = 1e-6f;
 
   void offset_line_segment(vec2_t &s, vec2_t &e, float offset) {
     // calculate normal of edge
     float nx = -(e.y - s.y);
     float ny = e.x - s.x;
     float l = sqrtf(nx * nx + ny * ny);
+    // A repeated point is a zero-length edge, which has no direction to take a
+    // normal from. Leaving it where it is keeps the degenerate vertex on the
+    // outline; dividing by zero put a NaN into the ring, and one NaN point
+    // takes the whole path's bounds with it. stroke() guards its cap
+    // directions the same way.
+    if(l == 0.0f) return;
     nx /= l;
     ny /= l;
 
@@ -26,23 +37,44 @@ namespace picovector {
     e.y += oy;
   }
 
+  // Where the infinite lines through p1p2 and p3p4 meet. False when they are
+  // parallel, coincident, or too close to either to solve, leaving `i` untouched.
+  //
+  // Solved relative to p1. The line constants are a*x + b*y over the points'
+  // own coordinates, so a shape a few hundred pixels from the origin carries
+  // three leading digits into both terms of the numerator, where they cancel.
+  // With edges a fraction of a pixel long there is nothing left underneath: two
+  // offset edges of a straight run would meet a couple of thousand pixels away,
+  // and whether they did depended on where on screen the run had been placed.
+  // Shifting the origin to p1 costs two subtractions and makes the solve depend
+  // only on the local geometry.
   bool intersection(vec2_t p1, vec2_t p2, vec2_t p3, vec2_t p4, vec2_t &i) {
-    float a1 = p2.y - p1.y;
-    float b1 = p1.x - p2.x;
-    float c1 = a1 * p1.x + b1 * p1.y;
+    float x2 = p2.x - p1.x, y2 = p2.y - p1.y;
+    float x3 = p3.x - p1.x, y3 = p3.y - p1.y;
+    float x4 = p4.x - p1.x, y4 = p4.y - p1.y;
 
-    float a2 = p4.y - p3.y;
-    float b2 = p3.x - p4.x;
-    float c2 = a2 * p3.x + b2 * p3.y;
+    // p1 is the origin now, so its line constant is zero and drops out.
+    float a1 = y2,      b1 = -x2;
+    float a2 = y4 - y3, b2 = x3 - x4;
+    float c2 = a2 * x3 + b2 * y3;
 
     float determinant = a1 * b2 - a2 * b1;
 
-    if(determinant == 0) {
-      return false; // lines parallel or coincident
+    // |determinant| is |e1| |e2| |sin t| between the two edges, so measuring it
+    // against the edge lengths asks how parallel they are and nothing else -
+    // an absolute threshold would scale with the edges and call a short one
+    // parallel. Exact zero is not enough on its own: three collinear points
+    // give two edges whose normals differ by an ulp after normalisation, which
+    // leaves a determinant at the noise floor rather than at zero, and dividing
+    // by it is what produced the runaway geometry.
+    float e1 = a1 * a1 + b1 * b1;
+    float e2 = a2 * a2 + b2 * b2;
+    if(!(determinant * determinant > PV_PARALLEL_EPSILON * PV_PARALLEL_EPSILON * e1 * e2)) {
+      return false; // parallel, coincident, or a degenerate (zero-length) edge
     }
 
-    i.x = (b2 * c1 - b1 * c2) / determinant;
-    i.y = (a1 * c2 - a2 * c1) / determinant;
+    i.x = p1.x + (-b1 * c2) / determinant;
+    i.y = p1.y + ( a1 * c2) / determinant;
     return true;
   }
 
@@ -186,9 +218,24 @@ namespace picovector {
       bool outer = (cross * offset) < 0.0f;
 
       if(!outer) {
-        // concave corner: offset edges cross, use their intersection
+        // Concave corner: the offset edges cross, and the crossing is the ring
+        // point. It lies |offset| / sin(half the interior angle) from the
+        // vertex, so the bound the miter limit puts on the outer side holds
+        // here too - and beyond it the crossing is rounding noise rather than
+        // geometry. Three near-collinear points make both edges very nearly one
+        // line, where a crossing thousands of pixels away is as easy to compute
+        // as the right answer, which is a hair over |offset| out. The outer side
+        // has always rejected those; this one used to keep them, and one
+        // straight run of points would stroke to a spike off the screen.
         vec2_t m;
-        ring.push_back(intersection(p1, p2, p3, p4, m) ? m : p2);
+        if(intersection(p1, p2, p3, p4, m)) {
+          float mx = m.x - v.x, my = m.y - v.y;
+          if(mx * mx + my * my <= miter_limit * miter_limit * offset * offset) {
+            ring.push_back(m);
+            continue;
+          }
+        }
+        ring.push_back(p2);   // bevel, as the outer side does
         continue;
       }
 

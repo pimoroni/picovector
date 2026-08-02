@@ -36,6 +36,13 @@ namespace picovector {
   static const uint32_t STROKE_JOIN_MASK  = 0x3 << 3;
   static const uint32_t STROKE_CAP_MASK   = 0x3 << 5;
 
+  // Offset an edge along its normal, in place.
+  void offset_line_segment(vec2_t &s, vec2_t &e, float offset);
+
+  // Where the infinite lines through p1p2 and p3p4 meet. False when they are
+  // parallel, coincident, or too near either to solve, leaving `i` untouched.
+  bool intersection(vec2_t p1, vec2_t p2, vec2_t p3, vec2_t p4, vec2_t &i);
+
   class path_t {
   public:
     std::vector<vec2_t, PV_STD_ALLOCATOR<vec2_t>> points;

@@ -55,6 +55,8 @@ namespace picovector {
       memory_source_t *source = (memory_source_t *)handle;
       size_t available = source->size - source->pos;
       if(len > available) len = available;
+      // memcpy's pointers are nonnull under glibc, and an empty buffer's is null.
+      if(len == 0) return 0;
       memcpy(dest, source->data + source->pos, len);
       source->pos += len;
       return len;

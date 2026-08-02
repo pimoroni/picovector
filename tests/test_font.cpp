@@ -84,6 +84,12 @@ void test_font() {
     std::vector<uint8_t> empty;
     CHECK(parse(empty, &f) == FONT_BAD_MAGIC);
 
+    // A null buffer reads short rather than reaching memcpy. Only Linux CI
+    // reports the difference; Darwin's memcpy carries no nonnull attribute.
+    uint8_t *buf = nullptr;
+    size_t n = 0;
+    CHECK(parse_vector_font(nullptr, 0, &f, &buf, &n) == FONT_BAD_MAGIC);
+
     std::vector<uint8_t> notafont = {'P', 'N', 'G', 1, 2, 3, 4, 5};
     CHECK(parse(notafont, &f) == FONT_BAD_MAGIC);
 

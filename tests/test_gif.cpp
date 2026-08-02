@@ -886,6 +886,11 @@ void test_gif() {
     scratch().restore_size = 0;
     CHECK(gif_survey(b.out.data(), b.out.size(), &scratch(), &info, nullptr, 0) == GIF_OK);
 
+    // A null buffer reads short rather than reaching memcpy. Only Linux CI
+    // reports the difference; Darwin's memcpy carries no nonnull attribute.
+    CHECK(gif_survey(nullptr, 0, &scratch(), &info, nullptr, 0) == GIF_BAD_MAGIC);
+    CHECK(gif_survey(b.out.data(), 0, &scratch(), &info, nullptr, 0) == GIF_BAD_MAGIC);
+
     // A reader that cannot go back cannot be decoded from, and that is reported
     // rather than read as a file with no header.
     struct once_t { const uint8_t *data; size_t size, pos; } source =

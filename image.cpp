@@ -20,6 +20,16 @@ namespace picovector {
   alignas(4) uint8_t _span_buf[PV_SPAN_BYTES];
   int _span_n = 0;
 
+  void _flush_solid_spans(image_t *target, brush_t *brush) {
+    _blend_spans(target, brush);
+    _reset_spans();
+  }
+
+  void _flush_masked_spans(image_t *target, brush_t *brush) {
+    _blend_masked_spans(target, brush);
+    _reset_spans();
+  }
+
   image_t::image_t() {
   }
 
@@ -382,12 +392,11 @@ namespace picovector {
     r = r.intersection(_clip);
     if(r.w <= 0 || r.h <= 0) return;
 
-    // One span per row into the shared buffer, then a single batch blend. A
-    // target is never taller than the buffer's ~1365-span capacity, so there's
-    // no need to check for overflow.
+    // One span per row into the shared buffer, then a batch blend. A target
+    // taller than the buffer's ~1365-span capacity takes more than one batch.
     _reset_spans();
     for(int y = r.y; y < r.y + r.h; y++) {
-      _add_span((int16_t)r.x, (int16_t)y, (uint16_t)r.w);
+      _emit_span(this, this->_brush, (int16_t)r.x, (int16_t)y, (uint16_t)r.w);
     }
     _blend_spans(this, this->_brush);
   }
@@ -404,7 +413,7 @@ namespace picovector {
     if(x + w >= _clip.x + _clip.w) {
       w = _clip.x + _clip.w - x;
     }
-    _add_span(x, y, w);
+    _emit_span(this, this->_brush, x, y, w);   // circle() accumulates many of these
   }
 
   void image_t::span(int x, int y, int w) {
@@ -415,8 +424,7 @@ namespace picovector {
 
   // hspan and vspan composite through the span buffer + batch blend, like span()/
   // rectangle(): hspan is one wide span; vspan is a column of `h` 1px spans. Both
-  // honour _clip and the current pen. (vspan's `h` must fit the span buffer's
-  // ~1365-span capacity, the same assumption any tall fill makes.)
+  // honour _clip and the current pen.
   void image_t::hspan(int x, int y, int w) {
     _reset_spans();
     _span(x, y, w); // clips against _clip and adds one span to the shared buffer
@@ -430,7 +438,7 @@ namespace picovector {
     if(y + h >= _clip.y + _clip.h) { h = _clip.y + _clip.h - y; }
     if(h <= 0) return;
     _reset_spans();
-    for(int i = 0; i < h; i++) _add_span(x, y + i, 1);
+    for(int i = 0; i < h; i++) _emit_span(this, _brush, x, y + i, 1);
     _blend_spans(this, _brush);
   }
 
@@ -540,14 +548,15 @@ namespace picovector {
         if ((w0 | w1 | w2) >= 0) {
           if (run < 0) run = xo;               // coalesce contiguous covered pixels
         } else if (run >= 0) {
-          _add_span(run, yo, xo - run);
+          _emit_span(this, this->_brush, run, yo, xo - run);
           run = -1;
         }
 
         xo++;
         w0 += a12; w1 += a20; w2 += a01;
       }
-      if (run >= 0) _add_span(run, yo, xo - run); // run reaches the row edge
+      // run reaches the row edge
+      if (run >= 0) _emit_span(this, this->_brush, run, yo, xo - run);
 
       w0row += b12; w1row += b20; w2row += b01;
 
@@ -576,7 +585,7 @@ namespace picovector {
 
     _reset_spans();
     while(true) {
-        _add_span(x0, y0, 1);
+        _emit_span(this, this->_brush, x0, y0, 1);   // one span per pixel of the line
         if (x0 == x1 && y0 == y1) break;
         int e2 = 2 * err;
         if (e2 >= dy) {err += dy; x0 += sx;}

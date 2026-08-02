@@ -307,7 +307,12 @@ namespace picovector {
 
   // Emit a built tile's filled scanlines as opaque solid spans into the shared
   // span buffer (the hard-edged, non-antialiased path). The batch blend follows.
-  static void emit_spans(int height, int sx, int sy, fill_rule_t fill_rule) {
+  //
+  // A tile is TILE_HEIGHT rows and each row can produce MAX_NODES_PER_SCANLINE/2
+  // spans, which is more than the buffer holds, so this blends and resets when
+  // full the same way sa_scan_row does.
+  static void emit_spans(int height, int sx, int sy, fill_rule_t fill_rule,
+                         image_t *target, brush_t *brush) {
     for(int y = 0; y < height; y++) {
       int n = node_count_buffer[y];        // crossings recorded by build_tile_nodes
       if(n == 0) continue;
@@ -323,14 +328,17 @@ namespace picovector {
           if(prev == 0 && winding != 0) span_start = nx;
           else if(prev != 0 && winding == 0 && span_start < nx) {
             PV_CNT(pv_pixels, nx - span_start);
-            _add_span(sx + span_start, sy + y, nx - span_start);
+            _emit_span(target, brush, sx + span_start, sy + y, nx - span_start);
           }
         }
       } else {
         for(int i = 0; i + 1 < n; i += 2) {
           int nsx = nodes[i] >> 1;
           int nex = nodes[i + 1] >> 1;
-          if(nsx < nex) { PV_CNT(pv_pixels, nex - nsx); _add_span(sx + nsx, sy + y, nex - nsx); }
+          if(nsx < nex) {
+            PV_CNT(pv_pixels, nex - nsx);
+            _emit_span(target, brush, sx + nsx, sy + y, nex - nsx);
+          }
         }
       }
     }
@@ -474,11 +482,7 @@ namespace picovector {
 
     auto emit = [&]() {
       if(span_start < 0) return;
-      if(_num_spans() >= PV_MASKED_SPAN_CAP) {   // buffer full: blend what we have
-        _blend_masked_spans(target, brush);
-        _reset_spans();
-      }
-      _add_masked_span(sx + span_start, y, span_end - span_start + 1, &cov[span_start]);
+      _emit_masked_span(target, brush, sx + span_start, y, span_end - span_start + 1, &cov[span_start]);
       span_start = -1;
     };
 
@@ -605,7 +609,7 @@ namespace picovector {
           // Hard edges: build scanline crossings, emit solid spans, then blend.
           memset(node_count_buffer, 0, NODE_COUNT_BUFFER_SIZE);
           build_tile_nodes(tb);
-          emit_spans(sh, sx, sy, fill_rule);
+          emit_spans(sh, sx, sy, fill_rule, target, brush);
           _blend_spans(target, brush);
         }
         PV_ADD(pv_t_raster, _t_raster);

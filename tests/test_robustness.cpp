@@ -11,6 +11,7 @@
 #include "test.hpp"
 #include "helpers.hpp"
 #include "font.hpp"
+#include "pixel_font.hpp"
 
 using namespace picovector;
 using namespace pvtest;
@@ -122,6 +123,92 @@ void test_robustness() {
     }
     draw(&a.img, path_of(comb));
     CHECK(a.intact());
+  }
+
+  printf("robust: more spans than the span buffer holds\n");
+  {
+    // The span buffer is a fixed 8KB global, so an overrun lands in whatever
+    // follows it rather than in the image - the canary arena cannot see it and
+    // the sanitiser job is what catches it. What is checkable here is that the
+    // drawing still comes out right once an emitter starts splitting batches.
+    //
+    // The rasteriser is the tight one: a tile is TILE_HEIGHT (120) rows and each
+    // row can emit MAX_NODES_PER_SCANLINE/2 (16) spans, which is 1920 against a
+    // 1365-span capacity. A comb across a full-height tile reaches it.
+    const int W = 320, H = 240;
+    arena_t a(W, H);
+    std::vector<vec2_t> comb;
+    for(int k = 0; k < 200; k++) {
+      float x = 2 + k * 1.5f;
+      comb.push_back(vec2_t(x, 4));
+      comb.push_back(vec2_t(x, H - 4));
+    }
+    draw(&a.img, path_of(comb));
+    CHECK(a.intact());
+
+    // Splitting a batch must not lose spans. A solid fill taller than the
+    // buffer is one span a row, so every row is checkable.
+    rgb_color_t red(255, 0, 0, 255);
+    {
+      canvas_t c(8, PV_SOLID_SPAN_CAP + 200);
+      c.flat(0xff000000u);
+      color_brush_t b(red);
+      c.img.brush(&b);
+      c.img.rectangle(rect_t(0, 0, 8, c.h));
+      int filled = 0;
+      for(int y = 0; y < c.h; y++) if(c.at(4, y) == red._p) filled++;
+      CHECK_MSG(filled == c.h, "a fill taller than the span buffer lost rows");
+    }
+
+    // The same for vspan(), a column of one-pixel spans.
+    {
+      canvas_t c(8, PV_SOLID_SPAN_CAP + 200);
+      c.flat(0xff000000u);
+      color_brush_t b(red);
+      c.img.brush(&b);
+      c.img.vspan(3, 0, c.h);
+      int filled = 0;
+      for(int y = 0; y < c.h; y++) if(c.at(3, y) == red._p) filled++;
+      CHECK_MSG(filled == c.h, "a column taller than the span buffer lost rows");
+    }
+
+    // line() emits one span per pixel, so a long diagonal outruns the buffer.
+    {
+      const int N = PV_SOLID_SPAN_CAP + 200;
+      canvas_t c(N, N);
+      c.flat(0xff000000u);
+      color_brush_t b(red);
+      c.img.brush(&b);
+      c.img.line(vec2_t(0, 0), vec2_t(N - 1, N - 1));
+      int lit = 0;
+      for(int i = 0; i < N; i++) if(c.at(i, i) == red._p) lit++;
+      CHECK_MSG(lit == N, "a line longer than the span buffer lost pixels");
+    }
+
+    // draw_glyph() multiplies runs by rows by scale. A checkerboard glyph is
+    // four runs a row: 4 x 8 rows x 60 = 1920 spans against a 1365 capacity.
+    {
+      uint8_t bitmap[8] = { 0xAA, 0x55, 0xAA, 0x55, 0xAA, 0x55, 0xAA, 0x55 };
+      pixel_font_glyph_t g = { 'X', 8 };
+      pixel_font_t f{};
+      f.width = 8;
+      f.height = 8;
+      f.glyph_count = 1;
+      f.glyph_data_size = 8;
+      f.glyphs = &g;
+      f.glyph_data = bitmap;
+
+      const int scale = 60;
+      canvas_t c(8 * scale, 8 * scale);
+      c.flat(0xff000000u);
+      color_brush_t b(red);
+      c.img.brush(&b);
+      c.snapshot();
+      f.draw_glyph(&c.img, &g, bitmap, &b, c.img.clip(), 0, 0, scale);
+      // the checkerboard is half lit, and no batch split may drop any of it
+      CHECK_MSG(c.changed_total() == (8 * scale) * (8 * scale) / 2,
+                "a scaled glyph lost spans to a batch split");
+    }
   }
 
   printf("robust: tiny images\n");

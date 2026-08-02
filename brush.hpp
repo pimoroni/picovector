@@ -9,9 +9,9 @@
 
 namespace picovector {
 
-  // Blend the shared span buffer with a brush (dispatches to its batch func).
-  void _blend_spans(image_t *target, brush_t *brush);
-  void _blend_masked_spans(image_t *target, brush_t *brush);
+  // _blend_spans/_blend_masked_spans (blend the shared span buffer with a brush,
+  // dispatching to its batch func) are declared in image.hpp, next to the buffer
+  // and the _emit_span that fills it.
 
   class gradient_brush_t;
 

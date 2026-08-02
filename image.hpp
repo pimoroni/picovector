@@ -46,18 +46,46 @@ namespace picovector {
 
   // One 8KB buffer, reinterpreted as whichever span type the current batch uses
   // (never both). Solid: ~1365 spans; masked: ~682. _span_n counts elements of
-  // the active type. A 240-row solid fill can't overflow; masked batches are
-  // per-tile (<=64 rows) but a busy tile can, so the AA emit flushes when full.
+  // the active type.
+  //
+  // Nothing bounds what an emitter produces: a tile row holds up to
+  // MAX_NODES_PER_SCANLINE/2 spans, line() emits one per pixel, draw_glyph()
+  // multiplies runs by scale, and a target can be taller than the buffer. So
+  // emitters go through _emit_span, which blends and resets a full batch before
+  // storing. The one bounds test both splits the batch and makes an overrun
+  // unreachable, so there is no cheaper unchecked path to reach for.
   static const int PV_SPAN_BYTES = 8192;
   static const int PV_MASKED_SPAN_CAP = PV_SPAN_BYTES / (int)sizeof(pv_masked_span);
+  static const int PV_SOLID_SPAN_CAP = PV_SPAN_BYTES / (int)sizeof(pv_span);
   extern uint8_t _span_buf[PV_SPAN_BYTES];
   extern int _span_n;
+  void _blend_spans(image_t *target, brush_t *brush);
+  void _blend_masked_spans(image_t *target, brush_t *brush);
+
+  // Blending a full batch part-way through an emit is the rare path, so it is
+  // kept out of line and marked cold. Inlining it into the emitters cost ~7% on
+  // circle(), which emits many short spans: the call clobbers the loop's
+  // registers whether or not it is reached. Outlined, the check is free.
+  __attribute__((noinline, cold)) void _flush_solid_spans(image_t *target, brush_t *brush);
+  __attribute__((noinline, cold)) void _flush_masked_spans(image_t *target, brush_t *brush);
+
   static inline void _reset_spans() { _span_n = 0; }
   static inline void _add_span(int x, int y, int w) {
     ((pv_span *)_span_buf)[_span_n++] = { (int16_t)x, (int16_t)y, (uint16_t)w };
   }
   static inline void _add_masked_span(int x, int y, int w, const uint8_t *mask) {
     ((pv_masked_span *)_span_buf)[_span_n++] = { (int16_t)x, (int16_t)y, (uint16_t)w, mask };
+  }
+
+  // Spans are independent runs of pixels, so where a batch splits does not
+  // change the result.
+  static inline void _emit_span(image_t *target, brush_t *brush, int x, int y, int w) {
+    if(__builtin_expect(_span_n >= PV_SOLID_SPAN_CAP, 0)) _flush_solid_spans(target, brush);
+    _add_span(x, y, w);
+  }
+  static inline void _emit_masked_span(image_t *target, brush_t *brush, int x, int y, int w, const uint8_t *mask) {
+    if(__builtin_expect(_span_n >= PV_MASKED_SPAN_CAP, 0)) _flush_masked_spans(target, brush);
+    _add_masked_span(x, y, w, mask);
   }
   static inline const pv_span *_spans() { return (const pv_span *)_span_buf; }
   static inline const pv_masked_span *_masked_spans() { return (const pv_masked_span *)_span_buf; }

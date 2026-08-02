@@ -106,7 +106,8 @@ namespace picovector {
             for(int r = 0; r < scale; r++) {          // scale dest rows per source row
               int ry = dy + r;
               if(ry < by0 || ry >= by1) continue;
-              _add_span(cx0, ry, cx1 - cx0);
+              // runs x height x scale exceeds the buffer at large scales
+              _emit_span(target, brush, cx0, ry, cx1 - cx0);
             }
           }
           gx += run;

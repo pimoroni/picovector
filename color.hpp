@@ -227,6 +227,29 @@ namespace picovector {
   // transparent black rather than pretending otherwise.
   rgb_color_t color_from_premul(pixel_t premul);
 
+  // ── ramps ───────────────────────────────────────────────────────────────────
+  // Sample `count` colours along a list of (position, colour) stops, filling
+  // `out`. Positions are 0-1 offsets, clamped and forced non-decreasing per SVG;
+  // the spread past either end is pad.
+  //
+  // Each segment interpolates through color_t::mix, so a ramp blends the way two
+  // colours blend anywhere else: through the components its two ends were
+  // authored with when they share a space - two OKLCH stops ramp through OKLCH,
+  // which is the point - and through sRGB when they do not.
+  //
+  // The work happens in the output's own index domain rather than in 0-1 floats,
+  // which is what makes each stop land exactly on an entry and come back
+  // bit-exact, and what leaves the padded ends costing no interpolation at all.
+  //
+  // Two overloads because a brush wants premultiplied words for its lookup table
+  // and a caller building a palette wants colours; the sampling is the same.
+  static constexpr int ramp_max_stops = 16;
+
+  void sample_ramp(color_t *out, int count, const float *positions,
+                   const color_t *stops, int n);
+  void sample_ramp(pixel_t *out, int count, const float *positions,
+                   const color_t *stops, int n);
+
   // l, c, h: 0-255 each. Not CSS OKLCH units - l covers 0-1 lightness, c covers
   // 0-0.35 chroma, and h is 256 counts to a full turn (so 250 is 352 degrees).
   // Bytes throughout, so a lighten() step means the same thing in every space.

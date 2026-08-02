@@ -4,60 +4,6 @@
 
 namespace picovector {
 
-  // Pre-render the gradient into the 256-entry LUT. Spread method is pad.
-  //
-  // Every segment interpolates through color_t::mix, so a gradient blends the way
-  // two colours blend anywhere else: through the components the stops were
-  // authored with when they share a space, taking a hue the short way round the
-  // wheel, and through sRGB when they do not. Two OKLCH stops therefore ramp
-  // through OKLCH, which is the whole point, and it costs nothing at render time
-  // because what the pixel loop reads is still a table of premultiplied words.
-  //
-  // Working in the table's own index domain rather than in 0..1 floats is what
-  // makes each stop land exactly on its entry, and it means the padded ends cost
-  // no interpolation at all.
-  static void build_lut(pixel_t *lut, const float *positions, const color_t *stops, int n) {
-    if(n <= 0) {
-      for(int i = 0; i < 256; i++) lut[i] = 0;
-      return;
-    }
-
-    if(n == 1) {
-      for(int i = 0; i < 256; i++) lut[i] = stops[0]._p;
-      return;
-    }
-
-    // Stop offsets to table indices: clamped to 0..1 and forced non-decreasing,
-    // both per SVG.
-    int at[gradient_brush_t::max_stops];
-    int last = 0;
-    for(int i = 0; i < n; i++) {
-      float pp = positions[i];
-      if(pp < 0.0f) pp = 0.0f; else if(pp > 1.0f) pp = 1.0f;
-      int ai = (int)(pp * 255.0f + 0.5f);
-      if(ai < last) ai = last;
-      last = ai;
-      at[i] = ai;
-    }
-
-    for(int i = 0; i < at[0]; i++) lut[i] = stops[0]._p;
-    for(int i = at[n - 1] + 1; i < 256; i++) lut[i] = stops[n - 1]._p;
-
-    for(int j = 0; j + 1 < n; j++) {
-      int span = at[j + 1] - at[j];
-
-      // Two stops sharing an entry are a hard stop; the later one wins it, which
-      // is the SVG rule for a discontinuity.
-      if(span <= 0) { lut[at[j + 1]] = stops[j + 1]._p; continue; }
-
-      // t hits 0 and 255 exactly at the ends, so both stops come out bit-exact
-      // whatever space they were authored in.
-      for(int i = at[j]; i <= at[j + 1]; i++) {
-        lut[i] = stops[j].mix(stops[j + 1], ((i - at[j]) * 255 + span / 2) / span)._p;
-      }
-    }
-  }
-
   // Per-span samplers, shared by the solid and masked batches: mask == nullptr is
   // the solid path, mask != nullptr folds per-pixel coverage into the colour.
   static void gradient_linear_span(image_t *target, gradient_brush_t *p, int x, int y, int w, const uint8_t *mask);
@@ -73,7 +19,11 @@ namespace picovector {
     // the only kind whose value can be relied on afterwards.
     : type(type < 0 || type > GRADIENT_CONICAL ? GRADIENT_LINEAR : (gradient_type_t)type) {
     geometry(x1, y1, x2, y2, transform);
-    build_lut(lut, positions, stops, stop_count);
+    // The table is a ramp sampled 256 ways; color.ramp() is the same sampling at
+    // whatever count a caller asks for. What the pixel loop reads is still a
+    // table of premultiplied words, so interpolating in the stops' own space
+    // costs nothing at render time.
+    sample_ramp(lut, 256, positions, stops, stop_count);
   }
 
   void gradient_brush_t::geometry(float x1, float y1, float x2, float y2, mat3_t *transform) {

@@ -461,6 +461,73 @@ namespace picovector {
     return oklch_fitted(reaches, chroma, hue, _a);
   }
 
+  // ── ramps ───────────────────────────────────────────────────────────────────
+
+  namespace {
+
+    inline void ramp_store(color_t *out, int i, const color_t &c) { out[i] = c; }
+    inline void ramp_store(pixel_t *out, int i, const color_t &c) { out[i] = c._p; }
+
+    template<typename T>
+    void ramp_fill(T *out, int count, const float *positions, const color_t *stops, int n) {
+      if(count < 1) return;
+
+      if(n <= 0) {
+        for(int i = 0; i < count; i++) ramp_store(out, i, color_t());
+        return;
+      }
+
+      if(n > ramp_max_stops) n = ramp_max_stops;
+
+      if(n == 1) {
+        for(int i = 0; i < count; i++) ramp_store(out, i, stops[0]);
+        return;
+      }
+
+      // Stop offsets to entry indices: clamped to 0..1 and forced non-decreasing,
+      // both per SVG.
+      const int last_index = count - 1;
+      int at[ramp_max_stops];
+      int last = 0;
+      for(int i = 0; i < n; i++) {
+        float pp = positions[i];
+        if(pp < 0.0f) pp = 0.0f; else if(pp > 1.0f) pp = 1.0f;
+        int ai = (int)(pp * (float)last_index + 0.5f);
+        if(ai < last) ai = last;
+        last = ai;
+        at[i] = ai;
+      }
+
+      for(int i = 0; i < at[0]; i++) ramp_store(out, i, stops[0]);
+      for(int i = at[n - 1] + 1; i < count; i++) ramp_store(out, i, stops[n - 1]);
+
+      for(int j = 0; j + 1 < n; j++) {
+        int span = at[j + 1] - at[j];
+
+        // Two stops sharing an entry are a hard stop; the later one wins it,
+        // which is the SVG rule for a discontinuity.
+        if(span <= 0) { ramp_store(out, at[j + 1], stops[j + 1]); continue; }
+
+        // t hits 0 and 255 exactly at the ends, so both stops come out bit-exact
+        // whatever space they were authored in.
+        for(int i = at[j]; i <= at[j + 1]; i++) {
+          ramp_store(out, i, stops[j].mix(stops[j + 1], ((i - at[j]) * 255 + span / 2) / span));
+        }
+      }
+    }
+
+  }
+
+  void sample_ramp(color_t *out, int count, const float *positions,
+                   const color_t *stops, int n) {
+    ramp_fill(out, count, positions, stops, n);
+  }
+
+  void sample_ramp(pixel_t *out, int count, const float *positions,
+                   const color_t *stops, int n) {
+    ramp_fill(out, count, positions, stops, n);
+  }
+
   rgb_color_t color_from_premul(pixel_t premul) {
     uint32_t a = (premul >> 24) & 0xffu;
     if(a == 0) return rgb_color_t(0, 0, 0, 0);

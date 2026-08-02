@@ -9,6 +9,7 @@
 
 #include "test.hpp"
 #include "picovector.hpp"
+#include "brush.hpp"
 #include "color.hpp"
 
 using namespace picovector;
@@ -538,5 +539,133 @@ void test_color_palette() {
       if(accents[0].difference(accents[i]) < 5.0f) distinct = false;
     }
     CHECK_MSG(distinct, "a triad should be obviously three colours");
+  }
+
+  printf("ramp: the count asked for is the count returned\n");
+  {
+    const float pos[2] = { 0.0f, 1.0f };
+    const color_t stops[2] = { rgb_color_t(255, 0, 0, 255), rgb_color_t(0, 0, 255, 255) };
+
+    for(int count : { 1, 2, 3, 65, 256 }) {
+      color_t out[256];
+      sample_ramp(out, count, pos, stops, 2);
+      // The ends are the stops themselves, whatever the count.
+      CHECK_MSG(out[count - 1] == stops[1], "the last entry is the last stop");
+      if(count > 1) CHECK_MSG(out[0] == stops[0], "the first entry is the first stop");
+    }
+  }
+
+  printf("ramp: a stop lands exactly on an entry\n");
+  {
+    // 0.45 of 64 steps is entry 29 to the nearest whole one, and the colour
+    // there is the stop itself rather than something interpolated past it.
+    const float pos[4] = { 0.0f, 0.45f, 0.72f, 1.0f };
+    const color_t stops[4] = {
+      rgb_color_t(255, 0, 0, 255), rgb_color_t(0, 255, 0, 255),
+      rgb_color_t(0, 0, 255, 255), rgb_color_t(255, 255, 0, 255),
+    };
+
+    color_t out[65];
+    sample_ramp(out, 65, pos, stops, 4);
+    CHECK(out[0] == stops[0]);
+    CHECK(out[29] == stops[1]);
+    CHECK(out[46] == stops[2]);
+    CHECK(out[64] == stops[3]);
+  }
+
+  printf("ramp: two OKLCH stops ramp through OKLCH\n");
+  {
+    const float pos[2] = { 0.0f, 1.0f };
+    const color_t ok[2] = { oklch_color_t(160, 90, 21, 255), oklch_color_t(160, 90, 149, 255) };
+    color_t out[9];
+    sample_ramp(out, 9, pos, ok, 2);
+
+    // Held lightness and chroma the whole way, which sRGB interpolation between
+    // the same endpoints cannot do - it sags through a muddy middle.
+    bool held = true;
+    for(int i = 0; i < 9; i++) {
+      if(out[i].space() != COLOR_OKLCH) held = false;
+      if(out[i].l() != 160 || out[i].c() != 90) held = false;
+    }
+    CHECK(held);
+    CHECK(out[4].h() == 85);   // half way round the short arc
+  }
+
+  printf("ramp: sampling 256 ways is exactly what a gradient builds\n");
+  {
+    // The direct proof that color.ramp and a gradient brush are one
+    // implementation: same stops, same table, entry for entry.
+    const float pos[4] = { 0.0f, 0.25f, 0.6f, 1.0f };
+    const color_t stops[4] = {
+      oklch_color_t(90, 70, 21, 255), rgb_color_t(0, 255, 0, 255),
+      oklch_color_t(200, 40, 149, 128), rgb_color_t(255, 255, 0, 255),
+    };
+
+    gradient_brush_t g(GRADIENT_LINEAR, 0, 0, 1, 0, pos, stops, 4, nullptr);
+
+    pixel_t sampled[256];
+    sample_ramp(sampled, 256, pos, stops, 4);
+
+    bool identical = true;
+    for(int i = 0; i < 256; i++) if(sampled[i] != g.lut[i]) identical = false;
+    CHECK_MSG(identical, "the ramp and the gradient table disagree");
+  }
+
+  printf("ramp: the awkward stop lists behave as they do for a gradient\n");
+  {
+    color_t out[32];
+
+    // No stops is a run of nothing.
+    sample_ramp(out, 32, nullptr, nullptr, 0);
+    bool empty = true;
+    for(int i = 0; i < 32; i++) if(out[i] != color_t()) empty = false;
+    CHECK(empty);
+
+    // One stop fills it.
+    const float one_pos[1] = { 0.5f };
+    const color_t one[1] = { rgb_color_t(10, 20, 30, 255) };
+    sample_ramp(out, 32, one_pos, one, 1);
+    bool filled = true;
+    for(int i = 0; i < 32; i++) if(out[i] != one[0]) filled = false;
+    CHECK(filled);
+
+    // Offsets outside 0-1, and going backwards, are clamped and coerced.
+    const float wild[4] = { -1.0f, 0.6f, 0.4f, 2.0f };
+    const color_t four[4] = {
+      rgb_color_t(255, 0, 0, 255), rgb_color_t(0, 255, 0, 255),
+      rgb_color_t(0, 0, 255, 255), rgb_color_t(255, 255, 0, 255),
+    };
+    sample_ramp(out, 32, wild, four, 4);
+    CHECK(out[0] == four[0]);
+    CHECK(out[31] == four[3]);
+  }
+
+  printf("ramp: the middle of a segment is the middle of the mix\n");
+  {
+    // A seven-entry ramp puts entry 3 exactly half way along a span of six,
+    // which only lands on mix's own midpoint if the weight is rounded rather
+    // than truncated on the way in. Truncating costs a count here and a count
+    // there across every segment, which is visible on a long shallow ramp.
+    const float pos[2] = { 0.0f, 1.0f };
+    const color_t stops[2] = { rgb_color_t(0, 0, 0, 255), rgb_color_t(255, 255, 255, 255) };
+
+    color_t out[7];
+    sample_ramp(out, 7, pos, stops, 2);
+    CHECK(out[3] == stops[0].mix(stops[1], 128));
+    CHECK(out[1] == stops[0].mix(stops[1], 43));
+    CHECK(out[5] == stops[0].mix(stops[1], 213));
+  }
+
+  printf("ramp: past the ends it pads rather than repeating\n");
+  {
+    const float pos[2] = { 0.25f, 0.75f };
+    const color_t stops[2] = { rgb_color_t(255, 0, 0, 255), rgb_color_t(0, 0, 255, 255) };
+    color_t out[65];
+    sample_ramp(out, 65, pos, stops, 2);
+
+    bool padded = true;
+    for(int i = 0; i <= 16; i++) if(out[i] != stops[0]) padded = false;
+    for(int i = 48; i < 65; i++) if(out[i] != stops[1]) padded = false;
+    CHECK(padded);
   }
 }

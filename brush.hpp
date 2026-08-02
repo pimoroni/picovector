@@ -334,7 +334,8 @@ namespace picovector {
   //            with arc(cx, cy, r1, r2, 0, 270) without any fixup.
   class gradient_brush_t : public brush_t {
   public:
-    static constexpr int max_stops = 16;
+    // However many the shared ramp sampler can carve up.
+    static constexpr int max_stops = ramp_max_stops;
 
     gradient_type_t type;
     vec2_t p1, p2;             // gradient endpoints in gradient coordinate space

@@ -88,6 +88,15 @@
 #define PV_CURVE_MAX_SIDES 120
 #endif
 
+// ── GIF budget ──────────────────────────────────────────────────────────────
+// A GIF loads as a spritesheet of composited frames, which costs frames * width
+// * height bytes: cheap for a sprite, ruinous for a long full-screen animation.
+// Anything over this is refused rather than attempted, so the failure names the
+// reason instead of arriving as an out-of-memory further down.
+#ifndef PV_GIF_MAX_BYTES
+#define PV_GIF_MAX_BYTES (2 * 1024 * 1024)
+#endif
+
 // ── clock source ────────────────────────────────────────────────────────────
 // Current time, used by the tween module's self-timing helpers (start/now/done).
 // Expands to an expression yielding the current time in whatever unit tween

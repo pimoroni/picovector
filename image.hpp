@@ -221,6 +221,10 @@ namespace picovector {
       // raw palette storage for hot blit loops: skips the per-pixel out-of-line
       // palette(i) call.
       inline const uint32_t* palette_data() const { return _palette; }
+      // Mutable overload, for a caller handing the table out as writable bytes.
+      // Sub-views share this pointer rather than copying it, so a write through
+      // it reaches every sprite cut from the same sheet - which is the point.
+      inline uint32_t* palette_data() { return _palette; }
       inline int palette_size() const { return _palette_size; }
 
       uint8_t alpha();

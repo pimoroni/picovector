@@ -117,6 +117,26 @@ void test_blit() {
     CHECK(!dst.changed(36, 20));
   }
 
+  printf("blit: a byte count is computed in integers, not floats\n");
+  {
+    // _bounds holds floats, so multiplying through it was exact only below 2^24.
+    // A 46341-square image came out 100 bytes short of the truth, and on a
+    // 32-bit size_t a large one wraps to something small and plausible.
+    for(int n : { 4096, 46341, 65535 }) {
+      image_t img(nullptr, n, n);
+      uint64_t want = 4ull * (uint64_t)n * (uint64_t)n;
+      if(want <= (uint64_t)SIZE_MAX)
+        CHECK_MSG((uint64_t)img.buffer_size() == want, "byte count lost precision");
+    }
+    // An empty or negative size is no bytes, not a positive product of two
+    // negatives - and it agrees with the extent, which it used to contradict.
+    for(int n : { 0, -5 }) {
+      image_t img(nullptr, n, n);
+      CHECK(img.buffer_size() == 0);
+      CHECK(img.buffer_extent() == 0);
+    }
+  }
+
   printf("blit: a view's rows are a parent stride apart\n");
   {
     // Every animation frame is a view, and its raw bytes are the one thing about

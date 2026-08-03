@@ -113,7 +113,13 @@ namespace picovector {
   }
 
   size_t image_t::buffer_size() {
-    return this->_bytes_per_pixel * this->_bounds.w * this->_bounds.h;
+    // _bounds is a rect_t of floats, so multiplying through it computed the byte
+    // count in float: exact only below 2^24, and above that quietly wrong (a
+    // 46341-square image was off by 100 bytes). Integers all the way, and an
+    // empty or negative size is no bytes rather than a positive product of two
+    // negatives.
+    if(this->_bounds.w <= 0 || this->_bounds.h <= 0) return 0;
+    return this->_bytes_per_pixel * (size_t)this->_bounds.w * (size_t)this->_bounds.h;
   }
 
   size_t image_t::buffer_extent() {

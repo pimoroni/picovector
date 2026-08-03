@@ -512,9 +512,19 @@ namespace picovector {
   }
 
   void image_t::triangle(vec2_t p1, vec2_t p2, vec2_t p3) {
+    // snap to whole pixels: the edge functions and their per-pixel deltas below
+    // are integers, so they are only exact on integer coordinates. Fractional
+    // input makes the stepping drift from the edge function, which breaks the
+    // top-left rule and leaves seams between triangles that share an edge.
+    p1 = vec2_t(roundf(p1.x), roundf(p1.y));
+    p2 = vec2_t(roundf(p2.x), roundf(p2.y));
+    p3 = vec2_t(roundf(p3.x), roundf(p3.y));
+
+    // w/h are exclusive extents (as with _clip), so the max corner needs +1 to
+    // bring the triangle's last column and row inside the scan
     rect_t b(
       vec2_t(min(p1.x, min(p2.x, p3.x)), min(p1.y, min(p2.y, p3.y))),
-      vec2_t(max(p1.x, max(p2.x, p3.x)), max(p1.y, max(p2.y, p3.y)))
+      vec2_t(max(p1.x, max(p2.x, p3.x)) + 1, max(p1.y, max(p2.y, p3.y)) + 1)
     );
 
     // clip extremes to frame buffer size

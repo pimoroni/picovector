@@ -16,6 +16,7 @@ void test_color_readback();
 void test_color_palette();
 void test_gradient();
 void test_stroke();
+void test_spritesheet();
 
 int main() {
   test_geometry();
@@ -32,5 +33,6 @@ int main() {
   test_color_palette();
   test_gradient();
   test_stroke();
+  test_spritesheet();
   return pvtest::summary();
 }

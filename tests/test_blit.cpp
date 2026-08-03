@@ -117,6 +117,38 @@ void test_blit() {
     CHECK(!dst.changed(36, 20));
   }
 
+  printf("blit: a view's rows are a parent stride apart\n");
+  {
+    // Every animation frame is a view, and its raw bytes are the one thing about
+    // it Python could not work out: the rows sit a *sheet* pitch apart, so an
+    // extent of w*h*bpp stops several rows short of the last one.
+    canvas_t sheet_c(70, 16);                       // a 7x2 grid of 10x8 cells
+    image_t cell = sheet_c.img.window(rect_t(30, 8, 10, 8));
+
+    CHECK(sheet_c.img.row_stride() == 70 * 4);
+    CHECK(cell.row_stride() == 70 * 4);             // inherited, not 10 * 4
+    CHECK(cell.buffer_size() == 10 * 8 * 4);        // the pixels it owns
+    CHECK(cell.buffer_extent() == 7 * 70 * 4 + 10 * 4);   // ...and what it spans
+
+    // Which is the property that matters: the last row is inside the extent.
+    uint8_t *base = (uint8_t *)cell.ptr(0, 0);
+    size_t last = (size_t)((uint8_t *)cell.ptr(0, 7) - base) + 10 * 4;
+    CHECK(last <= cell.buffer_extent());
+    CHECK(last > cell.buffer_size());               // and outside the old bound
+
+    // An image that owns its buffer has no gap, so the two agree.
+    CHECK(sheet_c.img.buffer_extent() == sheet_c.img.buffer_size());
+    image_t owned(32, 32);
+    CHECK(owned.buffer_extent() == owned.buffer_size());
+    image_t indexed(64, 64, RGBA8888, true, 16);
+    CHECK(indexed.buffer_extent() == indexed.buffer_size());
+
+    // An indexed view strides by a byte a pixel, not four.
+    image_t icell = indexed.window(rect_t(8, 8, 10, 8));
+    CHECK(icell.row_stride() == 64);
+    CHECK(icell.buffer_extent() == 7 * 64 + 10);
+  }
+
   // ── from an indexed source ────────────────────────────────────────────────
   // Every shipped indexed PNG and every GIF goes through these two paths, and
   // neither had a test. span_blit takes the palette as an argument; the scaled

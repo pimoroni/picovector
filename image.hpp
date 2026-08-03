@@ -178,7 +178,13 @@ namespace picovector {
       image_t(void *buffer, int w, int h, int rows, int cols, pixel_format_t pixel_format=RGBA8888, bool has_palette=false, int palette_entries=256);
       ~image_t();
 
+      // The pixels this image owns, tightly packed: what an allocation needs.
       size_t buffer_size();
+      // Every byte reachable from ptr(0, 0), which for a view is the rows of the
+      // *parent* it spans - its own rows are a stride apart, so the last of them
+      // sits well past buffer_size() bytes in. Equal to buffer_size() whenever
+      // the image owns its buffer, since then a row is exactly a row.
+      size_t buffer_extent();
       size_t bytes_per_pixel();
       void window(image_t *source, rect_t viewport);
       image_t window(rect_t r);

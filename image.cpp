@@ -116,6 +116,12 @@ namespace picovector {
     return this->_bytes_per_pixel * this->_bounds.w * this->_bounds.h;
   }
 
+  size_t image_t::buffer_extent() {
+    if(this->_bounds.h <= 0 || this->_bounds.w <= 0) return 0;
+    return (size_t)(this->_bounds.h - 1) * this->_row_stride
+         + (size_t)this->_bounds.w * this->_bytes_per_pixel;
+  }
+
   size_t image_t::bytes_per_pixel() {
     return this->_bytes_per_pixel;
   }

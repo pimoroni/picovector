@@ -517,6 +517,11 @@ void test_robustness() {
         for(int g = 0; g < f.glyph_count && sane; g++)
           for(int pth = 0; pth < f.glyphs[g].path_count && sane; pth++)
             if(f.glyphs[g].paths[pth].points == nullptr) sane = false;
+        // The block belongs to the caller on success - font_t only points into
+        // it - so a fuzz loop that keeps none of them has to hand every one
+        // back. Six thousand of these leaked ~114MB, which only Linux CI sees:
+        // ASan's leak detector is unavailable on Darwin.
+        PV_FREE(buf);
       } else {
         rejected++;
       }

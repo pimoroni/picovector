@@ -33,10 +33,23 @@ struct af_builder_t {
   void ucoord(int v) { if(wide) u16(v); else out.push_back((uint8_t)v); }
 };
 
+// On success the parser hands the caller a block that font_t only points into,
+// so it has to outlive every check against `f`. Collect them and free at the end
+// of the suite: dropping them leaks, which only Linux CI reports - ASan's leak
+// detector is unavailable on Darwin.
+static std::vector<uint8_t *> parsed_blocks;
+
 static font_status_t parse(const std::vector<uint8_t> &data, font_t *f) {
   uint8_t *buf = nullptr;
   size_t n = 0;
-  return parse_vector_font(data.data(), data.size(), f, &buf, &n);
+  font_status_t s = parse_vector_font(data.data(), data.size(), f, &buf, &n);
+  if(buf) parsed_blocks.push_back(buf);
+  return s;
+}
+
+static void free_parsed_blocks() {
+  for(uint8_t *b : parsed_blocks) PV_FREE(b);
+  parsed_blocks.clear();
 }
 
 void test_font() {
@@ -111,4 +124,6 @@ void test_font() {
     af_builder_t zero_em(true, 0);        // wide, but a zero em would divide by zero
     CHECK(parse(zero_em.out, &f) == FONT_BAD_HEADER);
   }
+
+  free_parsed_blocks();
 }

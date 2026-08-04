@@ -14,6 +14,7 @@ namespace picovector {
   // and the _emit_span that fills it.
 
   class gradient_brush_t;
+  class fractal_brush_t;
 
   class brush_t {
   public:
@@ -32,6 +33,7 @@ namespace picovector {
     // A checked downcast, so a caller holding a brush_t can reach the gradient's
     // geometry without RTTI. Costs one vtable entry and nothing per object.
     virtual gradient_brush_t *as_gradient() { return nullptr; }
+    virtual fractal_brush_t *as_fractal() { return nullptr; }
   };
 
   class color_brush_t : public brush_t {
@@ -362,6 +364,60 @@ namespace picovector {
     void blend_masked_spans(image_t *target, int i0, int i1, int step) override;
     void set_render_transform(mat3_t *transform) override;
     gradient_brush_t *as_gradient() override { return this; }
+  };
+
+  // ── procedural ──────────────────────────────────────────────────────────────
+
+  // Fractal (fBm) value noise mapped through a colour ramp. See fractal.cpp.
+  //
+  // The field has an intrinsic cell size, composed with a placement transform the
+  // way an image brush composes one with its pixel grid: an identity placement
+  // gives cells of `scale` device pixels, and a placement that only rotates or
+  // translates leaves feature size alone. Placement translation is in device pixels.
+  //
+  // Ramp stop positions are area fractions of the field, measured once at
+  // construction, so neither geometry() nor resize() touches the ramp.
+  class fractal_brush_t : public brush_t {
+  public:
+    static constexpr int max_octaves = 4;
+    static constexpr int max_stops = ramp_max_stops;
+
+    int octaves;
+    int weight[max_octaves];   // totals 256, so the fractal sum normalises with a shift
+    int repeat;                // tile period in cells, a power of two
+    int wrap[max_octaves];     // per-octave cell mask, (repeat << o) - 1
+    uint32_t seed;             // chooses the corner hash; same seed, same field
+    uint8_t perm[256];         // this brush's corner hash permutation
+    float cell;                // device pixels per cell, before placement
+    mat3_t placement;          // field -> device, as supplied
+    mat3_t inverse_transform;  // device pixels -> field space (incl. shape transform)
+    mat3_t base_inverse;       // device -> field for cell size and placement
+    uint8_t equalised[256];    // noise value -> fraction of the field below it
+    pixel_t lut[256];          // the ramp, indexed by fractal value
+
+    // `repeat` is the tile period in cells, rounded down to a power of two. Every
+    // octave has to wrap on the same spatial period and the finest is
+    // 2^(octaves-1) times denser, so the usable maximum is 256 >> (octaves - 1);
+    // 0 asks for that maximum.
+    fractal_brush_t(float scale, int octaves, float persistence, int repeat,
+                    uint32_t seed, mat3_t *transform);
+
+    // Recolour. positions are 0..1 area fractions; two stops sharing a position
+    // are a hard edge, spaced stops a soft one.
+    void ramp(const float *positions, const color_t *stops, int stop_count);
+
+    // Place the field, and set its cell size. Both leave the ramp alone.
+    void geometry(mat3_t *transform);
+    void resize(float scale);
+
+    void blend_spans(image_t *target, int i0, int i1, int step) override;
+    void blend_masked_spans(image_t *target, int i0, int i1, int step) override;
+    void set_render_transform(mat3_t *transform) override;
+    fractal_brush_t *as_fractal() override { return this; }
+
+  private:
+    void measure();
+    void rebuild();   // cell size and placement -> base_inverse
   };
 
 }

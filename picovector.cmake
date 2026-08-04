@@ -25,6 +25,7 @@ list(APPEND SOURCES
   ${CMAKE_CURRENT_LIST_DIR}/brushes/image.cpp
   ${CMAKE_CURRENT_LIST_DIR}/blit.cpp
   ${CMAKE_CURRENT_LIST_DIR}/brushes/gradient.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/brushes/fractal.cpp
   ${CMAKE_CURRENT_LIST_DIR}/brushes/pixelate.cpp
   ${CMAKE_CURRENT_LIST_DIR}/brushes/blur.cpp
   ${CMAKE_CURRENT_LIST_DIR}/brushes/brightness.cpp

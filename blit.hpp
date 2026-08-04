@@ -79,10 +79,10 @@ namespace picovector {
     (void)bf;
     uint32_t *ps = (uint32_t *)src->ptr(sx, sy);
     uint32_t *pd = (uint32_t *)dst->ptr(dx, dy);
-    uint32_t dst_alpha = dst->alpha();
+    uint32_t src_alpha = src->alpha();
 
-    if(dst_alpha == 255u) span_over<false>(src_rgba{ps}, pd, w, 255u);
-    else                  span_over<true >(src_rgba{ps}, pd, w, dst_alpha);
+    if(src_alpha == 255u) span_over<false>(src_rgba{ps}, pd, w, 255u);
+    else                  span_over<true >(src_rgba{ps}, pd, w, src_alpha);
   }
 
   inline void span_blit(image_t *src, image_t *dst, blend_func_t bf, int sx, int sy, int dx, int dy, int w, const uint32_t *palette) {
@@ -90,10 +90,10 @@ namespace picovector {
     uint8_t  *ps  = (uint8_t *)src->ptr(sx, sy);
     uint32_t *pd  = (uint32_t *)dst->ptr(dx, dy);
     const uint32_t *pal = palette;
-    uint32_t dst_alpha = dst->alpha();
+    uint32_t src_alpha = src->alpha();
 
-    if(dst_alpha == 255u) span_over<false>(src_pal{ps, pal}, pd, w, 255u);
-    else                  span_over<true >(src_pal{ps, pal}, pd, w, dst_alpha);
+    if(src_alpha == 255u) span_over<false>(src_pal{ps, pal}, pd, w, 255u);
+    else                  span_over<true >(src_pal{ps, pal}, pd, w, src_alpha);
   }
 
   inline void span_blit_scale(image_t *src, image_t *dst, blend_func_t bf, fx16_t sx, fx16_t sx_step, fx16_t sy, int dx, int dy, int w, filter_t filter = NEAREST) {

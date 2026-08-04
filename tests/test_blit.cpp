@@ -261,4 +261,25 @@ void test_blit() {
     for(int i = 0; i < 16 * 16; i++) if(((uint8_t *)pal_dst.ptr(0, 0))[i] != 0) written++;
     CHECK(written == 0);
   }
+
+  printf("blit: the source image's alpha weights an unscaled blit\n");
+  {
+    // The 1:1 span used to read the target's alpha, so image.alpha on a source
+    // did nothing and the screen's alpha was applied to everything drawn onto it.
+    const uint32_t HALF_GREEN = blend_over_premul(0xff000000u, _premul_mul_alpha(0xff00ff00u, 128u));
+
+    canvas_t dst(64, 64);
+    dst.flat(0xff000000u);
+    dst.img.alpha(64);                          // the target's alpha is not the source's
+    src->alpha(128);
+    src->blit(&dst.img, vec2_t(0, 0));
+    CHECK(dst.at(0, 0) == HALF_GREEN);
+
+    pal_src.alpha(128);
+    pal_src.blit(&dst.img, vec2_t(0, 0));       // and the same through a palette
+    CHECK(dst.at(0, 0) == blend_over_premul(HALF_GREEN, _premul_mul_alpha(PAL_RED, 128u)));
+
+    src->alpha(255);
+    pal_src.alpha(255);
+  }
 }

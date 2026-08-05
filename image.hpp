@@ -165,7 +165,7 @@ namespace picovector {
       font_t            *_font = nullptr;
       pixel_font_t      *_pixel_font = nullptr;
       text_cursor_t      _text_cursor;
-      uint32_t               _rows = 1, _cols = 1;   // spritesheet grid (1x1 = not a sheet)
+      uint32_t               _rows = 1, _cols = 1;   // grid a decoder recorded
 
     public:
       blend_func_t       _blend_func = blend_func_over;
@@ -188,10 +188,6 @@ namespace picovector {
       size_t bytes_per_pixel();
       void window(image_t *source, rect_t viewport);
       image_t window(rect_t r);
-      // return the sprite at grid cell (x, y) as a window, using the sheet's
-      // _cols x _rows layout. x is the column, y is the row. A non-spritesheet
-      // image is 1x1, so sprite(0, 0) is the whole image.
-      image_t sprite(int x, int y);
       inline void* ptr(int x, int y) const {
         return (uint8_t *)(this->_buffer) + (x * this->_bytes_per_pixel) + (y * this->_row_stride);
       }
@@ -236,7 +232,8 @@ namespace picovector {
       fill_rule_t fill_rule();
       void fill_rule(fill_rule_t fill_rule);
 
-      // spritesheet grid used by sprite(); 1x1 = not a sheet
+      // The grid a decoder recorded, for spritesheet() to read back; 1x1 = none.
+      // Carving cells out of it belongs to spritesheet_t, not here.
       uint32_t rows();
       void rows(uint32_t rows);
       uint32_t cols();

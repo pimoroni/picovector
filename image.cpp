@@ -41,9 +41,7 @@ namespace picovector {
     _buffer = source->ptr(i.x, i.y);
     _managed_buffer = false;
     _owns_palette = false;      // shared with the parent, not copied
-    // A view of a sheet is not itself a sheet. Inheriting the grid would have a
-    // single sprite report its parent's column count, which is the wrong answer
-    // to "how many frames have you got".
+    // A view of a sheet is not itself a sheet: a cell reports no grid of its own.
     _rows = 1;
     _cols = 1;
   }
@@ -256,14 +254,6 @@ namespace picovector {
     rect_t i = _bounds.intersection(r);
     image_t window = image_t(this, rect_t(i.x, i.y, i.w, i.h));
     return window;
-  }
-
-  // Sprite (x, y) in grid coordinates -> a window over that cell. Cell size is
-  // the sheet divided by its _cols x _rows layout.
-  image_t image_t::sprite(int x, int y) {
-    int sw = int(_bounds.w) / int(_cols);
-    int sh = int(_bounds.h) / int(_rows);
-    return window(rect_t(x * sw, y * sh, sw, sh));
   }
 
   // void image_t::clear(uint32_t c) {

@@ -6,6 +6,7 @@
 #include "test.hpp"
 #include "picovector.hpp"
 #include "gif.hpp"
+#include "spritesheet.hpp"
 #include "image.hpp"
 #include "fixture_gif.hpp"
 
@@ -631,7 +632,7 @@ void test_gif() {
     CHECK(sheet.image.palette(sheet.info.clear_index) == 0);
   }
 
-  printf("gif: the sheet is a spritesheet, so a frame is just a sub-view\n");
+  printf("gif: the strip is a grid, so a frame is just a sub-view\n");
   {
     gif_builder_t b(4, 2, 2);
     b.pixels(0, 0, 4, 2, { 1, 1, 1, 1, 1, 1, 1, 1 });
@@ -641,18 +642,26 @@ void test_gif() {
     sheet_t sheet(b);
     CHECK(sheet.status == GIF_OK);
 
-    image_t frame = sheet.image.sprite(1, 0);
+    // The decoder records the grid; carving a cell out of it is spritesheet_t's
+    // job, so go through the same numbering the bindings use.
+    spritesheet_t grid((int)sheet.image.cols(), (int)sheet.image.rows());
+    int fx, fy;
+    grid.locate(1, &fx, &fy);
+    int fw = (int)sheet.image.bounds().w / grid.cols();
+    int fh = (int)sheet.image.bounds().h / grid.rows();
+    image_t frame = sheet.image.window(rect_t(fx * fw, fy * fh, fw, fh));
     CHECK((int)frame.bounds().w == 4);
     CHECK((int)frame.bounds().h == 2);
     CHECK(frame.palette_data() == sheet.image.palette_data());   // shared, not copied
     CHECK(((uint8_t *)frame.ptr(0, 0))[0] == 2);
     CHECK(((uint8_t *)frame.ptr(3, 1))[0] == 2);
 
-    // The sheet knows how many frames it has, which is what bounds a loop.
+    // The decoder recorded the frame count, which is what bounds a loop.
     CHECK(sheet.image.cols() == 2);
     CHECK(sheet.image.rows() == 1);
-    // A single frame is not itself a sheet, so it does not claim its parent's
-    // grid - otherwise one sprite would report the whole animation's length.
+    CHECK(grid.frames() == 2);
+    // A single frame claims no grid of its own, so it cannot report the whole
+    // animation's length.
     CHECK(frame.cols() == 1);
     CHECK(frame.rows() == 1);
     CHECK(sheet.image.window(rect_t(0, 0, 4, 2)).cols() == 1);

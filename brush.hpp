@@ -361,6 +361,15 @@ namespace picovector {
     mat3_t base_inverse;       // device -> gradient for the brush's own transform only
     pixel_t lut[256];          // colours sampled along the gradient
 
+    // `lut` weighted by the target's global alpha, so the pixel loop reads a
+    // table that already carries it. The stops are gone by the end of the
+    // constructor and premultiplying is lossy, so `lut` itself is never touched -
+    // it is the only copy. Nothing rewrites it after construction (geometry()
+    // leaves it alone, and ramp() is fractal-only), so the alpha it was folded at
+    // is the whole of the invalidation key.
+    pixel_t faded[256];
+    uint8_t faded_alpha = 255;   // 255 never reads `faded`, so this always folds first
+
     // positions are 0..1 stop offsets. The stops keep their colour_t so each
     // segment can interpolate in the space its two ends were authored in.
     // `type` is an int, not the enum: it arrives from a binding and an
@@ -379,6 +388,11 @@ namespace picovector {
     void blend_masked_spans(image_t *target, int i0, int i1, int step) override;
     void set_render_transform(mat3_t *transform) override;
     gradient_brush_t *as_gradient() override { return this; }
+
+  private:
+    // The table to read for this target, weighting `lut` by its global alpha only
+    // when that changes. nullptr when the alpha is 0 and there is nothing to draw.
+    const pixel_t *ramp_for(image_t *target);
   };
 
   // ── procedural ──────────────────────────────────────────────────────────────

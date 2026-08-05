@@ -141,6 +141,38 @@ void test_alpha() {
     }
   }
 
+  printf("alpha: a gradient's weighted table is keyed on the alpha it was built at\n");
+  {
+    // The gradient weights its 256-entry table once and keeps it for as long as
+    // the alpha holds, so the wrong answer here is a stale table rather than a
+    // wrong blend: a second alpha has to rebuild it, and coming back to the first
+    // has to rebuild it again.
+    float pos[2] = { 0.0f, 1.0f };
+    color_t cols[2] = { rgb_color_t(255, 255, 255, 255), rgb_color_t(255, 255, 255, 255) };
+    gradient_brush_t g(GRADIENT_LINEAR, 0, 0, 16, 0, pos, cols, 2, nullptr);
+    canvas_t c(16, 16);
+
+    uint32_t at_128 = solid(c, &g, 128);
+    uint32_t at_64 = solid(c, &g, 64);
+    CHECK(at_64 != at_128);
+    CHECK_MSG(solid(c, &g, 128) == at_128, "a second alpha left a stale table behind");
+    CHECK_MSG(solid(c, &g, 64) == at_64, "coming back to an alpha did not rebuild");
+
+    // Every geometry reads the same table, so switching between them must not
+    // stale it either.
+    for(int type = 0; type < 3; type++) {
+      gradient_brush_t gt(type, 0, 0, 16, 0, pos, cols, 2, nullptr);
+      CHECK(solid(c, &gt, 128) == at_128);
+    }
+
+    // And the authored table is untouched by any of it: a brush drawn faded and
+    // then opaque matches one that was never faded at all.
+    gradient_brush_t fresh(GRADIENT_LINEAR, 0, 0, 16, 0, pos, cols, 2, nullptr);
+    uint32_t never_faded = solid(c, &fresh, 255);
+    CHECK_MSG(solid(c, &g, 255) == never_faded, "weighting the table damaged the authored ramp");
+    CHECK(solid(c, &g, 128) == at_128);         // ...and it still fades correctly after
+  }
+
   printf("alpha: a fractal brush is weighted\n");
   {
     fractal_brush_t f(8.0f, 2, 0.5f, 4, 1234u, nullptr);

@@ -335,8 +335,9 @@ void test_gradient() {
 
   printf("gradient: the brush stays inside its expected footprint\n");
   {
-    // 1KB of it is the LUT.
-    CHECK(sizeof(gradient_brush_t) <= 1152);
+    // Two 1KB tables: the authored ramp, and the same weighted by the target's
+    // global alpha so the pixel loop does not weight each pixel itself.
+    CHECK(sizeof(gradient_brush_t) <= 2176);
     CHECK(gradient_brush_t::max_stops == 16);
   }
 }

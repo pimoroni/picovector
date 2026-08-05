@@ -6,9 +6,9 @@ namespace picovector {
 
   // Per-span samplers, shared by the solid and masked batches: mask == nullptr is
   // the solid path, mask != nullptr folds per-pixel coverage into the colour.
-  static void gradient_linear_span(image_t *target, gradient_brush_t *p, int x, int y, int w, const uint8_t *mask);
-  static void gradient_radial_span(image_t *target, gradient_brush_t *p, int x, int y, int w, const uint8_t *mask);
-  static void gradient_conical_span(image_t *target, gradient_brush_t *p, int x, int y, int w, const uint8_t *mask);
+  static void gradient_linear_span(image_t *target, gradient_brush_t *p, const pixel_t *lut, int x, int y, int w, const uint8_t *mask);
+  static void gradient_radial_span(image_t *target, gradient_brush_t *p, const pixel_t *lut, int x, int y, int w, const uint8_t *mask);
+  static void gradient_conical_span(image_t *target, gradient_brush_t *p, const pixel_t *lut, int x, int y, int w, const uint8_t *mask);
 
   gradient_brush_t::gradient_brush_t(int type, float x1, float y1, float x2, float y2,
                                      const float *positions, const color_t *stops, int stop_count,
@@ -57,38 +57,58 @@ namespace picovector {
     inverse_transform.multiply(inv); // base_inverse * inverse(shape)
   }
 
-  // Batch: dispatch on gradient type once, then run the shared per-span sampler.
+  // Which table the pixel loop should read, given the target's global alpha. At
+  // 255 that is the authored ramp; below it, the ramp weighted once into `faded`
+  // and kept for as long as the alpha holds, which is the whole reason the loop
+  // does not weight each pixel itself. nullptr means there is nothing to draw.
+  const pixel_t *gradient_brush_t::ramp_for(image_t *target) {
+    uint32_t alpha = target->alpha();
+    if(alpha == 255u) return lut;
+    if(alpha == 0u) return nullptr;
+    if(alpha != faded_alpha) {
+      for(int i = 0; i < 256; i++) faded[i] = _premul_mul_alpha(lut[i], alpha);
+      faded_alpha = (uint8_t)alpha;
+    }
+    return faded;
+  }
+
+  // Batch: resolve the table and dispatch on gradient type once, then run the
+  // shared per-span sampler.
   void gradient_brush_t::blend_spans(image_t *target, int i0, int i1, int step) {
     gradient_brush_t *p = this;
+    const pixel_t *ramp = ramp_for(target);
+    if(!ramp) return;
     const pv_span *spans = _spans();
     switch(p->type) {
       case GRADIENT_RADIAL:
-        for(int i = i0; i < i1; i += step) gradient_radial_span(target, p, spans[i].x, spans[i].y, spans[i].w, nullptr);
+        for(int i = i0; i < i1; i += step) gradient_radial_span(target, p, ramp, spans[i].x, spans[i].y, spans[i].w, nullptr);
         break;
       case GRADIENT_CONICAL:
-        for(int i = i0; i < i1; i += step) gradient_conical_span(target, p, spans[i].x, spans[i].y, spans[i].w, nullptr);
+        for(int i = i0; i < i1; i += step) gradient_conical_span(target, p, ramp, spans[i].x, spans[i].y, spans[i].w, nullptr);
         break;
       default:
-        for(int i = i0; i < i1; i += step) gradient_linear_span(target, p, spans[i].x, spans[i].y, spans[i].w, nullptr);
+        for(int i = i0; i < i1; i += step) gradient_linear_span(target, p, ramp, spans[i].x, spans[i].y, spans[i].w, nullptr);
         break;
     }
   }
 
   void gradient_brush_t::blend_masked_spans(image_t *target, int i0, int i1, int step) {
     gradient_brush_t *p = this;
+    const pixel_t *ramp = ramp_for(target);
+    if(!ramp) return;
     const pv_masked_span *spans = _masked_spans();
     switch(p->type) {
       case GRADIENT_RADIAL:
         for(int i = i0; i < i1; i += step)
-          gradient_radial_span(target, p, spans[i].x, spans[i].y, spans[i].w, (const uint8_t*)spans[i].mask);
+          gradient_radial_span(target, p, ramp, spans[i].x, spans[i].y, spans[i].w, (const uint8_t*)spans[i].mask);
         break;
       case GRADIENT_CONICAL:
         for(int i = i0; i < i1; i += step)
-          gradient_conical_span(target, p, spans[i].x, spans[i].y, spans[i].w, (const uint8_t*)spans[i].mask);
+          gradient_conical_span(target, p, ramp, spans[i].x, spans[i].y, spans[i].w, (const uint8_t*)spans[i].mask);
         break;
       default:
         for(int i = i0; i < i1; i += step)
-          gradient_linear_span(target, p, spans[i].x, spans[i].y, spans[i].w, (const uint8_t*)spans[i].mask);
+          gradient_linear_span(target, p, ramp, spans[i].x, spans[i].y, spans[i].w, (const uint8_t*)spans[i].mask);
         break;
     }
   }
@@ -97,10 +117,8 @@ namespace picovector {
 
   // --- linear ---------------------------------------------------------------
 
-  static void gradient_linear_span(image_t *target, gradient_brush_t *p, int x, int y, int w, const uint8_t *mask) {
+  static void gradient_linear_span(image_t *target, gradient_brush_t *p, const pixel_t *lut, int x, int y, int w, const uint8_t *mask) {
     uint32_t *dst = (uint32_t*)target->ptr(x, y);
-    const uint32_t *lut = p->lut;
-    uint32_t alpha = target->alpha();   // folded per pixel; the table is shared
 
     // pixel -> gradient space, plus the per-pixel step for a one-pixel screen step
     vec2_t pt = vec2_t((float)x, (float)y).transform(&p->inverse_transform);
@@ -120,9 +138,7 @@ namespace picovector {
       if(m) {
         int idx = (int)(t * 255.0f + 0.5f);
         if(idx < 0) idx = 0; else if(idx > 255) idx = 255;
-        uint32_t c = lut[idx];
-        if(alpha != 255u) c = _premul_mul_alpha(c, alpha);
-        blend_masked_over_premul(dst, c, m);
+        blend_masked_over_premul(dst, lut[idx], m);
       }
       dst++;
       t += dt;
@@ -131,10 +147,8 @@ namespace picovector {
 
   // --- radial ---------------------------------------------------------------
 
-  static void gradient_radial_span(image_t *target, gradient_brush_t *p, int x, int y, int w, const uint8_t *mask) {
+  static void gradient_radial_span(image_t *target, gradient_brush_t *p, const pixel_t *lut, int x, int y, int w, const uint8_t *mask) {
     uint32_t *dst = (uint32_t*)target->ptr(x, y);
-    const uint32_t *lut = p->lut;
-    uint32_t alpha = target->alpha();   // folded per pixel; the table is shared
 
     vec2_t pt = vec2_t((float)x, (float)y).transform(&p->inverse_transform);
     float dpx = p->inverse_transform.v00;
@@ -154,9 +168,7 @@ namespace picovector {
         float t = sqrtf(ex * ex + ey * ey) * inv_r;
         int idx = (int)(t * 255.0f + 0.5f);
         if(idx < 0) idx = 0; else if(idx > 255) idx = 255;
-        uint32_t c = lut[idx];
-        if(alpha != 255u) c = _premul_mul_alpha(c, alpha);
-        blend_masked_over_premul(dst, c, m);
+        blend_masked_over_premul(dst, lut[idx], m);
       }
       dst++;
       px += dpx;
@@ -202,10 +214,8 @@ namespace picovector {
   // loop off the FPU is worth more than the cheaper divide: it also removes the
   // float->int convert, the register move and its hazard, and the two-sided
   // clamp that the other two samplers pay on every pixel.
-  static void gradient_conical_span(image_t *target, gradient_brush_t *p, int x, int y, int w, const uint8_t *mask) {
+  static void gradient_conical_span(image_t *target, gradient_brush_t *p, const pixel_t *lut, int x, int y, int w, const uint8_t *mask) {
     uint32_t *dst = (uint32_t*)target->ptr(x, y);
-    const uint32_t *lut = p->lut;
-    uint32_t alpha = target->alpha();   // folded per pixel; the table is shared
 
     vec2_t pt = vec2_t((float)x, (float)y).transform(&p->inverse_transform);
     float dpx = p->inverse_transform.v00;
@@ -251,9 +261,7 @@ namespace picovector {
 
         // Q12 turns to a table index. The wrap is free and it is the right
         // answer here: the domain is a circle, so index 256 is index 0.
-        uint32_t c = lut[((aq + 8u) >> 4) & 255u];
-        if(alpha != 255u) c = _premul_mul_alpha(c, alpha);
-        blend_masked_over_premul(dst, c, m);
+        blend_masked_over_premul(dst, lut[((aq + 8u) >> 4) & 255u], m);
       }
       dst++;
       uq += duq;

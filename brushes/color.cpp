@@ -64,9 +64,7 @@ namespace picovector {
   // ── helpers ─────────────────────────────────────────────────────────────────
   // the target's global alpha, folded into the premultiplied pen colour once
   static pixel_t color_src(image_t *target, brush_t *brush) {
-    pixel_t src = ((color_brush_t*)brush)->c;
-    if(target->alpha() != 255) src = _premul_mul_alpha(src, target->alpha());
-    return src;
+    return fold_target_alpha(target, ((color_brush_t*)brush)->c);
   }
 
 }

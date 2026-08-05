@@ -238,6 +238,7 @@ namespace picovector {
     const pixel_t *lut = p->lut;
     const uint8_t *perm = p->perm;
     const int octaves = p->octaves;
+    uint32_t alpha = target->alpha();   // folded per pixel; the table is shared
 
     // pixel -> field space (cells), plus the per-pixel step for a one-pixel screen
     // step. The transform carries the cell size, so no scaling is left to do here.
@@ -288,6 +289,7 @@ namespace picovector {
 
         // Composited, not stored, so transparent stops overlay existing content.
         pixel_t src = lut[acc >> 8];
+        if(alpha != 255u) src = _premul_mul_alpha(src, alpha);
         *dst = blend_over_premul(*dst, m == 255u ? src : _premul_mul_alpha(src, m));
       }
       dst++;

@@ -7,6 +7,7 @@ void test_raster();
 void test_clip();
 void test_blit();
 void test_blend();
+void test_alpha();
 void test_font();
 void test_gif();
 void test_robustness();
@@ -24,6 +25,7 @@ int main() {
   test_clip();
   test_blit();
   test_blend();
+  test_alpha();
   test_font();
   test_gif();
   test_robustness();

@@ -26,6 +26,9 @@ namespace picovector {
   void image_brush_t::blend_spans(image_t *target, int i0, int i1, int step) {
     image_brush_t *p = this;
     const pv_span *spans = _spans();
+    // The texel varies per pixel, so the fold cannot be hoisted the way a solid
+    // colour's can - but the test can, leaving the opaque path a plain blend.
+    uint32_t alpha = target->alpha();
     for(int i = i0; i < i1; i += step) {
       int x = spans[i].x, y = spans[i].y, w = spans[i].w;
       uint32_t *dst = (uint32_t*)target->ptr(x, y);
@@ -49,6 +52,7 @@ namespace picovector {
         int u = ((int(pt.x) >> 16) % tw + tw) % tw;
         int v = ((int(pt.y) >> 16) % th + th) % th;
         uint32_t c = p->src->get_unsafe(u, v);
+        if(alpha != 255u) c = _premul_mul_alpha(c, alpha);
         *dst = blend_over_premul(*dst, c);
         dst++;
       }
@@ -58,6 +62,7 @@ namespace picovector {
   void image_brush_t::blend_masked_spans(image_t *target, int i0, int i1, int step) {
     image_brush_t *p = this;
     const pv_masked_span *spans = _masked_spans();
+    uint32_t alpha = target->alpha();
     for(int i = i0; i < i1; i += step) {
       int x = spans[i].x, y = spans[i].y, w = spans[i].w;
       uint8_t *mask = (uint8_t*)spans[i].mask;
@@ -84,7 +89,9 @@ namespace picovector {
         if(m) {
           int u = ((int(pt.x) >> 16) % tw + tw) % tw;
           int v = ((int(pt.y) >> 16) % th + th) % th;
-          blend_masked_over_premul(dst, p->src->get_unsafe(u, v), m);
+          uint32_t c = p->src->get_unsafe(u, v);
+          if(alpha != 255u) c = _premul_mul_alpha(c, alpha);
+          blend_masked_over_premul(dst, c, m);
         }
         dst++;
       }

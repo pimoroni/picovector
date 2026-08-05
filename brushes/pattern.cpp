@@ -55,12 +55,13 @@ namespace picovector {
   void pattern_brush_t::blend_spans(image_t *target, int i0, int i1, int step) {
     pattern_brush_t *p = this;
     const pv_span *spans = _spans();
+    // Both colours are invariant across the batch, so the target's global alpha
+    // folds into them once here rather than per pixel.
+    pixel_t c1 = fold_target_alpha(target, p->c1);
+    pixel_t c2 = fold_target_alpha(target, p->c2);
     for(int i = i0; i < i1; i += step) {
       int x = spans[i].x, y = spans[i].y, w = spans[i].w;
       uint32_t *dst = (uint32_t*)target->ptr(x, y);
-
-      pixel_t c1 = p->c1;
-      pixel_t c2 = p->c2;
 
       while(w--) {
         uint8_t u = 7 - (x & 0b111);
@@ -79,13 +80,12 @@ namespace picovector {
   void pattern_brush_t::blend_masked_spans(image_t *target, int i0, int i1, int step) {
     pattern_brush_t *p = this;
     const pv_masked_span *spans = _masked_spans();
+    pixel_t c1 = fold_target_alpha(target, p->c1);
+    pixel_t c2 = fold_target_alpha(target, p->c2);
     for(int i = i0; i < i1; i += step) {
       int x = spans[i].x, y = spans[i].y, w = spans[i].w;
       uint8_t *mask = (uint8_t*)spans[i].mask;
       uint32_t *dst = (uint32_t*)target->ptr(x, y);
-
-      pixel_t c1 = p->c1;
-      pixel_t c2 = p->c2;
 
       while(w--) {
         uint32_t m = *mask++;

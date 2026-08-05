@@ -262,23 +262,40 @@ void test_blit() {
     CHECK(written == 0);
   }
 
-  printf("blit: the source image's alpha weights an unscaled blit\n");
+  printf("blit: the target's global alpha weights a blit, and the source's does not\n");
   {
-    // The 1:1 span used to read the target's alpha, so image.alpha on a source
-    // did nothing and the screen's alpha was applied to everything drawn onto it.
+    // image.alpha is the alpha everything blended *into* that image is weighted
+    // by. A source carries no alpha of its own, so the same blit lands the same
+    // way whatever the source is set to.
     const uint32_t HALF_GREEN = blend_over_premul(0xff000000u, _premul_mul_alpha(0xff00ff00u, 128u));
 
     canvas_t dst(64, 64);
     dst.flat(0xff000000u);
-    dst.img.alpha(64);                          // the target's alpha is not the source's
-    src->alpha(128);
+    dst.img.alpha(128);
+    src->alpha(64);                             // ignored: a source has no say
     src->blit(&dst.img, vec2_t(0, 0));
     CHECK(dst.at(0, 0) == HALF_GREEN);
 
-    pal_src.alpha(128);
-    pal_src.blit(&dst.img, vec2_t(0, 0));       // and the same through a palette
+    pal_src.alpha(64);                          // also ignored, through a palette
+    pal_src.blit(&dst.img, vec2_t(0, 0));
     CHECK(dst.at(0, 0) == blend_over_premul(HALF_GREEN, _premul_mul_alpha(PAL_RED, 128u)));
 
+    // Setting the source's alpha changes nothing at all.
+    dst.flat(0xff000000u);
+    src->alpha(255);
+    src->blit(&dst.img, vec2_t(0, 0));
+    uint32_t with_opaque_source = dst.at(0, 0);
+    dst.flat(0xff000000u);
+    src->alpha(1);
+    src->blit(&dst.img, vec2_t(0, 0));
+    CHECK_MSG(dst.at(0, 0) == with_opaque_source, "a source image's alpha still weighted a blit");
+
+    // A scaled blit reads the same alpha as an unscaled one.
+    dst.flat(0xff000000u);
+    src->blit(&dst.img, rect_t(0, 0, 8, 8), rect_t(0, 0, 16, 16));
+    CHECK(dst.at(0, 0) == HALF_GREEN);
+
+    dst.img.alpha(255);
     src->alpha(255);
     pal_src.alpha(255);
   }

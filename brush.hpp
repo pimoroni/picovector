@@ -13,6 +13,21 @@ namespace picovector {
   // dispatching to its batch func) are declared in image.hpp, next to the buffer
   // and the _emit_span that fills it.
 
+  // image_t::alpha() is the global alpha everything blended *into* that image is
+  // weighted by, so every brush that paints a new colour folds it into the source
+  // pixel. A brush that rewrites the pixel it just read (the effect brushes) does
+  // not: it mutates the buffer rather than compositing onto it, and carries its
+  // own strength instead.
+  //
+  // Use this where the source colour is invariant across the batch, so the fold
+  // happens once. Where the source varies per pixel, read alpha() once outside
+  // the loop and apply _premul_mul_alpha only when it isn't 255, so the opaque
+  // case stays a plain blend.
+  static inline pixel_t fold_target_alpha(image_t *target, pixel_t src) {
+    uint32_t a = target->alpha();
+    return a == 255u ? src : _premul_mul_alpha(src, a);
+  }
+
   class gradient_brush_t;
   class fractal_brush_t;
 

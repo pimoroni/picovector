@@ -100,6 +100,7 @@ namespace picovector {
   static void gradient_linear_span(image_t *target, gradient_brush_t *p, int x, int y, int w, const uint8_t *mask) {
     uint32_t *dst = (uint32_t*)target->ptr(x, y);
     const uint32_t *lut = p->lut;
+    uint32_t alpha = target->alpha();   // folded per pixel; the table is shared
 
     // pixel -> gradient space, plus the per-pixel step for a one-pixel screen step
     vec2_t pt = vec2_t((float)x, (float)y).transform(&p->inverse_transform);
@@ -119,7 +120,9 @@ namespace picovector {
       if(m) {
         int idx = (int)(t * 255.0f + 0.5f);
         if(idx < 0) idx = 0; else if(idx > 255) idx = 255;
-        blend_masked_over_premul(dst, lut[idx], m);
+        uint32_t c = lut[idx];
+        if(alpha != 255u) c = _premul_mul_alpha(c, alpha);
+        blend_masked_over_premul(dst, c, m);
       }
       dst++;
       t += dt;
@@ -131,6 +134,7 @@ namespace picovector {
   static void gradient_radial_span(image_t *target, gradient_brush_t *p, int x, int y, int w, const uint8_t *mask) {
     uint32_t *dst = (uint32_t*)target->ptr(x, y);
     const uint32_t *lut = p->lut;
+    uint32_t alpha = target->alpha();   // folded per pixel; the table is shared
 
     vec2_t pt = vec2_t((float)x, (float)y).transform(&p->inverse_transform);
     float dpx = p->inverse_transform.v00;
@@ -150,7 +154,9 @@ namespace picovector {
         float t = sqrtf(ex * ex + ey * ey) * inv_r;
         int idx = (int)(t * 255.0f + 0.5f);
         if(idx < 0) idx = 0; else if(idx > 255) idx = 255;
-        blend_masked_over_premul(dst, lut[idx], m);
+        uint32_t c = lut[idx];
+        if(alpha != 255u) c = _premul_mul_alpha(c, alpha);
+        blend_masked_over_premul(dst, c, m);
       }
       dst++;
       px += dpx;
@@ -199,6 +205,7 @@ namespace picovector {
   static void gradient_conical_span(image_t *target, gradient_brush_t *p, int x, int y, int w, const uint8_t *mask) {
     uint32_t *dst = (uint32_t*)target->ptr(x, y);
     const uint32_t *lut = p->lut;
+    uint32_t alpha = target->alpha();   // folded per pixel; the table is shared
 
     vec2_t pt = vec2_t((float)x, (float)y).transform(&p->inverse_transform);
     float dpx = p->inverse_transform.v00;
@@ -244,7 +251,9 @@ namespace picovector {
 
         // Q12 turns to a table index. The wrap is free and it is the right
         // answer here: the domain is a circle, so index 256 is index 0.
-        blend_masked_over_premul(dst, lut[((aq + 8u) >> 4) & 255u], m);
+        uint32_t c = lut[((aq + 8u) >> 4) & 255u];
+        if(alpha != 255u) c = _premul_mul_alpha(c, alpha);
+        blend_masked_over_premul(dst, c, m);
       }
       dst++;
       uq += duq;

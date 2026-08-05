@@ -23,8 +23,8 @@ namespace picovector {
   };
 
   // --- templated span cores --------------------------------------------------
-  // ApplyAlpha folds the image-level alpha into each source texel. When the
-  // image is fully opaque (the common case) the caller picks ApplyAlpha=false
+  // ApplyAlpha folds the target's global alpha into each source texel. When the
+  // target is fully opaque (the common case) the caller picks ApplyAlpha=false
   // and the whole _premul_mul_alpha step compiles away — the invariant alpha
   // test is hoisted out of the per-pixel loop entirely. blend_over_premul is
   // always_inline, so there is no per-pixel indirect blend_func_t call.
@@ -79,10 +79,10 @@ namespace picovector {
     (void)bf;
     uint32_t *ps = (uint32_t *)src->ptr(sx, sy);
     uint32_t *pd = (uint32_t *)dst->ptr(dx, dy);
-    uint32_t src_alpha = src->alpha();
+    uint32_t dst_alpha = dst->alpha();
 
-    if(src_alpha == 255u) span_over<false>(src_rgba{ps}, pd, w, 255u);
-    else                  span_over<true >(src_rgba{ps}, pd, w, src_alpha);
+    if(dst_alpha == 255u) span_over<false>(src_rgba{ps}, pd, w, 255u);
+    else                  span_over<true >(src_rgba{ps}, pd, w, dst_alpha);
   }
 
   inline void span_blit(image_t *src, image_t *dst, blend_func_t bf, int sx, int sy, int dx, int dy, int w, const uint32_t *palette) {
@@ -90,16 +90,16 @@ namespace picovector {
     uint8_t  *ps  = (uint8_t *)src->ptr(sx, sy);
     uint32_t *pd  = (uint32_t *)dst->ptr(dx, dy);
     const uint32_t *pal = palette;
-    uint32_t src_alpha = src->alpha();
+    uint32_t dst_alpha = dst->alpha();
 
-    if(src_alpha == 255u) span_over<false>(src_pal{ps, pal}, pd, w, 255u);
-    else                  span_over<true >(src_pal{ps, pal}, pd, w, src_alpha);
+    if(dst_alpha == 255u) span_over<false>(src_pal{ps, pal}, pd, w, 255u);
+    else                  span_over<true >(src_pal{ps, pal}, pd, w, dst_alpha);
   }
 
   inline void span_blit_scale(image_t *src, image_t *dst, blend_func_t bf, fx16_t sx, fx16_t sx_step, fx16_t sy, int dx, int dy, int w, filter_t filter = NEAREST) {
     (void)bf;
     uint32_t *pd = (uint32_t *)dst->ptr(dx, dy);
-    uint32_t src_alpha = src->alpha();
+    uint32_t dst_alpha = dst->alpha();
 
     // NEAREST (and palette images, which sample() always resolves nearest): sy
     // is constant across the span, so the source row is fixed. Resolve it once
@@ -115,12 +115,12 @@ namespace picovector {
 
       if(src->has_palette()) {
         src_pal s{ (uint8_t *)src->ptr(0, iy), src->palette_data() };
-        if(src_alpha == 255u) span_scale_over<false>(s, pd, w, sx, sx_step, sw, 255u);
-        else                  span_scale_over<true >(s, pd, w, sx, sx_step, sw, src_alpha);
+        if(dst_alpha == 255u) span_scale_over<false>(s, pd, w, sx, sx_step, sw, 255u);
+        else                  span_scale_over<true >(s, pd, w, sx, sx_step, sw, dst_alpha);
       } else {
         src_rgba s{ (uint32_t *)src->ptr(0, iy) };
-        if(src_alpha == 255u) span_scale_over<false>(s, pd, w, sx, sx_step, sw, 255u);
-        else                  span_scale_over<true >(s, pd, w, sx, sx_step, sw, src_alpha);
+        if(dst_alpha == 255u) span_scale_over<false>(s, pd, w, sx, sx_step, sw, 255u);
+        else                  span_scale_over<true >(s, pd, w, sx, sx_step, sw, dst_alpha);
       }
       return;
     }
@@ -129,7 +129,7 @@ namespace picovector {
     // can't fold the fetch into a raw row index.
     while(w--) {
       uint32_t c = src->sample(sx, sy, filter);
-      if(src_alpha != 255u) c = _premul_mul_alpha(c, src_alpha);
+      if(dst_alpha != 255u) c = _premul_mul_alpha(c, dst_alpha);
       *pd = blend_over_premul(*pd, c);
       pd++;
       sx += sx_step;

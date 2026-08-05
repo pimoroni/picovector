@@ -648,6 +648,11 @@ void test_palette() {
     sheet.circle(vec2_t(16, 16), 10);
     sheet.line(vec2_t(0, 0), vec2_t(31, 31));
     sheet.put(vec2_t(4, 4));
+    sheet.hspan(0, 5, 32);
+    sheet.vspan(5, 0, 32);
+    sheet.triangle(vec2_t(0, 0), vec2_t(31, 0), vec2_t(16, 31));
+    shape_t *box = rectangle(4, 4, 16, 16);
+    sheet.shape(box);
     sheet.blur(3.0f, 1.0f);
     sheet.bloom(180, 150, 4.0f);
     sheet.wave(4, 4);

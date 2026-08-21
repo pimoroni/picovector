@@ -147,11 +147,12 @@ namespace picovector {
     render_flush(target, brush);
   }
 
-  void font_t::draw(image_t *target, const char *text, float size) {
-    this->draw(target, text, text + strlen(text), size);
+  void font_t::draw(image_t *target, const char *text, float size, const mat3_t *transform) {
+    this->draw(target, text, text + strlen(text), size, transform);
   }
 
-  void font_t::draw(image_t *target, const char *text, const char *end, float size) {
+  void font_t::draw(image_t *target, const char *text, const char *end, float size,
+                    const mat3_t *transform) {
     // Draw from the image's text caret, advancing it per glyph and honouring
     // '\n' (return to origin_x, drop one line). image.text() sets up the caret
     // (x, y, origin_x, valid) before calling; line_height for a vector font is
@@ -160,17 +161,19 @@ namespace picovector {
     c->line_height = size;
     const float s = size / this->units_per_em;
 
-    // A glyph's packed contour is drawn through `transform`, which places the
+    // A glyph's packed contour is drawn through `placement`, which puts the
     // baseline at (x, y) and scales the font's em to `size`. It's rebuilt from
-    // the caret whenever the position jumps (start / newline).
-    auto build_transform = [size, s](float x, float y) {
-      mat3_t t;
+    // the caret whenever the position jumps (start / newline). A caller's
+    // `transform` seeds it, so it composes on the left and maps the placed
+    // glyph in target space.
+    auto build_placement = [size, s, transform](float x, float y) {
+      mat3_t t = transform ? *transform : mat3_t();
       t = t.translate(x, y);
       t = t.translate(0, size);
       t = t.scale(s, s);
       return t;
     };
-    mat3_t transform = build_transform(c->x, c->y);
+    mat3_t placement = build_placement(c->x, c->y);
 
     while(text < end) {
       uint16_t codepoint = get_utf8_char(text, end);
@@ -178,7 +181,7 @@ namespace picovector {
       if(codepoint == '\n') {
         c->x = c->origin_x;
         c->y += c->line_height;
-        transform = build_transform(c->x, c->y);
+        placement = build_placement(c->x, c->y);
         text += 1;
         continue;
       }
@@ -187,9 +190,9 @@ namespace picovector {
       // find the glyph
       for(int j = 0; j < this->glyph_count; j++) {
         if(this->glyphs[j].codepoint == codepoint) {
-          draw_glyph(&this->glyphs[j], this->wide_points, target, &transform, target->brush());
+          draw_glyph(&this->glyphs[j], this->wide_points, target, &placement, target->brush());
           float a = this->glyphs[j].advance;
-          transform = transform.translate(a, 0);
+          placement = placement.translate(a, 0);
           c->x += a * s;
           break;
         }

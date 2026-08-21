@@ -252,6 +252,25 @@ namespace picovector {
       h -= top + bottom;
     }
 
+    // The rect's bounding box under an affine map, rounded outwards to whole
+    // pixels so a rotation keeps the partly-covered edge. transform() below
+    // truncates instead, and predates this.
+    rect_t transformed(const mat3_t &m) const {
+      vec2_t p[4] = {
+        vec2_t(this->x, this->y).transform(m),
+        vec2_t(this->x + this->w, this->y).transform(m),
+        vec2_t(this->x, this->y + this->h).transform(m),
+        vec2_t(this->x + this->w, this->y + this->h).transform(m)
+      };
+      float minx = p[0].x, miny = p[0].y, maxx = p[0].x, maxy = p[0].y;
+      for(int i = 1; i < 4; i++) {
+        minx = min(minx, p[i].x); miny = min(miny, p[i].y);
+        maxx = max(maxx, p[i].x); maxy = max(maxy, p[i].y);
+      }
+      float x0 = floorf(minx), y0 = floorf(miny);
+      return rect_t(x0, y0, ceilf(maxx) - x0, ceilf(maxy) - y0);
+    }
+
     rect_t transform(mat3_t *m) {
       vec2_t tl = vec2_t(this->x, this->y);
       vec2_t tr = vec2_t(this->x + this->w, this->y);

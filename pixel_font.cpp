@@ -119,6 +119,62 @@ namespace picovector {
     _blend_spans(target, brush);
   }
 
+  // Glyph pixels -> target pixels for a caret at (x, y) under a caller transform.
+  static mat3_t glyph_placement(const mat3_t &transform, float x, float y, int scale) {
+    mat3_t m = transform;
+    m.translate(x, y);
+    m.scale(float(scale), float(scale));
+    return m;
+  }
+
+  void pixel_font_t::draw_glyph(image_t *target, const pixel_font_glyph_t *glyph, uint8_t *data, brush_t *brush, const rect_t &bounds, const mat3_t &placement) {
+    // A rotated or sheared placement leaves no axis-aligned runs to walk, so
+    // this goes the other way from the blit above: step over the destination
+    // pixels the glyph could touch, inverse-map each centre into glyph space and
+    // sample the bit there, coalescing runs of set pixels into spans.
+    float det = placement.v00 * placement.v11 - placement.v01 * placement.v10;
+    if(det == 0.0f) return; // degenerate: no area to cover
+
+    mat3_t inverse = placement;
+    inverse.inverse();
+
+    // Clip in float space before narrowing to int: an extreme scale gives a box
+    // no int can hold, and the span coordinates are int16_t. The NaN check first
+    // is what stops a NaN in the matrix reaching the min/max, which pass it
+    // through.
+    rect_t box = rect_t(0, 0, glyph->width, this->height).transformed(placement);
+    if(!(box.w > 0.0f && box.h > 0.0f)) return;
+    float fx0 = max(box.x, bounds.x), fy0 = max(box.y, bounds.y);
+    float fx1 = min(box.x + box.w, bounds.x + bounds.w);
+    float fy1 = min(box.y + box.h, bounds.y + bounds.h);
+    if(fx1 <= fx0 || fy1 <= fy0) return;
+    int x0 = int(fx0), x1 = int(fx1), y0 = int(fy0), y1 = int(fy1);
+
+    uint32_t bytes_per_row = (this->width + 7) >> 3;
+
+    _reset_spans();
+    for(int dy = y0; dy < y1; dy++) {
+      // Walking x is a constant step in glyph space, so the map is two adds per
+      // destination pixel rather than a matrix multiply.
+      float u = inverse.v00 * (float(x0) + 0.5f) + inverse.v01 * (float(dy) + 0.5f) + inverse.v02;
+      float v = inverse.v10 * (float(x0) + 0.5f) + inverse.v11 * (float(dy) + 0.5f) + inverse.v12;
+      int run_start = -1;
+      for(int dx = x0; dx < x1; dx++, u += inverse.v00, v += inverse.v10) {
+        int gx = int(floorf(u)), gy = int(floorf(v));
+        bool set = gx >= 0 && gx < int(glyph->width) && gy >= 0 && gy < int(this->height) &&
+                   (data[gy * bytes_per_row + (gx >> 3)] & (0x80u >> (gx & 7)));
+        if(set) {
+          if(run_start < 0) run_start = dx;
+        } else if(run_start >= 0) {
+          _emit_span(target, brush, run_start, dy, dx - run_start);
+          run_start = -1;
+        }
+      }
+      if(run_start >= 0) _emit_span(target, brush, run_start, dy, x1 - run_start);
+    }
+    _blend_spans(target, brush);
+  }
+
   static uint16_t get_utf8_char(const char *text, const char *end) {
     uint16_t codepoint;
     if((*text & 0x80) == 0x00) {
@@ -144,11 +200,12 @@ namespace picovector {
     return 0; // invalid
   }
 
-  void pixel_font_t::draw(image_t *target, const char *text, int scale) {
-    this->draw(target, text, text + strlen(text), scale);
+  void pixel_font_t::draw(image_t *target, const char *text, int scale, const mat3_t *transform) {
+    this->draw(target, text, text + strlen(text), scale, transform);
   }
 
-  void pixel_font_t::draw(image_t *target, const char *text, const char *end, int scale) {
+  void pixel_font_t::draw(image_t *target, const char *text, const char *end, int scale,
+                          const mat3_t *transform) {
     if(scale < 1) scale = 1;
 
     // Draw from the image's text caret, advancing it per glyph and honouring
@@ -162,6 +219,7 @@ namespace picovector {
     rect_t text_bounds = this->measure(target, text, end, scale);
     text_bounds.x = c->x;
     text_bounds.y = c->y;
+    if(transform) text_bounds = text_bounds.transformed(*transform);
     bool visible = text_bounds.intersects(target->clip());
 
     rect_t bounds = target->clip();
@@ -189,7 +247,12 @@ namespace picovector {
         uint8_t *data = &this->glyph_data[this->glyph_data_size * glyph_index];
 
         if(visible) {
-          draw_glyph(target, glyph, data, brush, bounds, (int)c->x, (int)c->y, scale);
+          if(transform) {
+            draw_glyph(target, glyph, data, brush, bounds,
+                       glyph_placement(*transform, c->x, c->y, scale));
+          } else {
+            draw_glyph(target, glyph, data, brush, bounds, (int)c->x, (int)c->y, scale);
+          }
         }
 
         c->x += (glyph->width + 1) * scale;

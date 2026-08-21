@@ -9,6 +9,7 @@ void test_blit();
 void test_blend();
 void test_alpha();
 void test_font();
+void test_text_transform();
 void test_gif();
 void test_robustness();
 void test_palette();
@@ -27,6 +28,7 @@ int main() {
   test_blend();
   test_alpha();
   test_font();
+  test_text_transform();
   test_gif();
   test_robustness();
   test_palette();

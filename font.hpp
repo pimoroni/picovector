@@ -56,13 +56,19 @@ namespace picovector {
     float units_per_em = 128.0f;
     bool wide_points = false;
 
-    void draw(image_t *target, const char *text, float size);
+    // `transform` maps the drawn glyph outlines in target space, on top of the
+    // placement the caret and `size` give them: nullptr is the plain case and
+    // costs one test per line. Layout is unaffected - the caret advances in
+    // untransformed text space, so measure() still describes the run.
+    void draw(image_t *target, const char *text, float size,
+              const mat3_t *transform = nullptr);
     rect_t measure(image_t *target, const char *text, float size);
 
     // Length-bounded variants for drawing/measuring a substring (e.g. one
     // word span) without a NUL terminator, so the text layout path stays
     // zero-copy over the source buffer. `end` is one past the last byte.
-    void draw(image_t *target, const char *text, const char *end, float size);
+    void draw(image_t *target, const char *text, const char *end, float size,
+              const mat3_t *transform = nullptr);
     rect_t measure(image_t *target, const char *text, const char *end, float size);
   };
 

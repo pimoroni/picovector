@@ -7,15 +7,16 @@
 #   cmake -S tests -B build/tests && cmake --build build/tests && ./build/tests/pv_tests
 
 cmake_minimum_required(VERSION 3.16)
-project(picovector_tests CXX)
+project(picovector_tests C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(PV_ROOT ${CMAKE_CURRENT_LIST_DIR}/..)
 
-# The core library sources. lib/ (the PNG/JPEG decoders) is deliberately not
-# here - it belongs to the embedder, not the core.
+# The core library sources. The PNG/JPEG decoders under lib/ are deliberately not
+# here - they belong to the embedder, not the core. lib/qrcodegen is, because
+# image_t::qr() is core and needs it.
 file(GLOB PV_SOURCES CONFIGURE_DEPENDS
   ${PV_ROOT}/*.cpp
   ${PV_ROOT}/brushes/*.cpp
@@ -23,6 +24,8 @@ file(GLOB PV_SOURCES CONFIGURE_DEPENDS
   ${PV_ROOT}/algorithms/*.cpp
   ${PV_ROOT}/tween/*.cpp
 )
+
+list(APPEND PV_SOURCES ${PV_ROOT}/lib/qrcodegen/qrcodegen.c)
 
 file(GLOB TEST_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_LIST_DIR}/test_*.cpp)
 

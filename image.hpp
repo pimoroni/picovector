@@ -109,6 +109,16 @@ namespace picovector {
     RGBA4444 = 2,
   } pixel_format_t;
 
+  // Error correction level for image_t::qr(), ascending redundancy. More
+  // correction survives more damage but needs a larger code for the same text.
+  // Values match enum qrcodegen_Ecc.
+  typedef enum qr_ecc_t {
+    QR_LOW      = 0,
+    QR_MEDIUM   = 1,
+    QR_QUARTILE = 2,
+    QR_HIGH     = 3
+  } qr_ecc_t;
+
   // texture sampling quality for the blit* functions
   typedef enum filter_t {
     NEAREST  = 0, // single nearest texel (fastest, default)
@@ -177,6 +187,14 @@ namespace picovector {
       image_t(void *buffer, int w, int h, pixel_format_t pixel_format=RGBA8888, bool has_palette=false, int palette_entries=256);
       image_t(void *buffer, int w, int h, int rows, int cols, pixel_format_t pixel_format=RGBA8888, bool has_palette=false, int palette_entries=256);
       ~image_t();
+
+      // A QR code encoding `text`: one pixel per module, plus a `border` module
+      // quiet zone on each side, as a two-entry palette image (0 light, 1 dark).
+      // Scale it up when blitting rather than here, so the code costs its module
+      // count and no more. Returns nullptr if `text` does not fit at this error
+      // correction level, or on allocation failure. Caller owns the result and
+      // frees it as it would any other allocated image.
+      static image_t *qr(const char *text, qr_ecc_t ecc=QR_MEDIUM, int border=4);
 
       // The pixels this image owns, tightly packed: what an allocation needs.
       size_t buffer_size();

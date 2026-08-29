@@ -10,6 +10,7 @@
 #include "shape.hpp"
 #include "picovector.hpp"  // pv_parallel_rows (dual-core blit split)
 #include "rasteriser.hpp"  // render() / pv_profile_frame()
+#include "lib/qrcodegen/qrcodegen.h"
 
 using std::vector;
 
@@ -108,6 +109,67 @@ namespace picovector {
       PV_FREE(this->_palette);
 #endif
     }
+  }
+
+  image_t *image_t::qr(const char *text, qr_ecc_t ecc, int border) {
+    if(!text || border < 0) return nullptr;
+
+    // qrcodegen wants two version-40 scratch buffers, ~3.9KB each. That is most
+    // of the 8KB stack on RP2350, so they come from the heap and go back before
+    // the image is allocated.
+    uint8_t *code = (uint8_t *)PV_MALLOC(qrcodegen_BUFFER_LEN_MAX);
+    uint8_t *scratch = (uint8_t *)PV_MALLOC(qrcodegen_BUFFER_LEN_MAX);
+    bool encoded = code && scratch && qrcodegen_encodeText(
+      text, scratch, code, (enum qrcodegen_Ecc)ecc,
+      qrcodegen_VERSION_MIN, qrcodegen_VERSION_MAX, qrcodegen_Mask_AUTO, true);
+
+    if(scratch) {
+#if MICROPY_MALLOC_USES_ALLOCATED_SIZE
+      PV_FREE(scratch, qrcodegen_BUFFER_LEN_MAX);
+#else
+      PV_FREE(scratch);
+#endif
+    }
+
+    image_t *result = nullptr;
+    if(encoded) {
+      int modules = qrcodegen_getSize(code);
+      int dimension = modules + border * 2;
+      void *mem = PV_MALLOC(sizeof(image_t));
+      if(mem) {
+        result = new (mem) image_t(dimension, dimension, RGBA8888, true, 2);
+        if(result->_buffer) {
+          result->palette(0, rgb_color_t(255, 255, 255, 255)._p);
+          result->palette(1, rgb_color_t(0, 0, 0, 255)._p);
+          // One byte per pixel: the quiet zone and light modules are index 0, so
+          // clear once and only write the dark ones.
+          memset(result->_buffer, 0, (size_t)dimension * dimension);
+          for(int y = 0; y < modules; y++) {
+            uint8_t *row = (uint8_t *)result->ptr(border, y + border);
+            for(int x = 0; x < modules; x++) {
+              if(qrcodegen_getModule(code, x, y)) row[x] = 1;
+            }
+          }
+        } else {
+          result->~image_t();
+#if MICROPY_MALLOC_USES_ALLOCATED_SIZE
+          PV_FREE(mem, sizeof(image_t));
+#else
+          PV_FREE(mem);
+#endif
+          result = nullptr;
+        }
+      }
+    }
+
+    if(code) {
+#if MICROPY_MALLOC_USES_ALLOCATED_SIZE
+      PV_FREE(code, qrcodegen_BUFFER_LEN_MAX);
+#else
+      PV_FREE(code);
+#endif
+    }
+    return result;
   }
 
   size_t image_t::buffer_size() {

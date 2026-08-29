@@ -51,6 +51,9 @@ list(APPEND SOURCES
   ${CMAKE_CURRENT_LIST_DIR}/brushes/phosphor.cpp
   ${CMAKE_CURRENT_LIST_DIR}/brushes/nightvision.cpp
   ${CMAKE_CURRENT_LIST_DIR}/brushes/chromatic.cpp
+
+  # Vendored third-party, see lib/qrcodegen/README.md
+  ${CMAKE_CURRENT_LIST_DIR}/lib/qrcodegen/qrcodegen.c
 )
 
 # The MicroPython bindings, decoders, allocator config and build knobs live in

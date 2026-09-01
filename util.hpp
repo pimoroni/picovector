@@ -24,4 +24,17 @@ namespace picovector {
   // Cortex-M33 so this costs about the same as a cruder shift-only estimate.
   inline int luminance(const uint8_t *p) { return (77 * p[0] + 150 * p[1] + 29 * p[2]) >> 8; }
 
+  // Catmull-Rom (a = -0.5) cubic convolution weights for the four taps either
+  // side of a sample point at fractional offset t. Fixed-point: t and the
+  // returned weights are Q12; the weights sum to 1.0 (4096). Integer MACs are
+  // cheaper than float on the M33 and skip the per-channel int<->float casts.
+  inline void cubic_weights_fx(int t, int w[4]) {
+    int t2 = (t * t) >> 12;
+    int t3 = (t2 * t) >> 12;
+    w[0] = (-t3 + 2 * t2 - t) >> 1;
+    w[1] = (3 * t3 - 5 * t2 + 8192) >> 1;  // 8192 == 2.0 in Q12
+    w[2] = (-3 * t3 + 4 * t2 + t) >> 1;
+    w[3] = (t3 - t2) >> 1;
+  }
+
 }

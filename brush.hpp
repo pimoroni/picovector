@@ -99,9 +99,10 @@ namespace picovector {
     image_t *src;
     mat3_t inverse_transform;  // device pixels -> image space (incl. shape transform)
     mat3_t base_inverse;       // device -> image for the brush's own transform only
+    filter_t filter;
 
-    image_brush_t(image_t *src);
-    image_brush_t(image_t *src, mat3_t *transform);
+    image_brush_t(image_t *src, filter_t filter = NEAREST);
+    image_brush_t(image_t *src, mat3_t *transform, filter_t filter = NEAREST);
     void blend_spans(image_t *target, int i0, int i1, int step) override;
     void blend_masked_spans(image_t *target, int i0, int i1, int step) override;
     void set_render_transform(mat3_t *transform) override;

@@ -8,6 +8,7 @@ void test_clip();
 void test_blit();
 void test_blend();
 void test_alpha();
+void test_image_brush();
 void test_font();
 void test_text_transform();
 void test_gif();
@@ -29,6 +30,7 @@ int main() {
   test_blit();
   test_blend();
   test_alpha();
+  test_image_brush();
   test_font();
   test_text_transform();
   test_gif();

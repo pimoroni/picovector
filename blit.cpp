@@ -340,18 +340,7 @@ namespace picovector {
 
 
   // --- source sampling (used by the scaled/filtered blit paths) --------------
-  // Catmull-Rom (a = -0.5) cubic convolution weights for the four taps either
-  // side of a sample point at fractional offset t. Fixed-point: t and the
-  // returned weights are Q12; the weights sum to 1.0 (4096). Integer MACs are
-  // cheaper than float on the M33 and skip the per-channel int<->float casts.
-  static inline void _cubic_weights_fx(int t, int w[4]) {
-    int t2 = (t * t) >> 12;
-    int t3 = (t2 * t) >> 12;
-    w[0] = (-t3 + 2 * t2 - t) >> 1;
-    w[1] = (3 * t3 - 5 * t2 + 8192) >> 1;  // 8192 == 2.0 in Q12
-    w[2] = (-3 * t3 + 4 * t2 + t) >> 1;
-    w[3] = (t3 - t2) >> 1;
-  }
+  // cubic_weights_fx() lives in util.hpp; the texture brush samples with it too.
 
   uint32_t image_t::sample(fx16_t sx, fx16_t sy, filter_t filter) {
     int w = (int)this->_bounds.w;
@@ -394,8 +383,8 @@ namespace picovector {
     // per-row pointers (skips get_unsafe's palette branch + per-texel address
     // maths) and accumulate in fixed-point.
     int wx[4], wy[4];
-    _cubic_weights_fx((sx >> 4) & 0xfff, wx);  // sx/sy fraction (Q16) -> Q12
-    _cubic_weights_fx((sy >> 4) & 0xfff, wy);
+    cubic_weights_fx((sx >> 4) & 0xfff, wx);  // sx/sy fraction (Q16) -> Q12
+    cubic_weights_fx((sy >> 4) & 0xfff, wy);
 
     // clamp the four source columns once; reused for every row
     int xs[4];

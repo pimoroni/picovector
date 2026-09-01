@@ -90,6 +90,42 @@ namespace picovector {
     _local_bounds_valid = false;
   }
 
+  void shape_t::append(const shape_t &other) {
+    if(other.paths.empty()) return;
+
+    // Winding is normalised per source shape, not per contour: the primitives
+    // disagree on direction (circle() one way, rectangle() the other, pie()
+    // whichever way its sweep runs), so concatenating two of them can cancel the
+    // overlap to a hole under NON_ZERO. Flipping a shape's contours together
+    // preserves the relative winding inside it, so a counter-wound hole survives.
+    float reference = 0.0f;
+    for(const path_t &path : paths) {
+      reference = path.signed_area();
+      if(reference != 0.0f) break;
+    }
+
+    size_t first = paths.size();
+    for(const path_t &path : other.paths) {
+      path_t copy((int)path.points.size());
+      for(const vec2_t &point : path.points) {
+        copy.add_point(vec2_t(point).transform(other.transform));
+      }
+      paths.push_back(copy);
+    }
+    _local_bounds_valid = false;
+
+    if(reference == 0.0f) return;
+
+    float lead = 0.0f;
+    for(size_t i = first; i < paths.size(); i++) {
+      lead = paths[i].signed_area();
+      if(lead != 0.0f) break;
+    }
+    if(lead == 0.0f || (lead < 0.0f) == (reference < 0.0f)) return;
+
+    for(size_t i = first; i < paths.size(); i++) paths[i].reverse();
+  }
+
   // untransformed bounding box of all points, cached (geometry rarely changes)
   rect_t shape_t::local_bounds() {
     if(!_local_bounds_valid) {
@@ -159,6 +195,30 @@ namespace picovector {
 
   void path_t::add_point(float x, float y) {
     points.push_back(vec2_t(x, y));
+  }
+
+  // Shoelace, summed relative to the first point: a ring a few hundred pixels
+  // from the origin otherwise carries three leading digits into every term,
+  // where they cancel and take the sign of a thin shape with them.
+  float path_t::signed_area() const {
+    size_t count = points.size();
+    if(count < 3) return 0.0f;
+    const vec2_t &o = points[0];
+    float area = 0.0f;
+    for(size_t i = 0, j = count - 1; i < count; j = i++) {
+      area += (points[j].x - o.x) * (points[i].y - o.y) -
+              (points[i].x - o.x) * (points[j].y - o.y);
+    }
+    return area;
+  }
+
+  void path_t::reverse() {
+    for(size_t i = 0, j = points.size(); i + 1 < j; i++) {
+      j--;
+      vec2_t t = points[i];
+      points[i] = points[j];
+      points[j] = t;
+    }
   }
 
   void path_t::edge_points(int edge, vec2_t &s, vec2_t &e) {

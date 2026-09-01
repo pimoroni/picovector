@@ -51,6 +51,10 @@ namespace picovector {
     void add_point(const vec2_t &point);
     void add_point(float x, float y);
     void edge_points(int edge, vec2_t &s, vec2_t &e);
+    // Twice the shoelace area; the sign is the winding direction, negative for
+    // an anticlockwise ring in screen coordinates. Zero for a degenerate path.
+    float signed_area() const;
+    void reverse();
     std::vector<vec2_t, PV_STD_ALLOCATOR<vec2_t>> offset_ring(float offset, bool closed = true, uint32_t join = JOIN_MITER, float miter_limit = 4.0f);
     void stroke(float thickness, uint32_t flags = 0, float miter_limit = 4.0f);
     void inflate(float offset);
@@ -72,6 +76,11 @@ namespace picovector {
       //debug_printf("shape destructed\n");
     }
     void add_path(path_t path);
+    // Copy another shape's contours in, baking its transform into the points.
+    // Fill under NON_ZERO to get the union of the two; under EVEN_ODD the
+    // overlap punches a hole. All the contours go into one rasteriser batch, so
+    // the combined point count is against MAX_EDGES rather than each part.
+    void append(const shape_t &other);
     rect_t local_bounds();
     rect_t bounds();
     /*void draw(image &img); // methods should be on image perhaps? with style/brush and transform passed in?*/

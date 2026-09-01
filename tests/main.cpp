@@ -18,6 +18,7 @@ void test_color_readback();
 void test_color_palette();
 void test_gradient();
 void test_stroke();
+void test_combine();
 void test_spritesheet();
 void test_qr();
 
@@ -38,6 +39,7 @@ int main() {
   test_color_palette();
   test_gradient();
   test_stroke();
+  test_combine();
   test_spritesheet();
   test_qr();
   return pvtest::summary();

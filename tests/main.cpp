@@ -22,6 +22,7 @@ void test_stroke();
 void test_combine();
 void test_spritesheet();
 void test_qr();
+void test_grow();
 void test_pico3d_math();
 void test_pico3d_raster();
 void test_pico3d_draw();
@@ -47,6 +48,7 @@ int main() {
   test_combine();
   test_spritesheet();
   test_qr();
+  test_grow();
   test_pico3d_math();
   test_pico3d_raster();
   test_pico3d_draw();

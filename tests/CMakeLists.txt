@@ -27,6 +27,13 @@ file(GLOB PV_SOURCES CONFIGURE_DEPENDS
 
 list(APPEND PV_SOURCES ${PV_ROOT}/lib/qrcodegen/qrcodegen.c)
 
+# The three pico3d_raster*.cpp files are interchangeable backends for the same
+# entry point, so the glob above has to be narrowed to one. Tests take the float
+# reference; the firmware picks its backend in picovector.cmake.
+list(REMOVE_ITEM PV_SOURCES
+  ${PV_ROOT}/pico3d_raster_int.cpp
+  ${PV_ROOT}/pico3d_raster_int_templated.cpp)
+
 file(GLOB TEST_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_LIST_DIR}/test_*.cpp)
 
 add_executable(pv_tests ${TEST_SOURCES} ${CMAKE_CURRENT_LIST_DIR}/main.cpp ${PV_SOURCES})

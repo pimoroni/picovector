@@ -24,8 +24,10 @@
 // second multicore_launch would hang (core1 isn't in the bootrom wait state).
 extern "C" void pv_core1_run(void (*fn)());
 extern "C" void pv_core1_join();
-extern char PicoVector_working_buffer[];                 // 70 KB scratch (free during a 3D
-#define PV_WORK_U16  (((50 + 20) * 1024) / 2)            // pass); reused here for the bins
+// picovector's shared scratch pool, borrowed for the per-band triangle bins. Free
+// while a 3D pass runs (nothing is rasterising), and sized by the embedder, so the
+// capacity is read from the pool rather than assumed.
+#include "picovector_working_buffer.h"
 #endif
 #ifndef __not_in_flash_func
 #define __not_in_flash_func(f) f
@@ -128,14 +130,15 @@ namespace picovector {
 
   static int pico3d_dispatch_pass2(pass2_job_t &job) {
 #if PICO3D_MULTICORE
+    const uint32_t bin_cap = (uint32_t)(working_buffer_size / sizeof(uint16_t)) / 2;
     if (g_cores == 2 && job.mesh->triangle_count >= 8 &&
-        job.mesh->triangle_count <= PV_WORK_U16 / 2) {
+        job.mesh->triangle_count <= bin_cap) {
       int y0 = job.target.clip_y0, y1 = job.target.clip_y1;
       // Split at the MESH's on-screen vertical midpoint (not the screen's), then BIN each
       // triangle into the top and/or bottom half by its cached screen-Y bbox. Each core
       // then only sets up + fills the triangles in ITS band — so the per-triangle setup
       // is split between the cores instead of duplicated (only band-straddling triangles
-      // are set up twice). Bins live in picovector's 70 KB working buffer.
+      // are set up twice). Bins live in picovector's working buffer.
       const pico3d_vcache_t *vc = job.vc;
       float mny = 1e30f, mxy = -1e30f;
       for (uint32_t v = 0, nv = job.mesh->vertex_count; v < nv; v++) {
@@ -149,7 +152,7 @@ namespace picovector {
         if (mid < y0) mid = y0; else if (mid > y1) mid = y1;
         float midf = (float)mid;
         uint16_t *top_bin = (uint16_t *)PicoVector_working_buffer;
-        uint16_t *bot_bin = top_bin + (PV_WORK_U16 / 2);
+        uint16_t *bot_bin = top_bin + bin_cap;
         uint32_t nt = 0, nb = 0;
         const uint16_t *ind = job.mesh->indices;
         for (uint32_t f = 0, T = job.mesh->triangle_count; f < T; f++) {

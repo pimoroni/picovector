@@ -183,6 +183,17 @@ namespace picovector {
     _local_bounds_valid = false; // points changed, recompute local bbox
   }
 
+  void shape_t::grow(float amount, uint32_t join, float miter_limit) {
+    for(int i = 0; i < (int)this->paths.size(); i++) {
+      this->paths[i].grow(amount, join, miter_limit);
+    }
+    _local_bounds_valid = false; // points changed, recompute local bbox
+  }
+
+  void shape_t::shrink(float amount, uint32_t join, float miter_limit) {
+    grow(-amount, join, miter_limit);
+  }
+
 
 
   path_t::path_t(int vec2_count) {
@@ -423,6 +434,51 @@ namespace picovector {
     }
 
     points = new_points;
+  }
+
+  void path_t::grow(float amount, uint32_t join, float miter_limit) {
+    if(amount == 0.0f) return;
+
+    // Drop coincident consecutive vertices, including a closed ring's repeated
+    // first/last point (every GeoJSON ring has one). A zero-length edge has no
+    // normal, so offsetting it injects NaN and tears the ring apart.
+    {
+      vector<vec2_t, PV_STD_ALLOCATOR<vec2_t>> clean;
+      clean.reserve(points.size());
+      const float eps2 = 1e-12f;  // ~1e-6 units; catches exact + numeric dupes
+      for(size_t i = 0; i < points.size(); i++) {
+        const vec2_t &p = points[i];
+        if(!clean.empty()) {
+          float dx = p.x - clean.back().x, dy = p.y - clean.back().y;
+          if(dx * dx + dy * dy <= eps2) continue;
+        }
+        clean.push_back(p);
+      }
+      if(clean.size() >= 2) {  // also fold a final point coincident with the first
+        float dx = clean.front().x - clean.back().x, dy = clean.front().y - clean.back().y;
+        if(dx * dx + dy * dy <= eps2) clean.pop_back();
+      }
+      points.swap(clean);
+    }
+
+    int n = points.size();
+    // need at least a triangle to form a closed ring to offset
+    if(n < 3) return;
+
+    // offset_ring grows for one winding and shrinks for the other. Use the
+    // signed area to flip the offset sign by the ring's winding so a positive
+    // `amount` always grows outward (and shrink always insets), independent of
+    // how the path happens to be wound — otherwise a CW and a CCW path offset in
+    // opposite directions for the same call.
+    float area2 = 0.0f;
+    for(int i = 0; i < n; i++) {
+      const vec2_t &a = points[i];
+      const vec2_t &b = points[(i + 1) % n];
+      area2 += a.x * b.y - b.x * a.y;
+    }
+    float eff = (area2 < 0.0f) ? amount : -amount;
+
+    points = offset_ring(eff, true, join, miter_limit);
   }
 
 }

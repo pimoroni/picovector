@@ -26,6 +26,7 @@ void test_grow();
 void test_pico3d_math();
 void test_pico3d_raster();
 void test_pico3d_draw();
+void test_pico3d_clip();
 
 int main() {
   test_geometry();
@@ -52,5 +53,6 @@ int main() {
   test_pico3d_math();
   test_pico3d_raster();
   test_pico3d_draw();
+  test_pico3d_clip();
   return pvtest::summary();
 }

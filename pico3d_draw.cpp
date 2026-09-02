@@ -3,11 +3,12 @@
 // Lighting is resolved here, per vertex, and baked into the triangle's vertex
 // colours so the rasteriser stays shading-mode agnostic (see pico3d_raster.cpp).
 //
-// Near-plane handling (current limitation): a triangle with ANY vertex at or
-// behind the near plane (clip.w <= NEAR_EPS) is dropped whole. That avoids the
-// 1/w blow-up cheaply but pops geometry at screen edges. Proper near-clip that
-// splits a straddling triangle into 1-2 new triangles is a follow-up; this is
-// the natural place to insert it (before the raster call).
+// Near-plane handling: a triangle wholly in front of the eye takes the cached
+// screen projection straight from the vertex cache. One that straddles the eye
+// plane is cut against it and re-projected, which costs a clip and a divide per
+// new vertex - so the test is on the whole triangle and the common case pays
+// nothing. Without this a triangle with any vertex behind the eye had to be
+// dropped whole, and geometry popped in and out as you moved through it.
 
 #include "pico3d.hpp"
 
@@ -52,6 +53,76 @@ namespace picovector {
 
   static constexpr float NEAR_EPS = 1e-4f;
 
+  // --- near-plane clip ------------------------------------------------------
+  // A vertex on its way to the rasteriser, still in clip space so it can be cut
+  // against the eye plane. Its varyings travel with it: whatever the shading mode
+  // put in uv/rgb/n/tan, a vertex the clip invents needs the interpolated value.
+  struct clipvert_t {
+    vec4_t   clip;
+    vec3_t   uv;
+    uint32_t rgb;
+    vec3_t   n, tan;
+  };
+
+  // Per-channel blend of two 0x00BBGGRR words in .8 fixed point.
+  static inline uint32_t lerp_rgb(uint32_t a, uint32_t b, float t) {
+    int ti = (int)(t * 256.0f);
+    auto ch = [&](int shift) -> uint32_t {
+      int x = (int)((a >> shift) & 0xff), y = (int)((b >> shift) & 0xff);
+      int v = x + (((y - x) * ti) >> 8);
+      return (uint32_t)(v < 0 ? 0 : (v > 255 ? 255 : v));
+    };
+    return ch(0) | (ch(8) << 8) | (ch(16) << 16);
+  }
+
+  static inline clipvert_t lerp_clipvert(const clipvert_t &a, const clipvert_t &b, float t) {
+    clipvert_t r;
+    r.clip = vec4_t(a.clip.x + (b.clip.x - a.clip.x) * t,
+                    a.clip.y + (b.clip.y - a.clip.y) * t,
+                    a.clip.z + (b.clip.z - a.clip.z) * t,
+                    a.clip.w + (b.clip.w - a.clip.w) * t);
+    r.uv  = a.uv.lerp(b.uv, t);
+    r.rgb = lerp_rgb(a.rgb, b.rgb, t);
+    r.n   = a.n.lerp(b.n, t);
+    r.tan = a.tan.lerp(b.tan, t);
+    return r;
+  }
+
+  // Sutherland-Hodgman against the single plane w > NEAR_EPS. One vertex behind
+  // the eye leaves a quad (4), two leave a smaller triangle (3), all three leave
+  // nothing (0). Interpolating in clip space - before the perspective divide -
+  // is what keeps the new vertices on the original plane.
+  static int clip_near(const clipvert_t in[3], clipvert_t out[4]) {
+    int n = 0;
+    for (int i = 0; i < 3; i++) {
+      const clipvert_t &a = in[i];
+      const clipvert_t &b = in[(i + 1) % 3];
+      bool a_in = a.clip.w > NEAR_EPS, b_in = b.clip.w > NEAR_EPS;
+      if (a_in) out[n++] = a;
+      if (a_in != b_in) {
+        float d = b.clip.w - a.clip.w;
+        out[n++] = lerp_clipvert(a, b, d != 0.0f ? (NEAR_EPS - a.clip.w) / d : 0.0f);
+      }
+    }
+    return n;
+  }
+
+  // Viewport map for a clipped vertex. Matches transform_range's cached
+  // projection exactly, so a clipped triangle lands on the same pixels its
+  // unclipped neighbours do and shared edges stay watertight.
+  static inline void project_into(pico3d_tri_t &tri, int k, const clipvert_t &v,
+                                  float tw, float th) {
+    float w = 1.0f / v.clip.w;
+    tri.sx[k]  = (v.clip.x * w * 0.5f + 0.5f) * tw;
+    tri.sy[k]  = (1.0f - (v.clip.y * w * 0.5f + 0.5f)) * th;
+    tri.z[k]   = v.clip.z * w;
+    tri.iw[k]  = w;
+    tri.uv_[k] = v.uv;
+    tri.rgb[k] = v.rgb;
+    tri.n[k]   = v.n;
+    tri.tan[k] = v.tan;
+  }
+
   // --- pass 2: per-triangle assembly + rasterise ----------------------------
   // Factored out of pico3d_draw_mesh so it can run on EITHER core over a band of
   // the target (the band is just the target's clip_y0/clip_y1 — the rasteriser
@@ -66,6 +137,7 @@ namespace picovector {
     const pico3d_light_t    *light;         // FLAT face lighting
     const pico3d_light_t    *raster_light;  // per-pixel lit path (or null)
     vec3_t                   L;
+    float                    tw, th;        // target size, for re-projecting a clip
     pico3d_shading_t         shading;
     bool                     do_nmap, do_matcap;
   };
@@ -89,28 +161,56 @@ namespace picovector {
       uint32_t f = bin ? bin[bi] : bi;
       uint16_t i0 = mesh->indices[f*3], i1 = mesh->indices[f*3+1], i2 = mesh->indices[f*3+2];
       const uint16_t idx[3] = {i0, i1, i2};
-      if (vc[i0].clip.w <= NEAR_EPS || vc[i1].clip.w <= NEAR_EPS || vc[i2].clip.w <= NEAR_EPS)
-        continue;                                       // near-plane cull (whole triangle)
-      pico3d_tri_t tri{};
-      for (int k = 0; k < 3; k++) {                     // copy the CACHED screen projection
-        tri.sx[k] = vc[idx[k]].sx; tri.sy[k] = vc[idx[k]].sy;
-        tri.z[k]  = vc[idx[k]].z;  tri.iw[k] = vc[idx[k]].iw;
-      }
-      tri.uv_[0] = uv(i0); tri.uv_[1] = uv(i1); tri.uv_[2] = uv(i2);
+
+      // The varyings, resolved once per vertex whichever path takes them. FLAT
+      // takes its face normal from the unclipped triangle, so the light value is
+      // the same for every piece a clip leaves behind.
+      vec3_t vuv[3], vn[3], vtan[3];
+      uint32_t vrgb[3];
+      vuv[0] = uv(i0); vuv[1] = uv(i1); vuv[2] = uv(i2);
       if (do_nmap) {
         for (int k = 0; k < 3; k++) {
-          tri.rgb[k] = vc[idx[k]].rgb; tri.n[k] = vc[idx[k]].nrm_w; tri.tan[k] = vc[idx[k]].tan_w;
+          vrgb[k] = vc[idx[k]].rgb; vn[k] = vc[idx[k]].nrm_w; vtan[k] = vc[idx[k]].tan_w;
         }
       } else if (do_matcap) {
-        for (int k = 0; k < 3; k++) { tri.rgb[k] = vc[idx[k]].rgb; tri.uv_[k] = vc[idx[k]].nrm_w; }
+        for (int k = 0; k < 3; k++) { vrgb[k] = vc[idx[k]].rgb; vuv[k] = vc[idx[k]].nrm_w; }
       } else if (shading == PICO3D_FLAT) {
         vec3_t n = (vc[i1].world - vc[i0].world).cross(vc[i2].world - vc[i0].world).normalized();
         uint32_t lv = pico3d_light_value(j.light, n.dot(L));
-        for (int k = 0; k < 3; k++) tri.rgb[k] = pico3d_modulate(vc[idx[k]].rgb, lv);
+        for (int k = 0; k < 3; k++) vrgb[k] = pico3d_modulate(vc[idx[k]].rgb, lv);
       } else {                                          // UNLIT / GOURAUD pre-baked
-        for (int k = 0; k < 3; k++) tri.rgb[k] = vc[idx[k]].rgb;
+        for (int k = 0; k < 3; k++) vrgb[k] = vc[idx[k]].rgb;
       }
-      if (pico3d_raster_triangle(t, &tri, j.material, j.raster_light) > 0) drawn++;
+
+      if (vc[i0].clip.w > NEAR_EPS && vc[i1].clip.w > NEAR_EPS && vc[i2].clip.w > NEAR_EPS) {
+        pico3d_tri_t tri{};
+        for (int k = 0; k < 3; k++) {                   // copy the CACHED screen projection
+          tri.sx[k] = vc[idx[k]].sx; tri.sy[k] = vc[idx[k]].sy;
+          tri.z[k]  = vc[idx[k]].z;  tri.iw[k] = vc[idx[k]].iw;
+          tri.uv_[k] = vuv[k]; tri.rgb[k] = vrgb[k];
+        }
+        if (do_nmap) for (int k = 0; k < 3; k++) { tri.n[k] = vn[k]; tri.tan[k] = vtan[k]; }
+        if (pico3d_raster_triangle(t, &tri, j.material, j.raster_light) > 0) drawn++;
+        continue;
+      }
+
+      // Straddles the eye plane: cut it and fan what is left. The cached
+      // projection is no use here, so each new vertex is projected on the spot.
+      clipvert_t in[3], out[4];
+      for (int k = 0; k < 3; k++) {
+        in[k].clip = vc[idx[k]].clip;
+        in[k].uv = vuv[k]; in[k].rgb = vrgb[k];
+        in[k].n = do_nmap ? vn[k] : vec3_t(0, 0, 0);
+        in[k].tan = do_nmap ? vtan[k] : vec3_t(0, 0, 0);
+      }
+      int m = clip_near(in, out);
+      for (int k = 1; k + 1 < m; k++) {
+        pico3d_tri_t tri{};
+        project_into(tri, 0, out[0], j.tw, j.th);
+        project_into(tri, 1, out[k], j.tw, j.th);
+        project_into(tri, 2, out[k + 1], j.tw, j.th);
+        if (pico3d_raster_triangle(t, &tri, j.material, j.raster_light) > 0) drawn++;
+      }
     }
     return drawn;
   }
@@ -311,6 +411,7 @@ namespace picovector {
     job.target = *t;          job.mesh = mesh;     job.vc = vc;
     job.material = material;   job.light = light;   job.raster_light = raster_light;
     job.L = L;                 job.shading = shading;
+    job.tw = (float)t->width;  job.th = (float)t->height;
     job.do_nmap = do_nmap;     job.do_matcap = do_matcap;
     return pico3d_dispatch_pass2(job);
   }

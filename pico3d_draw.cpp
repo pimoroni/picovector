@@ -242,6 +242,8 @@ namespace picovector {
       const pico3d_vcache_t *vc = job.vc;
       float mny = 1e30f, mxy = -1e30f;
       for (uint32_t v = 0, nv = job.mesh->vertex_count; v < nv; v++) {
+        // Only to pick where to split the screen, so a vertex with no meaningful
+        // projection is simply left out of the extent.
         if (vc[v].clip.w <= NEAR_EPS) continue;
         float sy = vc[v].sy;
         if (sy < mny) mny = sy;
@@ -257,7 +259,14 @@ namespace picovector {
         const uint16_t *ind = job.mesh->indices;
         for (uint32_t f = 0, T = job.mesh->triangle_count; f < T; f++) {
           uint16_t a = ind[f*3], b = ind[f*3+1], c = ind[f*3+2];
-          if (vc[a].clip.w <= NEAR_EPS || vc[b].clip.w <= NEAR_EPS || vc[c].clip.w <= NEAR_EPS) continue;
+          if (vc[a].clip.w <= NEAR_EPS || vc[b].clip.w <= NEAR_EPS || vc[c].clip.w <= NEAR_EPS) {
+            // Straddles the eye plane, so its cached sy is meaningless and there
+            // is no telling which band the clipped pieces land in. Bin it to
+            // both and let each core clip it against its own rows.
+            top_bin[nt++] = (uint16_t)f;
+            bot_bin[nb++] = (uint16_t)f;
+            continue;
+          }
           float lo = vc[a].sy, hi = lo, s;
           s = vc[b].sy; if (s < lo) lo = s; else if (s > hi) hi = s;
           s = vc[c].sy; if (s < lo) lo = s; else if (s > hi) hi = s;

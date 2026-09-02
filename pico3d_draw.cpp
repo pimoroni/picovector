@@ -3,10 +3,10 @@
 // Lighting is resolved here, per vertex, and baked into the triangle's vertex
 // colours so the rasteriser stays shading-mode agnostic (see pico3d_raster.cpp).
 //
-// Near-plane handling: a triangle wholly in front of the eye takes the cached
-// screen projection straight from the vertex cache. One that straddles the eye
-// plane is cut against it and re-projected, which costs a clip and a divide per
-// new vertex - so the test is on the whole triangle and the common case pays
+// Near-plane handling: a triangle wholly in front of the near plane takes the
+// cached screen projection straight from the vertex cache. One that crosses it
+// is cut against it and re-projected, which costs a clip and a divide per new
+// vertex - so the test is on the whole triangle and the common case pays
 // nothing. Without this a triangle with any vertex behind the eye had to be
 // dropped whole, and geometry popped in and out as you moved through it.
 
@@ -88,20 +88,29 @@ namespace picovector {
     return r;
   }
 
-  // Sutherland-Hodgman against the single plane w > NEAR_EPS. One vertex behind
-  // the eye leaves a quad (4), two leave a smaller triangle (3), all three leave
-  // nothing (0). Interpolating in clip space - before the perspective divide -
-  // is what keeps the new vertices on the original plane.
+  // Distance from the near plane in homogeneous clip space. The projection puts
+  // the near plane at z = -w, so this is positive in front of it. Clipping here
+  // rather than at w > 0 is what keeps 1/w bounded by 1/near: cut at the eye
+  // instead and the new vertices come back with iw in the thousands, screen
+  // coordinates in the millions, and an integer edge setup that overflows into
+  // the wrong winding - which culled the triangle and smeared its texture.
+  static inline float near_distance(const vec4_t &c) { return c.z + c.w; }
+
+  // Sutherland-Hodgman against that one plane. One vertex behind it leaves a
+  // quad (4), two leave a smaller triangle (3), all three leave nothing (0).
+  // Interpolating in clip space - before the perspective divide - is what keeps
+  // the new vertices on the original triangle's plane.
   static int clip_near(const clipvert_t in[3], clipvert_t out[4]) {
     int n = 0;
     for (int i = 0; i < 3; i++) {
       const clipvert_t &a = in[i];
       const clipvert_t &b = in[(i + 1) % 3];
-      bool a_in = a.clip.w > NEAR_EPS, b_in = b.clip.w > NEAR_EPS;
+      float da = near_distance(a.clip), db = near_distance(b.clip);
+      bool a_in = da >= 0.0f, b_in = db >= 0.0f;
       if (a_in) out[n++] = a;
       if (a_in != b_in) {
-        float d = b.clip.w - a.clip.w;
-        out[n++] = lerp_clipvert(a, b, d != 0.0f ? (NEAR_EPS - a.clip.w) / d : 0.0f);
+        float d = da - db;
+        out[n++] = lerp_clipvert(a, b, d != 0.0f ? da / d : 0.0f);
       }
     }
     return n;
@@ -182,7 +191,8 @@ namespace picovector {
         for (int k = 0; k < 3; k++) vrgb[k] = vc[idx[k]].rgb;
       }
 
-      if (vc[i0].clip.w > NEAR_EPS && vc[i1].clip.w > NEAR_EPS && vc[i2].clip.w > NEAR_EPS) {
+      if (near_distance(vc[i0].clip) >= 0.0f && near_distance(vc[i1].clip) >= 0.0f &&
+          near_distance(vc[i2].clip) >= 0.0f) {
         pico3d_tri_t tri{};
         for (int k = 0; k < 3; k++) {                   // copy the CACHED screen projection
           tri.sx[k] = vc[idx[k]].sx; tri.sy[k] = vc[idx[k]].sy;
@@ -259,8 +269,9 @@ namespace picovector {
         const uint16_t *ind = job.mesh->indices;
         for (uint32_t f = 0, T = job.mesh->triangle_count; f < T; f++) {
           uint16_t a = ind[f*3], b = ind[f*3+1], c = ind[f*3+2];
-          if (vc[a].clip.w <= NEAR_EPS || vc[b].clip.w <= NEAR_EPS || vc[c].clip.w <= NEAR_EPS) {
-            // Straddles the eye plane, so its cached sy is meaningless and there
+          if (near_distance(vc[a].clip) < 0.0f || near_distance(vc[b].clip) < 0.0f ||
+              near_distance(vc[c].clip) < 0.0f) {
+            // Crosses the near plane, so its cached sy is meaningless and there
             // is no telling which band the clipped pieces land in. Bin it to
             // both and let each core clip it against its own rows.
             top_bin[nt++] = (uint16_t)f;

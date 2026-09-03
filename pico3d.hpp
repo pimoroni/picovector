@@ -47,6 +47,20 @@ namespace picovector {
     int depth_stride;      // elements per row in `depth`
     // clip rectangle (inclusive min, exclusive max), clamped to surface
     int clip_x0, clip_y0, clip_x1, clip_y1;
+    // Which surface row `depth` row 0 is. Zero for a full-surface depth buffer;
+    // set to a band's first row when the depth buffer covers only that band, so
+    // a 320x240 render can depth-test against a 320x80 buffer three times over
+    // and keep it in fast memory. The colour target is always full-surface.
+    int depth_y0;
+    // Fill only every row_step'th row, starting from the one congruent to
+    // row_phase. 0 or 1 means every row. This is how two cores share ONE band:
+    // give each the same triangles and opposite phases and they write disjoint
+    // rows of both the colour target and the depth buffer, needing no lock and
+    // no split of the geometry. Per-triangle setup is then done twice, once per
+    // core, which is the price of perfect load balance - cheap, because setup is
+    // ~666 cycles against 40-79 cycles a pixel of fill. Splitting a band's ROWS
+    // beats splitting the screen into bands per core, whose work is very uneven.
+    int row_step, row_phase;
   };
 
   // Texture as a plain RGBA8888 (0x00BBGGRR) pixel block, edge-clamped.
@@ -119,6 +133,13 @@ namespace picovector {
     const uint16_t *indices;    // 3 * triangle_count
     uint32_t        vertex_count;
     uint32_t        triangle_count;
+    // Model-space bounding box, for whole-mesh frustum culling. `has_bounds`
+    // gates it so a zero-initialised mesh simply is not culled - the safe
+    // default, since an empty box at the origin would cull everything.
+    // Positions stay writable (a mesh animates in place), so anything that
+    // rewrites them past the box has to recompute: see pico3d_mesh_bounds.
+    float           bmin[3], bmax[3];
+    uint8_t         has_bounds;
   };
 
   typedef enum {
@@ -234,6 +255,88 @@ namespace picovector {
                     const pico3d_material_t *material, pico3d_shading_t shading,
                     const pico3d_light_t *light, pico3d_vcache_t *vcache,
                     const mat4_t *view = nullptr);
+
+  // --- deferred scene (banded rendering) ------------------------------------
+  //
+  // Why this exists: the depth buffer is the most expensive memory a render
+  // touches - one read and one write for every pixel covered - so it wants to
+  // be in the fastest memory available. On a board where that memory is far too
+  // small to hold a full-screen depth buffer, the way out is to depth-test
+  // against a BAND of rows at a time and run the geometry past each band in
+  // turn. That only works if all the geometry is known before any band is
+  // rasterised, which is what a scene is for.
+  //
+  // Flow: reset(), add() each mesh (transforms and projects it once, into the
+  // scene's own vertex arena), then draw(), which walks the bands. The arena is
+  // read once per band, sequentially, so it is fine for it to live in slower
+  // memory - unlike a depth buffer, it is touched per vertex, not per pixel.
+
+  // One submitted mesh: everything the raster pass needs, resolved at add() time
+  // so a band never redoes it.
+  struct pico3d_sub_t {
+    const pico3d_mesh_t     *mesh;
+    const pico3d_material_t *material;
+    const pico3d_light_t    *light;
+    pico3d_light_t           rlight;       // per-draw copy (holds the specular half-vector)
+    bool                     raster_lit;   // rlight is live: lighting is per pixel
+    vec3_t                   L;
+    pico3d_shading_t         shading;
+    bool                     do_nmap, do_matcap;
+    uint32_t                 vbase;        // its vertices, from here in the arena
+    uint32_t                 tbase;        // its triangles' screen-Y extents, from here
+    // Scratch, refilled for each band: this submission's live triangles, as a
+    // slice of the scene's shared bin. Built once by the dispatching core so
+    // both cores can read the same list rather than each scanning for itself.
+    uint32_t                 boff, bcount;
+  };
+
+  // Caller-owned storage. Every array is sized by the caller and never grown:
+  // add() returns false rather than allocating, so a frame cannot stall on a
+  // heap. `ys` holds two int16 a triangle (min and max screen row).
+  struct pico3d_scene_t {
+    pico3d_sub_t    *subs;   uint32_t sub_cap,  sub_count;
+    pico3d_vcache_t *verts;  uint32_t vert_cap, vert_count;
+    int16_t         *ys;     uint32_t tri_cap,  tri_count;
+    uint16_t        *bin;    uint32_t bin_cap;   // scratch: one submission's live triangles
+    float            tw, th;                     // viewport the vertices were projected for
+  };
+
+  // --- whole-mesh frustum culling -------------------------------------------
+
+  // Fill in mesh->bmin/bmax from its positions and set has_bounds. One pass over
+  // the vertices; call it once when the geometry is built, and again after
+  // anything moves a vertex outside the old box.
+  void pico3d_mesh_bounds(pico3d_mesh_t *mesh);
+
+  // Is the mesh entirely outside the frustum of `mvp` (projection x view x
+  // model)? False whenever it might be visible, or has no bounds - it never
+  // culls something that should draw.
+  //
+  // The six planes are extracted from the MVP, which puts them in the mesh's
+  // OWN space, so the box can be tested where it was measured. Going via world
+  // space would mean re-boxing a rotated box axis-aligned first, which is both
+  // looser and more work. A whole mesh rejected here costs ~60 operations
+  // instead of transforming every vertex at ~560 cycles each to discover it was
+  // off-screen.
+  bool pico3d_cull_mesh(const pico3d_mesh_t *mesh, const mat4_t *mvp);
+
+  void pico3d_scene_reset(pico3d_scene_t *sc);
+
+  // Transform, light and project one mesh into the scene. Returns false if any
+  // of the scene's arrays is too small, having added nothing.
+  bool pico3d_scene_add(pico3d_scene_t *sc, const pico3d_target_t *t,
+                        const pico3d_mesh_t *mesh, const mat4_t *model,
+                        const mat4_t *view_proj, const pico3d_material_t *material,
+                        pico3d_shading_t shading, const pico3d_light_t *light,
+                        const mat4_t *view = nullptr);
+
+  // Rasterise the scene into `t`, `band_rows` rows at a time (<= 0 means one
+  // band covering the whole clip). When `t->depth` is only band_rows tall, pass
+  // its height as band_rows and this will point depth_y0 at each band in turn
+  // and clear it - so a small, fast depth buffer serves a whole screen.
+  // Returns the number of triangles rasterised.
+  int pico3d_scene_draw(pico3d_scene_t *sc, pico3d_target_t *t, int band_rows,
+                        uint16_t clear_to = 0xFFFF);
 
   // Rasterise the per-triangle pass on both cores (n=2, top/bottom screen bands) or
   // the calling core only (n=1, default). Geometry/setup is duplicated per core, so

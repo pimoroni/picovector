@@ -366,46 +366,81 @@ namespace picovector {
   }
 #endif
 
+  // What a draw resolves before it can transform anything: which shading path
+  // applies, the matrices the vertex stage needs, and the per-draw light copy.
+  // Both the immediate path (pico3d_draw_mesh) and the deferred one
+  // (pico3d_scene_add) start here, so they cannot drift apart.
+  namespace {
+    struct prepared_t {
+      mat4_t           mvp, mc_nrm;
+      pico3d_light_t   rlight;
+      bool             raster_lit;      // rlight is live: lighting is per pixel
+      vec3_t           L;
+      pico3d_shading_t shading;
+      bool             do_nmap, has_nmap, do_matcap;
+    };
+
+    static prepared_t prepare_draw(const pico3d_mesh_t *mesh, const mat4_t *model,
+                                   const mat4_t *view_proj,
+                                   const pico3d_material_t *material,
+                                   pico3d_shading_t shading,
+                                   const pico3d_light_t *light, const mat4_t *view) {
+      prepared_t p{};
+      p.mvp = (*view_proj) * (*model);
+
+      // Normal mapping needs a map, a light, and per-vertex normals+tangents. When
+      // active it overrides the shading mode (lighting is done per-pixel in the
+      // rasteriser); the rasteriser only treats this triangle as normal-mapped when
+      // we pass it `light` (raster_lit below), so the gate is exact.
+      // Per-pixel lit path: a normal map (needs tangents) OR Blinn-Phong specular (needs
+      // the per-pixel normal). Both light per pixel in the rasteriser.
+      p.has_nmap = material->normal_map && mesh->tangents;
+      bool has_spec = material->specular != 0;
+      p.do_nmap = (p.has_nmap || has_spec) && light && mesh->normals;
+      // Per-draw light copy so we can stash the specular half-vector (H = normalise(L+V),
+      // V = the world direction toward the camera = the view matrix's row 2).
+      p.rlight = light ? *light : pico3d_light_t{};
+      if (has_spec && view && light) {
+        vec3_t Lh = (-light->direction).normalized();
+        p.rlight.half = (Lh + vec3_t(view->v20, view->v21, view->v22)).normalized();
+      }
+      p.raster_lit = p.do_nmap;
+
+      // Matcap needs a map and per-vertex normals; normal_map wins if both are set.
+      // Normals go to VIEW space (so the reflection tracks the camera) when a view
+      // matrix is supplied, else they stay in world space.
+      p.do_matcap = !p.do_nmap && material->matcap && mesh->normals;
+      p.mc_nrm = p.do_matcap ? (view ? (*view) * (*model) : *model) : mat4_t();
+
+      // Gouraud needs per-vertex normals; without them, fall back to flat.
+      p.shading = shading;
+      if (p.shading == PICO3D_GOURAUD && !mesh->normals) p.shading = PICO3D_FLAT;
+      if (!light) p.shading = PICO3D_UNLIT;
+
+      p.L = light ? (-light->direction).normalized() : vec3_t(0, 0, 0);
+      return p;
+    }
+  }
+
   int pico3d_draw_mesh(pico3d_target_t *t, const pico3d_mesh_t *mesh,
                     const mat4_t *model, const mat4_t *view_proj,
                     const pico3d_material_t *material, pico3d_shading_t shading,
                     const pico3d_light_t *light, pico3d_vcache_t *vc,
                     const mat4_t *view) {
-    mat4_t mvp = (*view_proj) * (*model);
-
-    // Normal mapping needs a map, a light, and per-vertex normals+tangents. When
-    // active it overrides the shading mode (lighting is done per-pixel in the
-    // rasteriser); the rasteriser only treats this triangle as normal-mapped when
-    // we pass it `light` (raster_light below), so the gate is exact.
-    // Per-pixel lit path: a normal map (needs tangents) OR Blinn-Phong specular (needs
-    // the per-pixel normal). Both light per pixel in the rasteriser.
-    bool has_nmap = material->normal_map && mesh->tangents;
-    bool has_spec = material->specular != 0;
-    bool do_nmap = (has_nmap || has_spec) && light && mesh->normals;
-    // Per-draw light copy so we can stash the specular half-vector (H = normalise(L+V),
-    // V = the world direction toward the camera = the view matrix's row 2).
-    pico3d_light_t rlight = light ? *light : pico3d_light_t{};
-    if (has_spec && view && light) {
-      vec3_t Lh = (-light->direction).normalized();
-      rlight.half = (Lh + vec3_t(view->v20, view->v21, view->v22)).normalized();
-    }
-    const pico3d_light_t *raster_light = do_nmap ? &rlight : nullptr;
-
-    // Matcap needs a map and per-vertex normals; normal_map wins if both are set.
-    // Normals go to VIEW space (so the reflection tracks the camera) when a view
-    // matrix is supplied, else they stay in world space.
-    bool do_matcap = !do_nmap && material->matcap && mesh->normals;
-    mat4_t mc_nrm = do_matcap ? (view ? (*view) * (*model) : *model) : mat4_t();
-
-    // Gouraud needs per-vertex normals; without them, fall back to flat.
-    if (shading == PICO3D_GOURAUD && !mesh->normals) shading = PICO3D_FLAT;
-    if (!light) shading = PICO3D_UNLIT;
+    prepared_t p = prepare_draw(mesh, model, view_proj, material, shading, light, view);
+    if (pico3d_cull_mesh(mesh, &p.mvp)) return 0;   // wholly outside the frustum
+    const mat4_t &mvp = p.mvp;
+    const mat4_t &mc_nrm = p.mc_nrm;
+    pico3d_light_t rlight = p.rlight;
+    const pico3d_light_t *raster_light = p.raster_lit ? &rlight : nullptr;
+    bool do_nmap = p.do_nmap, has_nmap = p.has_nmap, do_matcap = p.do_matcap;
+    shading = p.shading;
 
 #if PICO3D_PROF
     uint32_t c0 = pico3d_prof_cyc();
 #endif
     // --- pass 1: transform + light every vertex — split across both cores in 2-core --
-    vec3_t L = light ? (-light->direction).normalized() : vec3_t(0, 0, 0);
+    vec3_t L = p.L;
     xform_job_t xj;
     xj.mesh = mesh;       xj.vc = vc;             xj.material = material; xj.light = light;
     xj.model = model;     xj.mvp = mvp;           xj.mc_nrm = mc_nrm;     xj.L = L;
@@ -434,6 +469,299 @@ namespace picovector {
     job.tw = (float)t->width;  job.th = (float)t->height;
     job.do_nmap = do_nmap;     job.do_matcap = do_matcap;
     return pico3d_dispatch_pass2(job);
+  }
+
+  // ---- whole-mesh frustum culling ------------------------------------------
+
+  void pico3d_mesh_bounds(pico3d_mesh_t *mesh) {
+    mesh->has_bounds = 0;
+    if (!mesh->positions || mesh->vertex_count == 0) return;
+    const float *p = mesh->positions;
+    float lo[3] = { p[0], p[1], p[2] }, hi[3] = { p[0], p[1], p[2] };
+    for (uint32_t v = 1; v < mesh->vertex_count; v++) {
+      for (int k = 0; k < 3; k++) {
+        float c = p[v * 3 + k];
+        if (c < lo[k]) lo[k] = c; else if (c > hi[k]) hi[k] = c;
+      }
+    }
+    for (int k = 0; k < 3; k++) { mesh->bmin[k] = lo[k]; mesh->bmax[k] = hi[k]; }
+    mesh->has_bounds = 1;
+  }
+
+  bool pico3d_cull_mesh(const pico3d_mesh_t *mesh, const mat4_t *m) {
+    if (!mesh->has_bounds) return false;          // unknown bounds: never cull
+    // Box as centre + (non-negative) half-extent, which is what the plane test
+    // wants: the corner furthest along a plane normal is centre + extent.|n|.
+    const float cx = 0.5f * (mesh->bmin[0] + mesh->bmax[0]);
+    const float cy = 0.5f * (mesh->bmin[1] + mesh->bmax[1]);
+    const float cz = 0.5f * (mesh->bmin[2] + mesh->bmax[2]);
+    const float ex = 0.5f * (mesh->bmax[0] - mesh->bmin[0]);
+    const float ey = 0.5f * (mesh->bmax[1] - mesh->bmin[1]);
+    const float ez = 0.5f * (mesh->bmax[2] - mesh->bmin[2]);
+
+    // The clip-space conditions are -w <= x,y,z <= w, and each is one plane in
+    // the space the matrix maps FROM. Row 3 is w, rows 0..2 are x, y, z; the
+    // sums and differences below are those six inequalities rearranged to
+    // "plane . p >= 0 means inside". Near is z + w, matching near_distance().
+    const float planes[6][4] = {
+      { m->v00 + m->v30, m->v01 + m->v31, m->v02 + m->v32, m->v03 + m->v33 },  // left
+      { m->v30 - m->v00, m->v31 - m->v01, m->v32 - m->v02, m->v33 - m->v03 },  // right
+      { m->v10 + m->v30, m->v11 + m->v31, m->v12 + m->v32, m->v13 + m->v33 },  // bottom
+      { m->v30 - m->v10, m->v31 - m->v11, m->v32 - m->v12, m->v33 - m->v13 },  // top
+      { m->v20 + m->v30, m->v21 + m->v31, m->v22 + m->v32, m->v23 + m->v33 },  // near
+      { m->v30 - m->v20, m->v31 - m->v21, m->v32 - m->v22, m->v33 - m->v23 },  // far
+    };
+    for (int i = 0; i < 6; i++) {
+      const float a = planes[i][0], b = planes[i][1], c = planes[i][2], d = planes[i][3];
+      // Signed distance of the box corner FURTHEST inside this plane. If even
+      // that is outside, every corner is, and the mesh cannot be visible.
+      const float reach = (a < 0 ? -a : a) * ex + (b < 0 ? -b : b) * ey
+                        + (c < 0 ? -c : c) * ez;
+      if (a * cx + b * cy + c * cz + d + reach < 0.0f) return true;
+    }
+    return false;
+  }
+
+  // ---- deferred scene ------------------------------------------------------
+  // See the header for why this exists. In short: a depth buffer wants to be in
+  // the fastest memory there is, that memory is usually far too small for a
+  // whole screen, and the way round it is to depth-test one BAND of rows at a
+  // time - which means every mesh has to be transformed before any band is
+  // rasterised.
+
+  void pico3d_scene_reset(pico3d_scene_t *sc) {
+    sc->sub_count = 0;
+    sc->vert_count = 0;
+    sc->tri_count = 0;
+  }
+
+  bool pico3d_scene_add(pico3d_scene_t *sc, const pico3d_target_t *t,
+                        const pico3d_mesh_t *mesh, const mat4_t *model,
+                        const mat4_t *view_proj, const pico3d_material_t *material,
+                        pico3d_shading_t shading, const pico3d_light_t *light,
+                        const mat4_t *view) {
+    // Cull FIRST, before even the capacity checks: a mesh outside the frustum
+    // takes no room in the scene, so a full scene should still swallow one
+    // rather than report failure. This is the cheapest work in the pipeline and
+    // it removes the most - ~60 operations against 560 cycles a vertex to
+    // transform geometry that was never going to be seen. Reported as success:
+    // nothing failed, there was simply nothing to add.
+    prepared_t p = prepare_draw(mesh, model, view_proj, material, shading, light, view);
+    if (pico3d_cull_mesh(mesh, &p.mvp)) return true;
+
+    // Nothing here allocates: a full scene is refused so a frame can never
+    // stall on a heap. bin holds one submission's live triangles, so it has to
+    // fit the largest mesh rather than the whole scene.
+    if (sc->sub_count >= sc->sub_cap) return false;
+    if (sc->vert_count + mesh->vertex_count > sc->vert_cap) return false;
+    if (sc->tri_count + mesh->triangle_count > sc->tri_cap) return false;
+    if (mesh->triangle_count > sc->bin_cap) return false;
+
+    pico3d_vcache_t *vc = sc->verts + sc->vert_count;
+    sc->tw = (float)t->width;
+    sc->th = (float)t->height;
+
+    // --- pass 1, exactly as the immediate path runs it ------------------------
+#if PICO3D_PROF
+    uint32_t c0 = pico3d_prof_cyc();
+#endif
+    xform_job_t xj;
+    xj.mesh = mesh;         xj.vc = vc;           xj.material = material;
+    xj.light = light;       xj.model = model;     xj.mvp = p.mvp;
+    xj.mc_nrm = p.mc_nrm;   xj.L = p.L;           xj.tw = sc->tw;
+    xj.th = sc->th;         xj.shading = p.shading;
+    xj.do_nmap = p.do_nmap; xj.has_nmap = p.has_nmap; xj.do_matcap = p.do_matcap;
+#if PICO3D_MULTICORE
+    if (g_cores == 2 && mesh->vertex_count >= 64) {
+      uint32_t half = mesh->vertex_count >> 1;
+      g_xj = &xj; g_xv0 = half; g_xv1 = mesh->vertex_count;
+      __sync_synchronize();
+      ::pv_core1_run(pico3d_core1_xform);
+      transform_range(xj, 0, half);
+      ::pv_core1_join();
+    } else
+#endif
+      transform_range(xj, 0, mesh->vertex_count);
+#if PICO3D_PROF
+    pico3d_prof_transform_cyc += pico3d_prof_cyc() - c0;
+#endif
+
+    // --- each triangle's screen-row extent ------------------------------------
+    // This is what lets a band skip a triangle for the price of two compares
+    // instead of a full per-triangle setup, and it is why the extents live in
+    // their own tight array rather than inside the vertex cache: a band scans
+    // them start to end and touches nothing else.
+    int16_t *ys = sc->ys + (size_t)sc->tri_count * 2;
+    const uint16_t *ind = mesh->indices;
+    for (uint32_t f = 0, T = mesh->triangle_count; f < T; f++) {
+      uint16_t a = ind[f*3], b = ind[f*3+1], c = ind[f*3+2];
+      if (near_distance(vc[a].clip) < 0.0f || near_distance(vc[b].clip) < 0.0f ||
+          near_distance(vc[c].clip) < 0.0f) {
+        // Crosses the near plane, so its cached sy means nothing and there is no
+        // telling which rows the clipped pieces land in. Claim every band and
+        // let each one clip it.
+        ys[f*2] = -32768; ys[f*2+1] = 32767;
+        continue;
+      }
+      float lo = vc[a].sy, hi = lo, sy;
+      sy = vc[b].sy; if (sy < lo) lo = sy; else if (sy > hi) hi = sy;
+      sy = vc[c].sy; if (sy < lo) lo = sy; else if (sy > hi) hi = sy;
+      int ilo = (int)lo, ihi = (int)hi + 1;         // +1: round the far edge out
+      ys[f*2]   = (int16_t)(ilo < -32768 ? -32768 : (ilo > 32767 ? 32767 : ilo));
+      ys[f*2+1] = (int16_t)(ihi < -32768 ? -32768 : (ihi > 32767 ? 32767 : ihi));
+    }
+
+    pico3d_sub_t *sub = &sc->subs[sc->sub_count++];
+    sub->mesh = mesh;             sub->material = material;   sub->light = light;
+    sub->rlight = p.rlight;       sub->raster_lit = p.raster_lit;
+    sub->L = p.L;                 sub->shading = p.shading;
+    sub->do_nmap = p.do_nmap;     sub->do_matcap = p.do_matcap;
+    sub->vbase = sc->vert_count;  sub->tbase = sc->tri_count;
+    sc->vert_count += mesh->vertex_count;
+    sc->tri_count += mesh->triangle_count;
+    return true;
+  }
+
+  // One band's fill, for one core. Both cores run this over the SAME triangle
+  // lists and the same band, differing only in target.row_phase, so they write
+  // disjoint rows and need no coordination beyond the join.
+  static int __not_in_flash_func(draw_band)(pico3d_scene_t *sc, const pico3d_target_t *bt) {
+    int drawn = 0;
+    for (uint32_t si = 0; si < sc->sub_count; si++) {
+      const pico3d_sub_t &sub = sc->subs[si];
+      if (!sub.bcount) continue;
+      pass2_job_t job;
+      job.target = *bt;             job.mesh = sub.mesh;
+      job.vc = sc->verts + sub.vbase;
+      job.material = sub.material;  job.light = sub.light;
+      job.raster_light = sub.raster_lit ? &sub.rlight : nullptr;
+      job.L = sub.L;                job.shading = sub.shading;
+      job.tw = sc->tw;              job.th = sc->th;
+      job.do_nmap = sub.do_nmap;    job.do_matcap = sub.do_matcap;
+      drawn += draw_pass2(job, sc->bin + sub.boff, sub.bcount);
+    }
+    return drawn;
+  }
+
+#if PICO3D_MULTICORE
+  namespace {
+    struct band_job_t { pico3d_scene_t *sc; pico3d_target_t t; };
+    band_job_t g_band;
+    volatile int g_band_drawn1;
+    void __not_in_flash_func(pico3d_core1_band)() {
+      g_band_drawn1 = draw_band(g_band.sc, &g_band.t);
+    }
+  }
+  // Below this many rows a band is not worth two cores: the second core's share
+  // of the fill stops covering the per-triangle setup it has to repeat.
+  static const int PICO3D_BAND_MIN_SPLIT = 8;
+#endif
+
+  int pico3d_scene_draw(pico3d_scene_t *sc, pico3d_target_t *t, int band_rows,
+                        uint16_t clear_to) {
+    int y0 = t->clip_y0 < 0 ? 0 : t->clip_y0;
+    int y1 = t->clip_y1 > t->height ? t->height : t->clip_y1;
+    if (y1 <= y0) return 0;
+    const int rows = y1 - y0;
+    // Only take charge of depth_y0 when actually banding. One band that covers
+    // the clip leaves it as the caller set it, so a full-surface depth buffer
+    // still works and a caller cannot accidentally have its rows moved.
+    const bool banded = band_rows > 0 && band_rows < rows;
+    if (!banded) band_rows = rows;
+
+    int drawn = 0;
+    for (int by = y0; by < y1; by += band_rows) {
+      int be = by + band_rows;
+      if (be > y1) be = y1;
+      pico3d_target_t bt = *t;          // inherits the caller's row_step/row_phase
+      bt.clip_y0 = by;
+      bt.clip_y1 = be;
+      if (banded) bt.depth_y0 = by;
+      pico3d_depth_clear(&bt, clear_to);
+
+      // Which triangles this band touches, per submission, concatenated into the
+      // shared bin. Two compares each, off a tight sequential array - far
+      // cheaper than the per-triangle setup it saves. Built once here so both
+      // cores read the same lists.
+      uint32_t used = 0;
+      for (uint32_t si = 0; si < sc->sub_count; si++) {
+        pico3d_sub_t &sub = sc->subs[si];
+        const int16_t *ys = sc->ys + (size_t)sub.tbase * 2;
+        sub.boff = used;
+        for (uint32_t f = 0, T = sub.mesh->triangle_count; f < T; f++) {
+          if (ys[f*2] < be && ys[f*2+1] >= by) sc->bin[used++] = (uint16_t)f;
+        }
+        sub.bcount = used - sub.boff;
+      }
+
+#if PICO3D_MULTICORE
+      // Only take the row split over if the caller is not already using it, so
+      // driving phases from outside (as the host tests do) still composes.
+      if (g_cores == 2 && bt.row_step <= 1 && (be - by) >= PICO3D_BAND_MIN_SPLIT) {
+        // Split the band's ROWS, not its geometry: each core fills every other
+        // row of the whole band. Perfectly balanced whatever shape the scene is,
+        // and the two cores touch disjoint rows of both the colour target and
+        // the depth strip, so nothing needs locking.
+        pico3d_target_t t0 = bt, t1 = bt;
+        t0.row_step = 2; t0.row_phase = by;         // this core: the band's first row on
+        t1.row_step = 2; t1.row_phase = by + 1;     // core1: the other half
+        g_band.sc = sc; g_band.t = t1;
+        __sync_synchronize();                       // publish the job to core1
+        ::pv_core1_run(pico3d_core1_band);
+        drawn += draw_band(sc, &t0);
+        ::pv_core1_join();
+        drawn += g_band_drawn1;
+      } else
+#endif
+        drawn += draw_band(sc, &bt);
+    }
+    return drawn;
+  }
+
+  // ---- depth buffer --------------------------------------------------------
+  // Lives here rather than in the rasterisers: it is a property of the target,
+  // not of how triangles are filled, and all three pico3d_raster*.cpp backends
+  // otherwise carried an identical copy.
+  //
+  // Written a WORD at a time, from SRAM, and without calling out to memset.
+  // The depth buffer is large (a 320x240 one is 150 KB) so an embedder may well
+  // have it somewhere slower than SRAM - on an RP2350 with PSRAM it lands there
+  // by default - and that makes two things true. A 16-bit store to a
+  // cached-but-external window costs the same as a 32-bit one, so pairing them
+  // halves the clear. And streaming 150 KB through the same small cache the CPU
+  // fetches code through evicts the loop as it runs, so the loop and everything
+  // it calls want to be resident: hence the hand-rolled fill over memset.
+  static void __not_in_flash_func(depth_fill)(uint16_t *p, size_t n, uint16_t value) {
+    if (!n) return;
+    if (((uintptr_t)p & 3) != 0) { *p++ = value; if (--n == 0) return; }
+    const uint32_t pair = (uint32_t)value | ((uint32_t)value << 16);
+    uint32_t *w = (uint32_t *)p;
+    for (size_t i = 0, words = n >> 1; i < words; i++) w[i] = pair;
+    if (n & 1) p[n - 1] = value;
+  }
+
+  // Bounded by the target's clip rect, like every other entry point here - so a
+  // clipped 3D viewport does not pay for rows it never draws, and one band of a
+  // banded render can clear just its own rows. A target with a degenerate clip
+  // clears nothing, so the clip has to be filled in (surface_view does).
+  void __not_in_flash_func(pico3d_depth_clear)(pico3d_target_t *t, uint16_t value) {
+    if (!t->depth) return;
+    int x0 = t->clip_x0 < 0 ? 0 : t->clip_x0;
+    int y0 = t->clip_y0 < 0 ? 0 : t->clip_y0;
+    int x1 = t->clip_x1 > t->width  ? t->width  : t->clip_x1;
+    int y1 = t->clip_y1 > t->height ? t->height : t->clip_y1;
+    if (x1 <= x0 || y1 <= y0) return;
+    // Depth row for surface row y is (y - depth_y0): the buffer may cover only
+    // the band being drawn.
+    const int dy0 = y0 - t->depth_y0;
+    if (x0 == 0 && x1 == t->depth_stride) {     // whole rows: one contiguous run
+      depth_fill(t->depth + (size_t)dy0 * (size_t)t->depth_stride,
+                 (size_t)(y1 - y0) * (size_t)t->depth_stride, value);
+      return;
+    }
+    for (int y = dy0; y < dy0 + (y1 - y0); y++)
+      depth_fill(t->depth + (size_t)y * (size_t)t->depth_stride + x0,
+                 (size_t)(x1 - x0), value);
   }
 
 }

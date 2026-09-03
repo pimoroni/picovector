@@ -134,7 +134,7 @@ namespace picovector {
     float dn = at.z * 0.5f + 0.5f;
     dn = dn < 0.0f ? 0.0f : (dn > 1.0f ? 1.0f : dn);
     uint16_t d16 = (uint16_t)(dn * 65535.0f);
-    int didx = y * s.t->depth_stride + x;
+    int didx = (y - s.t->depth_y0) * s.t->depth_stride + x;
     if (s.t->depth && d16 >= s.t->depth[didx]) return false;   // not nearer
 
     uint32_t col = base;
@@ -171,14 +171,6 @@ namespace picovector {
   }
 
   // ---- entry point ---------------------------------------------------------
-
-  void pico3d_depth_clear(pico3d_target_t *t, uint16_t value) {
-    if (!t->depth) return;
-    for (int y = 0; y < t->height; y++) {
-      uint16_t *row = t->depth + y * t->depth_stride;
-      for (int x = 0; x < t->width; x++) row[x] = value;
-    }
-  }
 
   int pico3d_raster_triangle(pico3d_target_t *t, const pico3d_tri_t *tri,
                              const pico3d_material_t *m, const pico3d_light_t *light) {
@@ -413,7 +405,13 @@ namespace picovector {
       fA1=-fA1; fB1=-fB1; fe1_row=-fe1_row;
       fA2=-fA2; fB2=-fB2; fe2_row=-fe2_row;
     }
+    // row_step/row_phase: fill only this core's share of the rows. See the field
+    // comment in pico3d.hpp - two cores take opposite phases of one band.
+    const int ystep = s.t->row_step > 1 ? s.t->row_step : 1;
+    int pending = ystep > 1 ? ((s.t->row_phase - miny) % ystep + ystep) % ystep : 0;
     for (int y = miny; y <= maxy; y++) {
+      if (pending) { pending--; fe0_row += fB0; fe1_row += fB1; fe2_row += fB2; at.row_advance(); continue; }
+      pending = ystep - 1;
       float fe0 = fe0_row, fe1 = fe1_row, fe2 = fe2_row;
       at.row_reset();
       for (int x = minx; x <= maxx; x++) {
@@ -423,8 +421,7 @@ namespace picovector {
         fe0 += fA0; fe1 += fA1; fe2 += fA2;
         at.px_advance();
       }
-      fe0_row += fB0; fe1_row += fB1; fe2_row += fB2;
-      at.row_advance();
+      fe0_row += fB0; fe1_row += fB1; fe2_row += fB2; at.row_advance();
     }
 #endif
 

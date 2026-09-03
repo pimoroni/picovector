@@ -26,6 +26,7 @@ void test_grow();
 void test_pico3d_math();
 void test_pico3d_raster();
 void test_pico3d_draw();
+void test_pico3d_alpha();
 void test_pico3d_clip();
 void test_pico3d_scene();
 void test_pico3d_fog();
@@ -55,6 +56,7 @@ int main() {
   test_pico3d_math();
   test_pico3d_raster();
   test_pico3d_draw();
+  test_pico3d_alpha();
   test_pico3d_clip();
   test_pico3d_scene();
   test_pico3d_fog();

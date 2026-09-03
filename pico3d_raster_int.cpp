@@ -157,7 +157,7 @@ namespace picovector {
       // an identity multiply (~20 cyc/px wasted). Skip it for white materials.
       col = s.white ? (px & 0xffffffu) : pico3d_modulate(col, px);
     }
-    s.t->color[y * s.t->color_stride + x] = col;
+    s.t->color[y * s.t->color_stride + x] = col | 0xff000000u;
     if (s.t->depth) s.t->depth[didx] = d16;
     return true;
   }

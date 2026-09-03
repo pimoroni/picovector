@@ -125,7 +125,7 @@ void test_pico3d_scene() {
     bool seen[NQ] = {false, false, false, false};
     for (uint32_t px : ca) {
       if (px) painted++;
-      for (int i = 0; i < NQ; i++) if (px == quads[i].col[0]) seen[i] = true;
+      for (int i = 0; i < NQ; i++) if (px == (0xff000000u | quads[i].col[0])) seen[i] = true;
     }
     CHECK_MSG(painted > W * H / 8, "scene: the reference image is substantially painted");
     CHECK_MSG(seen[0] && seen[1] && seen[2] && seen[3],

@@ -8,8 +8,13 @@
 // binding layer is the only place that knows about image_t — it fills these
 // views from image_t::ptr()/bounds() and a caller-owned depth buffer.
 //
-// Colour format matches the Tufty framebuffer word: 0x00BBGGRR
+// Colour format matches the Tufty framebuffer word: 0xAABBGGRR
 //   (R = bits 0..7, G = 8..15, B = 16..23). See st7789.cpp ST_RGB565.
+//
+// Material, light and texture colours carry no alpha - the rasteriser neither
+// reads nor blends it - but a written pixel is opaque, so a target that is not
+// the framebuffer can be blitted or sampled afterwards. Leaving alpha at zero
+// made every rendered pixel fully transparent to picovector.
 
 #include <stdint.h>
 

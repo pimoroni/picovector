@@ -57,7 +57,7 @@ void test_pico3d_raster() {
       n = pico3d_raster_triangle(&t, &tri, &flat, nullptr);
     }
     CHECK_MSG(n > 700 && n < 1100, "triangle pixel count ~ area (968)");
-    CHECK_MSG(color[20 * W + 20] == red, "interior pixel painted red");
+    CHECK_MSG(color[20 * W + 20] == (0xff000000u | red), "interior pixel painted opaque red");
     CHECK_MSG(color[2 * W + 2] == 0, "exterior pixel untouched");
   }
 
@@ -92,15 +92,15 @@ void test_pico3d_raster() {
     if (pico3d_raster_triangle(&t, &farT, &mm, nullptr) == 0)
       farT = screen_tri(10,10, 10,54, 54,10, 0.6f, far_c,far_c,far_c), pico3d_raster_triangle(&t, &farT, &mm, nullptr);
     int interior = 18 * W + 18;
-    bool far_painted = color[interior] == far_c;
+    bool far_painted = color[interior] == (0xff000000u | far_c);
     pico3d_tri_t nearT = farT; for (int i=0;i<3;i++) { nearT.z[i] = -0.6f; nearT.rgb[i] = near_c; }
     pico3d_raster_triangle(&t, &nearT, &mm, nullptr);
     CHECK_MSG(far_painted, "far triangle painted first");
-    CHECK_MSG(color[interior] == near_c, "near triangle occludes far (depth test)");
+    CHECK_MSG(color[interior] == (0xff000000u | near_c), "near triangle occludes far (depth test)");
     // now draw far again: must NOT overwrite the near pixel
     for (int i=0;i<3;i++) farT.rgb[i]=far_c;
     pico3d_raster_triangle(&t, &farT, &mm, nullptr);
-    CHECK_MSG(color[interior] == near_c, "far triangle rejected behind near");
+    CHECK_MSG(color[interior] == (0xff000000u | near_c), "far triangle rejected behind near");
     (void)a;(void)b;(void)mkfront;
   }
 

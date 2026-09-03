@@ -165,7 +165,7 @@ namespace picovector {
       vec3_t wn = (T * mx + B * my + N * mz).normalized();
       col = pico3d_modulate(col, pico3d_light_value(s.light, wn.dot(s.L)));
     }
-    s.t->color[y * s.t->color_stride + x] = col;
+    s.t->color[y * s.t->color_stride + x] = col | 0xff000000u;
     if (s.t->depth) s.t->depth[didx] = d16;
     return true;
   }

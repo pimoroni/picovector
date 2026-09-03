@@ -55,7 +55,7 @@ void test_pico3d_draw() {
     pico3d_material_t mat{}; mat.color = pico3d_rgb(200, 100, 50); mat.filter = PICO3D_NEAREST;
     int n = pico3d_draw_mesh(&t, &m, &model, &vp, &mat, PICO3D_UNLIT, nullptr, VC);
     CHECK_MSG(n == 2, "unlit: both triangles drawn");
-    CHECK_MSG(color[center] == pico3d_rgb(200,100,50), "unlit: centre == material colour");
+    CHECK_MSG(color[center] == (0xff000000u | pico3d_rgb(200,100,50)), "unlit: centre is opaque material colour");
   }
 
   // 2) GOURAUD lit head-on is bright; light facing away leaves only ambient.
@@ -131,7 +131,7 @@ void test_pico3d_draw() {
     mc.colors = cols;
     pico3d_material_t mat{}; mat.color = pico3d_rgb(255,0,0);  // must be ignored
     pico3d_draw_mesh(&t, &mc, &model, &vp, &mat, PICO3D_UNLIT, nullptr, VC);
-    CHECK_MSG(color[center] == pico3d_rgb(20,200,40), "vertex colours override material colour");
+    CHECK_MSG(color[center] == (0xff000000u | pico3d_rgb(20,200,40)), "vertex colours override material colour and remain opaque");
 
     // flat-shaded vertex colour is modulated by light, not replaced by material
     pico3d_target_t t2 = make_target();
@@ -153,7 +153,7 @@ void test_pico3d_draw() {
     mat.filter = PICO3D_NEAREST; mat.matcap = &mc;
     pico3d_target_t t = make_target();
     pico3d_draw_mesh(&t, &m, &model, &vp, &mat, PICO3D_UNLIT, nullptr, VC);
-    CHECK_MSG(color[center] == pico3d_rgb(100,150,200), "matcap: flat env modulates base colour");
+    CHECK_MSG(color[center] == (0xff000000u | pico3d_rgb(100,150,200)), "matcap: flat env modulates base colour and remains opaque");
 
     // a +x gradient env: the sample tracks the normal, so rotating the quad about
     // Y (tilting its normal) must change the sampled red.
@@ -174,4 +174,25 @@ void test_pico3d_draw() {
     CHECK_MSG(red_face != red_rot, "matcap: rotating the surface sweeps the env sample");
   }
 
+}
+
+void test_pico3d_alpha() {
+  printf("alpha: a written pixel is opaque, so the target can be blitted\n");
+  {
+    pico3d_target_t t = make_target();
+    pico3d_material_t m{};
+    m.color = pico3d_rgb(200, 100, 50);
+    m.double_sided = true;
+    mat4_t model, vp;
+    vp.perspective(60.0f, 1.0f, 0.1f, 20.0f);
+    mat4_t view; view.look_at(vec3_t(0, 0, 3), vec3_t(0, 0, 0), vec3_t(0, 1, 0));
+    vp.multiply(view);
+    pico3d_mesh_t mesh{};
+    mesh.positions = QPOS; mesh.indices = QIDX;
+    mesh.vertex_count = 4; mesh.triangle_count = 2;
+    pico3d_draw_mesh(&t, &mesh, &model, &vp, &m, PICO3D_UNLIT, nullptr, VC);
+    int center = (H / 2) * W + (W / 2);
+    CHECK_MSG((color[center] >> 24) == 0xff, "covered pixel has full alpha");
+    CHECK_MSG(color[0] == 0, "an untouched pixel is left alone");
+  }
 }

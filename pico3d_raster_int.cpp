@@ -195,6 +195,7 @@ namespace picovector {
     int miny = max(t->clip_y0, (int)floorf(minyf));
     int maxy = min(t->clip_y1 - 1, (int)floorf(maxyf) + 1);
     if (minx > maxx || miny > maxy) return 0;
+    pico3d_prof_bbox_px += (uint64_t)(maxx - minx + 1) * (maxy - miny + 1);
 
     float invD = 1.0f / denomf;
     float dx1 = sx[1]-sx[0], dy1 = sy[1]-sy[0];

@@ -214,6 +214,7 @@ namespace picovector {
     int miny = max(t->clip_y0, (int)floorf(minyf));
     int maxy = min(t->clip_y1 - 1, (int)floorf(maxyf) + 1);
     if (minx > maxx || miny > maxy) return 0;
+    pico3d_prof_bbox_px += (uint64_t)(maxx - minx + 1) * (maxy - miny + 1);
 
     // --- coverage: integer edge functions, e_i >= 0 inside -------------------
     int32_t A0 = (Y1 - Y2), B0 = (X2 - X1);

@@ -213,7 +213,9 @@ namespace picovector {
           tri.uv_[k] = vuv[k]; tri.rgb[k] = vrgb[k];
         }
         if (do_nmap) for (int k = 0; k < 3; k++) { tri.n[k] = vn[k]; tri.tan[k] = vtan[k]; }
-        if (pico3d_raster_triangle(t, &tri, j.material, j.raster_light) > 0) drawn++;
+        int wrote = pico3d_raster_triangle(t, &tri, j.material, j.raster_light);
+        pico3d_prof_px += (uint64_t)wrote;   // the raster already counts these
+        if (wrote > 0) drawn++;
         continue;
       }
 
@@ -232,7 +234,9 @@ namespace picovector {
         project_into(tri, 0, out[0], j.tw, j.th);
         project_into(tri, 1, out[k], j.tw, j.th);
         project_into(tri, 2, out[k + 1], j.tw, j.th);
-        if (pico3d_raster_triangle(t, &tri, j.material, j.raster_light) > 0) drawn++;
+        int wrote = pico3d_raster_triangle(t, &tri, j.material, j.raster_light);
+        pico3d_prof_px += (uint64_t)wrote;
+        if (wrote > 0) drawn++;
       }
     }
     return drawn;

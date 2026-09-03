@@ -147,6 +147,8 @@ namespace picovector {
     const pico3d_light_t    *raster_light;  // per-pixel lit path (or null)
     vec3_t                   L;
     float                    tw, th;        // target size, for re-projecting a clip
+    uint32_t                 fog;           // linear depth fog (see pico3d_target_t)
+    float                    fog_far, fog_scale;   // fog_scale 0 = no fog
     pico3d_shading_t         shading;
     bool                     do_nmap, do_matcap;
   };
@@ -189,6 +191,17 @@ namespace picovector {
         for (int k = 0; k < 3; k++) vrgb[k] = pico3d_modulate(vc[idx[k]].rgb, lv);
       } else {                                          // UNLIT / GOURAUD pre-baked
         for (int k = 0; k < 3; k++) vrgb[k] = vc[idx[k]].rgb;
+      }
+
+      // Depth fog, after the light so it cannot pick up the surface's facing.
+      // clip.w is the eye-space depth the projection already worked out, so this
+      // costs a subtract, a clamp and a mix per vertex.
+      if (j.fog_scale != 0.0f) {
+        for (int k = 0; k < 3; k++) {
+          float f = (j.fog_far - vc[idx[k]].clip.w) * j.fog_scale;
+          f = f < 0.0f ? 0.0f : (f > 1.0f ? 1.0f : f);
+          vrgb[k] = lerp_rgb(j.fog, vrgb[k], f);
+        }
       }
 
       if (near_distance(vc[i0].clip) >= 0.0f && near_distance(vc[i1].clip) >= 0.0f &&
@@ -467,6 +480,8 @@ namespace picovector {
     job.material = material;   job.light = light;   job.raster_light = raster_light;
     job.L = L;                 job.shading = shading;
     job.tw = (float)t->width;  job.th = (float)t->height;
+    job.fog = t->fog;          job.fog_far = t->fog_far;
+    job.fog_scale = (t->fog_far > t->fog_near) ? 1.0f / (t->fog_far - t->fog_near) : 0.0f;
     job.do_nmap = do_nmap;     job.do_matcap = do_matcap;
     return pico3d_dispatch_pass2(job);
   }
@@ -637,6 +652,8 @@ namespace picovector {
       job.raster_light = sub.raster_lit ? &sub.rlight : nullptr;
       job.L = sub.L;                job.shading = sub.shading;
       job.tw = sc->tw;              job.th = sc->th;
+      job.fog = bt->fog;            job.fog_far = bt->fog_far;
+      job.fog_scale = (bt->fog_far > bt->fog_near) ? 1.0f / (bt->fog_far - bt->fog_near) : 0.0f;
       job.do_nmap = sub.do_nmap;    job.do_matcap = sub.do_matcap;
       drawn += draw_pass2(job, sc->bin + sub.boff, sub.bcount);
     }

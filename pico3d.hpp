@@ -61,6 +61,17 @@ namespace picovector {
     // ~666 cycles against 40-79 cycles a pixel of fill. Splitting a band's ROWS
     // beats splitting the screen into bands per core, whose work is very uneven.
     int row_step, row_phase;
+    // Linear depth fog, mixed in per vertex after the light: a colour every
+    // surface fades towards with distance, and the two distances the ramp runs
+    // between. fog_far <= fog_near turns it off, which is the zeroed default.
+    //
+    // Fog belongs to the view, not to a light or a material - a point light at
+    // the eye looks like distance fade until you notice its falloff is scaled by
+    // n.L, so a wall you face square-on comes out brighter than one seen
+    // edge-on at the same distance. This is applied after the light and depends
+    // only on depth, so orientation cannot leak into it.
+    uint32_t fog;
+    float fog_near, fog_far;
   };
 
   // Texture as a plain RGBA8888 (0x00BBGGRR) pixel block, edge-clamped.

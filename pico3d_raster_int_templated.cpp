@@ -144,7 +144,7 @@ namespace picovector {
   __attribute__((always_inline)) static inline
   bool emit(const shade_t &s, int x, int y, const cur_t &c, uint32_t cc) {
     uint16_t d16 = 0;
-    int didx = y * s.t->depth_stride + x;
+    int didx = (y - s.t->depth_y0) * s.t->depth_stride + x;
     if constexpr (DEPTH) {
       int dd = c.dep >> 8;
       d16 = (uint16_t)(dd < 0 ? 0 : (dd > 65535 ? 65535 : dd));
@@ -242,7 +242,30 @@ namespace picovector {
 
     int written = 0;
     cur_t c{};   // value-init once (silences -Wmaybe-uninitialized; DCE'd where set before use)
+
+    // Stepping the row accumulators is the same work whether we advance one row
+    // or skip some, so it goes in a macro rather than scaled duplicates of every
+    // dy - which would add a dozen values live across the x loop and cost it
+    // registers. Done once (or twice) a row, never per pixel.
+    #define PV_ROW_ADVANCE() do { \
+      ed.e0_row += ed.B0; ed.e1_row += ed.B1; ed.e2_row += ed.B2; \
+      dep_row += ddep_dy; \
+      if constexpr (VARYING) { r_row+=dr_dy; g_row+=dg_dy; b_row+=db_dy; } \
+      if constexpr (UVS) { if (persp) { uw_row+=duwdy; vw_row+=dvwdy; iw_row+=diwdy; } \
+                           else        { u_row+=du_dy; v_row+=dv_dy; } } \
+      if constexpr (NMAP) for (int k=0;k<3;k++){ nrm_row[k]+=nrm_dy[k]; tan_row[k]+=tan_dy[k]; } \
+    } while (0)
+
+    // Walk EVERY row but only fill this core's share, so the advance block above
+    // appears once. Three copies of it (skip / fill / catch-up) cost 5 KB of
+    // SRAM once inlined into all 16 specialisations of this function, which is
+    // SRAM-resident - so the shape here is chosen for code size, and the price
+    // is one branch a row.
+    const int ystep = s.t->row_step > 1 ? s.t->row_step : 1;
+    int pending = ystep > 1 ? ((s.t->row_phase - miny) % ystep + ystep) % ystep : 0;
     for (int y = miny; y <= maxy; y++) {
+      if (pending) { pending--; PV_ROW_ADVANCE(); continue; }
+      pending = ystep - 1;
       int32_t e0 = ed.e0_row, e1 = ed.e1_row, e2 = ed.e2_row;
       c.dep = dep_row;
       if constexpr (VARYING) { c.r=r_row; c.g=g_row; c.b=b_row; }
@@ -262,25 +285,13 @@ namespace picovector {
         if constexpr (NMAP) for (int k=0;k<3;k++){ c.nrm[k]+=nrm_dx[k]; c.tan[k]+=tan_dx[k]; }
       }
 
-      ed.e0_row += ed.B0; ed.e1_row += ed.B1; ed.e2_row += ed.B2;
-      dep_row += ddep_dy;
-      if constexpr (VARYING) { r_row+=dr_dy; g_row+=dg_dy; b_row+=db_dy; }
-      if constexpr (UVS) { if (persp) { uw_row+=duwdy; vw_row+=dvwdy; iw_row+=diwdy; }
-                           else        { u_row+=du_dy; v_row+=dv_dy; } }
-      if constexpr (NMAP) for (int k=0;k<3;k++){ nrm_row[k]+=nrm_dy[k]; tan_row[k]+=tan_dy[k]; }
+      PV_ROW_ADVANCE();
     }
+    #undef PV_ROW_ADVANCE
     return written;
   }
 
   // ---- entry points --------------------------------------------------------
-
-  void pico3d_depth_clear(pico3d_target_t *t, uint16_t value) {
-    if (!t->depth) return;
-    for (int y = 0; y < t->height; y++) {
-      uint16_t *row = t->depth + y * t->depth_stride;
-      for (int x = 0; x < t->width; x++) row[x] = value;
-    }
-  }
 
 #if PICO3D_PROF
   #define RT_SETUP_END() (pico3d_prof_project_cyc += pico3d_prof_cyc() - ps)   // cull early-outs count as project

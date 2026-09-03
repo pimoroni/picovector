@@ -147,4 +147,64 @@ void test_pico3d_raster() {
     CHECK_MSG(flat_n > tilt_n, "normal map drives per-pixel lighting");
   }
 
+  // --- depth clear ----------------------------------------------------------
+  // It fills by 32-bit words, so the interesting cases are an odd width, a
+  // stride wider than the width (rows not contiguous), and an odd start
+  // alignment - each of which leaves a halfword tail for the scalar path.
+  {
+    auto clear_check = [&](int w, int h, int stride, int off, uint16_t v) -> bool {
+      std::vector<uint16_t> buf((size_t)stride * h + off + 1, 0x1234);
+      pico3d_target_t t{};
+      t.depth = buf.data() + off;
+      t.width = w; t.height = h; t.depth_stride = stride;
+      t.clip_x1 = w; t.clip_y1 = h;
+      pico3d_depth_clear(&t, v);
+      for (int y = 0; y < h; y++)
+        for (int x = 0; x < stride; x++) {
+          uint16_t got = buf[(size_t)off + (size_t)y * stride + x];
+          // Inside the width it must be the value; the gap up to the stride,
+          // and the guard word past the end, must be untouched.
+          if (x < w ? got != v : got != 0x1234) return false;
+        }
+      return buf.back() == 0x1234;
+    };
+    CHECK_MSG(clear_check(64, 8, 64, 0, 0xFFFF), "depth clear: the contiguous far-plane case");
+    CHECK_MSG(clear_check(63, 5, 63, 0, 0xFFFF), "depth clear: an odd width leaves no tail behind");
+    CHECK_MSG(clear_check(30, 4, 37, 0, 0xFFFF), "depth clear: a wider stride leaves the gap alone");
+    CHECK_MSG(clear_check(31, 3, 31, 1, 0xFFFF), "depth clear: an unaligned start still fills");
+    CHECK_MSG(clear_check(31, 3, 31, 1, 0x1357), "depth clear: a value with unequal bytes");
+    CHECK_MSG(clear_check(1, 1, 1, 1, 0x0F0E), "depth clear: a single unaligned pixel");
+
+    pico3d_target_t none{};                      // no depth buffer: a no-op, not a crash
+    none.width = 8; none.height = 8; none.depth_stride = 8;
+    none.clip_x1 = 8; none.clip_y1 = 8;
+    pico3d_depth_clear(&none, 0xFFFF);
+    CHECK_MSG(true, "depth clear: a target with no depth buffer is a no-op");
+
+    // The clip bounds it, which is what makes clearing one band of a banded
+    // render possible - and a degenerate clip clears nothing at all.
+    {
+      std::vector<uint16_t> buf(8 * 8, 0x1234);
+      pico3d_target_t t{};
+      t.depth = buf.data(); t.width = 8; t.height = 8; t.depth_stride = 8;
+      t.clip_x0 = 2; t.clip_x1 = 6; t.clip_y0 = 3; t.clip_y1 = 5;
+      pico3d_depth_clear(&t, 0xABCD);
+      bool ok = true;
+      for (int y = 0; y < 8; y++)
+        for (int x = 0; x < 8; x++) {
+          bool inside = (x >= 2 && x < 6 && y >= 3 && y < 5);
+          if (buf[y * 8 + x] != (inside ? 0xABCD : 0x1234)) ok = false;
+        }
+      CHECK_MSG(ok, "depth clear: only the clip rect is cleared");
+
+      std::vector<uint16_t> buf2(8 * 8, 0x1234);
+      pico3d_target_t e{};
+      e.depth = buf2.data(); e.width = 8; e.height = 8; e.depth_stride = 8;
+      pico3d_depth_clear(&e, 0xABCD);
+      bool untouched = true;
+      for (uint16_t got : buf2) if (got != 0x1234) untouched = false;
+      CHECK_MSG(untouched, "depth clear: a degenerate clip clears nothing");
+    }
+  }
+
 }

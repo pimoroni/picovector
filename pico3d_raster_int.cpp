@@ -130,7 +130,7 @@ namespace picovector {
   __attribute__((always_inline)) static inline
   bool emit(const shade_t &s, int x, int y, const attrs_t &at, uint32_t base) {
     uint16_t d16 = 0;
-    int didx = y * s.t->depth_stride + x;
+    int didx = (y - s.t->depth_y0) * s.t->depth_stride + x;
     if (s.t->depth) {
       int dd = at.dep >> 8;
       d16 = (uint16_t)(dd < 0 ? 0 : (dd > 65535 ? 65535 : dd));
@@ -163,14 +163,6 @@ namespace picovector {
   }
 
   // ---- entry points --------------------------------------------------------
-
-  void pico3d_depth_clear(pico3d_target_t *t, uint16_t value) {
-    if (!t->depth) return;
-    for (int y = 0; y < t->height; y++) {
-      uint16_t *row = t->depth + y * t->depth_stride;
-      for (int x = 0; x < t->width; x++) row[x] = value;
-    }
-  }
 
   int pico3d_raster_triangle(pico3d_target_t *t, const pico3d_tri_t *tri,
                              const pico3d_material_t *m, const pico3d_light_t *light) {
@@ -275,7 +267,12 @@ namespace picovector {
     s.tx = m->texture;
 
     int written = 0;
+    // row_step/row_phase: this core's share of the rows only. See pico3d.hpp.
+    const int ystep = t->row_step > 1 ? t->row_step : 1;
+    int pending = ystep > 1 ? ((t->row_phase - miny) % ystep + ystep) % ystep : 0;
     for (int y = miny; y <= maxy; y++) {
+      if (pending) { pending--; e0_row += B0; e1_row += B1; e2_row += B2; at.row_advance(); continue; }
+      pending = ystep - 1;
       int32_t e0 = e0_row, e1 = e1_row, e2 = e2_row;
       at.row_reset();
       for (int x = minx; x <= maxx; x++) {
@@ -285,8 +282,7 @@ namespace picovector {
         e0 += A0; e1 += A1; e2 += A2;
         at.px_advance();
       }
-      e0_row += B0; e1_row += B1; e2_row += B2;
-      at.row_advance();
+      e0_row += B0; e1_row += B1; e2_row += B2; at.row_advance();
     }
     return written;
   }

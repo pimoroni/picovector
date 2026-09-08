@@ -16,13 +16,13 @@ namespace picovector {
     const pv_span *spans = _spans();
     int tr = tint & 0xff, tg = (tint >> 8) & 0xff, tb = (tint >> 16) & 0xff;
     for(int i = i0; i < i1; i += step) {
-      uint8_t *p = (uint8_t*)target->ptr(spans[i].x, spans[i].y);
+      pv_px p = (pv_px)target->ptr(spans[i].x, spans[i].y);
       for(int w = spans[i].w; w; w--) {
         int lum = punch(luminance(p));
-        p[0] = (uint8_t)((tr * lum) / 255);
-        p[1] = (uint8_t)((tg * lum) / 255);
-        p[2] = (uint8_t)((tb * lum) / 255); // leave alpha
-        p += 4;
+        pv_r(p) = (uint8_t)((tr * lum) / 255);
+        pv_g(p) = (uint8_t)((tg * lum) / 255);
+        pv_b(p) = (uint8_t)((tb * lum) / 255); // leave alpha
+        p += PV_PX_STEP;
       }
     }
   }
@@ -31,18 +31,18 @@ namespace picovector {
     const pv_masked_span *spans = _masked_spans();
     int tr = tint & 0xff, tg = (tint >> 8) & 0xff, tb = (tint >> 16) & 0xff;
     for(int i = i0; i < i1; i += step) {
-      uint8_t *p = (uint8_t*)target->ptr(spans[i].x, spans[i].y);
+      pv_px p = (pv_px)target->ptr(spans[i].x, spans[i].y);
       const uint8_t *mask = spans[i].mask;
       // ease each channel toward the glow colour by coverage so AA edges feather in
       for(int w = spans[i].w; w; w--) {
         int m = *mask++;
-        if(!m) { p += 4; continue; }
+        if(!m) { p += PV_PX_STEP; continue; }
         int lum = punch(luminance(p));
         int nr = (tr * lum) / 255, ng = (tg * lum) / 255, nb = (tb * lum) / 255;
-        p[0] = (uint8_t)(p[0] + (((nr - p[0]) * m) >> 8));
-        p[1] = (uint8_t)(p[1] + (((ng - p[1]) * m) >> 8));
-        p[2] = (uint8_t)(p[2] + (((nb - p[2]) * m) >> 8)); // leave alpha
-        p += 4;
+        pv_r(p) = (uint8_t)(pv_r(p) + (((nr - pv_r(p)) * m) >> 8));
+        pv_g(p) = (uint8_t)(pv_g(p) + (((ng - pv_g(p)) * m) >> 8));
+        pv_b(p) = (uint8_t)(pv_b(p) + (((nb - pv_b(p)) * m) >> 8)); // leave alpha
+        p += PV_PX_STEP;
       }
     }
   }

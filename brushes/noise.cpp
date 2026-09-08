@@ -18,13 +18,13 @@ namespace picovector {
     const pv_span *spans = _spans();
     for(int i = i0; i < i1; i += step) {
       int x = spans[i].x, y = spans[i].y;
-      uint8_t *p = (uint8_t*)target->ptr(x, y);
+      pv_px p = (pv_px)target->ptr(x, y);
       for(int w = spans[i].w; w; w--) {
         int d = grain(x, y, frame, amount);
-        p[0] = clamp8(p[0] + d); // same delta all channels, leave alpha
-        p[1] = clamp8(p[1] + d);
-        p[2] = clamp8(p[2] + d);
-        p += 4; x++;
+        pv_r(p) = clamp8(pv_r(p) + d); // same delta all channels, leave alpha
+        pv_g(p) = clamp8(pv_g(p) + d);
+        pv_b(p) = clamp8(pv_b(p) + d);
+        p += PV_PX_STEP; x++;
       }
     }
   }
@@ -33,18 +33,18 @@ namespace picovector {
     const pv_masked_span *spans = _masked_spans();
     for(int i = i0; i < i1; i += step) {
       int x = spans[i].x, y = spans[i].y;
-      uint8_t *p = (uint8_t*)target->ptr(x, y);
+      pv_px p = (pv_px)target->ptr(x, y);
       const uint8_t *mask = spans[i].mask;
       // ease each channel toward the grained value by coverage so AA edges feather in
       for(int w = spans[i].w; w; w--) {
         int m = *mask++;
-        if(!m) { p += 4; x++; continue; }
+        if(!m) { p += PV_PX_STEP; x++; continue; }
         int d = grain(x, y, frame, amount);
-        int nr = clamp8(p[0] + d), ng = clamp8(p[1] + d), nb = clamp8(p[2] + d);
-        p[0] = (uint8_t)(p[0] + (((nr - p[0]) * m) >> 8));
-        p[1] = (uint8_t)(p[1] + (((ng - p[1]) * m) >> 8));
-        p[2] = (uint8_t)(p[2] + (((nb - p[2]) * m) >> 8));
-        p += 4; x++;
+        int nr = clamp8(pv_r(p) + d), ng = clamp8(pv_g(p) + d), nb = clamp8(pv_b(p) + d);
+        pv_r(p) = (uint8_t)(pv_r(p) + (((nr - pv_r(p)) * m) >> 8));
+        pv_g(p) = (uint8_t)(pv_g(p) + (((ng - pv_g(p)) * m) >> 8));
+        pv_b(p) = (uint8_t)(pv_b(p) + (((nb - pv_b(p)) * m) >> 8));
+        p += PV_PX_STEP; x++;
       }
     }
   }

@@ -6,6 +6,8 @@ namespace picovector {
   // `spacing`-th row and column by `darkness` (0..255), leaving the cell
   // interiors untouched. Position-dependent (keyed on x, y in image space so the
   // grid stays screen-aligned).
+  // A stored channel has 16 levels at RGBA4444, so a `darkness` below 17 leaves
+  // most pixels unchanged.
 
   grid_brush_t::grid_brush_t(int spacing, int darkness)
     : spacing(spacing < 1 ? 1 : spacing), darkness(darkness) {}
@@ -16,14 +18,14 @@ namespace picovector {
     for(int i = i0; i < i1; i += step) {
       int x = spans[i].x, y = spans[i].y;
       bool yline = (y % spacing) == 0;
-      uint8_t *p = (uint8_t*)target->ptr(x, y);
+      pv_px p = (pv_px)target->ptr(x, y);
       for(int w = spans[i].w; w; w--) {
         if(yline || (x % spacing) == 0) {
-          p[0] = (uint8_t)((p[0] * f) >> 8);
-          p[1] = (uint8_t)((p[1] * f) >> 8);
-          p[2] = (uint8_t)((p[2] * f) >> 8); // leave alpha
+          pv_r(p) = (uint8_t)((pv_r(p) * f) >> 8);
+          pv_g(p) = (uint8_t)((pv_g(p) * f) >> 8);
+          pv_b(p) = (uint8_t)((pv_b(p) * f) >> 8); // leave alpha
         }
-        p += 4; x++;
+        p += PV_PX_STEP; x++;
       }
     }
   }
@@ -34,18 +36,18 @@ namespace picovector {
     for(int i = i0; i < i1; i += step) {
       int x = spans[i].x, y = spans[i].y;
       bool yline = (y % spacing) == 0;
-      uint8_t *p = (uint8_t*)target->ptr(x, y);
+      pv_px p = (pv_px)target->ptr(x, y);
       const uint8_t *mask = spans[i].mask;
       // on grid lines, ease each channel toward the darkened value by coverage
       for(int w = spans[i].w; w; w--) {
         int m = *mask++;
         if(m && (yline || (x % spacing) == 0)) {
-          int n0 = (p[0] * f) >> 8, n1 = (p[1] * f) >> 8, n2 = (p[2] * f) >> 8;
-          p[0] = (uint8_t)(p[0] + (((n0 - p[0]) * m) >> 8));
-          p[1] = (uint8_t)(p[1] + (((n1 - p[1]) * m) >> 8));
-          p[2] = (uint8_t)(p[2] + (((n2 - p[2]) * m) >> 8));
+          int n0 = (pv_r(p) * f) >> 8, n1 = (pv_g(p) * f) >> 8, n2 = (pv_b(p) * f) >> 8;
+          pv_r(p) = (uint8_t)(pv_r(p) + (((n0 - pv_r(p)) * m) >> 8));
+          pv_g(p) = (uint8_t)(pv_g(p) + (((n1 - pv_g(p)) * m) >> 8));
+          pv_b(p) = (uint8_t)(pv_b(p) + (((n2 - pv_b(p)) * m) >> 8));
         }
-        p += 4; x++;
+        p += PV_PX_STEP; x++;
       }
     }
   }

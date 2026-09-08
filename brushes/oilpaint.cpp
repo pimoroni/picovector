@@ -24,9 +24,9 @@ namespace picovector {
       int cy = yy < 0 ? 0 : (yy >= H ? H - 1 : yy);
       for(int xx = x - radius; xx <= x + radius; xx += sstep) {
         int cxx = xx < 0 ? 0 : (xx >= W ? W - 1 : xx);
-        uint8_t *q = (uint8_t*)target->ptr(cxx, cy);
+        pv_px q = (pv_px)target->ptr(cxx, cy);
         int lum = luminance(q); int bkt = lum >> 5; // 0..7
-        cnt[bkt]++; sr[bkt] += q[0]; sg[bkt] += q[1]; sb[bkt] += q[2];
+        cnt[bkt]++; sr[bkt] += pv_r(q); sg[bkt] += pv_g(q); sb[bkt] += pv_b(q);
       }
     }
     int bb = 0; for(int j = 1; j < 8; j++) if(cnt[j] > cnt[bb]) bb = j;
@@ -44,14 +44,14 @@ namespace picovector {
         int n = w < CH ? w : CH;
         for(int k = 0; k < n; k++) {
           uint32_t o = oil_at(target, x + k, y, radius, sstep, W, H);
-          uint8_t *c = (uint8_t*)target->ptr(x + k, y);          // original centre
-          int r = c[0] + (((int)(o & 0xff)        - c[0]) * strength >> 8);
-          int g = c[1] + (((int)((o >> 8) & 0xff)  - c[1]) * strength >> 8);
-          int b = c[2] + (((int)((o >> 16) & 0xff) - c[2]) * strength >> 8);
-          tmp[k] = (uint32_t)(r | (g << 8) | (b << 16) | (c[3] << 24));
+          pv_px c = (pv_px)target->ptr(x + k, y);          // original centre
+          int r = pv_r(c) + (((int)(o & 0xff)        - pv_r(c)) * strength >> 8);
+          int g = pv_g(c) + (((int)((o >> 8) & 0xff)  - pv_g(c)) * strength >> 8);
+          int b = pv_b(c) + (((int)((o >> 16) & 0xff) - pv_b(c)) * strength >> 8);
+          tmp[k] = (uint32_t)(r | (g << 8) | (b << 16) | (pv_a(c) << 24));
         }
-        uint8_t *p = (uint8_t*)target->ptr(x, y);
-        for(int k = 0; k < n; k++) { *(uint32_t*)p = tmp[k]; p += 4; }
+        pv_px p = (pv_px)target->ptr(x, y);
+        for(int k = 0; k < n; k++) { pv_word(p) = tmp[k]; p += PV_PX_STEP; }
         x += n; w -= n;
       }
     }
@@ -67,19 +67,19 @@ namespace picovector {
       while(w > 0) {
         int n = w < CH ? w : CH;
         for(int k = 0; k < n; k++) if(mask[k]) tmp[k] = oil_at(target, x + k, y, radius, sstep, W, H);
-        uint8_t *p = (uint8_t*)target->ptr(x, y);
+        pv_px p = (pv_px)target->ptr(x, y);
         // ease toward the (strength-scaled) dominant colour by coverage so AA edges feather in
         for(int k = 0; k < n; k++) {
           int m = *mask++;
-          if(!m) { p += 4; continue; }
+          if(!m) { p += PV_PX_STEP; continue; }
           int pr = (int)(tmp[k] & 0xff), pg = (int)((tmp[k] >> 8) & 0xff), pb = (int)((tmp[k] >> 16) & 0xff);
-          int nr = p[0] + ((pr - p[0]) * strength >> 8);
-          int ng = p[1] + ((pg - p[1]) * strength >> 8);
-          int nb = p[2] + ((pb - p[2]) * strength >> 8);
-          p[0] = (uint8_t)(p[0] + ((nr - p[0]) * m >> 8));
-          p[1] = (uint8_t)(p[1] + ((ng - p[1]) * m >> 8));
-          p[2] = (uint8_t)(p[2] + ((nb - p[2]) * m >> 8));
-          p += 4; // alpha kept
+          int nr = pv_r(p) + ((pr - pv_r(p)) * strength >> 8);
+          int ng = pv_g(p) + ((pg - pv_g(p)) * strength >> 8);
+          int nb = pv_b(p) + ((pb - pv_b(p)) * strength >> 8);
+          pv_r(p) = (uint8_t)(pv_r(p) + ((nr - pv_r(p)) * m >> 8));
+          pv_g(p) = (uint8_t)(pv_g(p) + ((ng - pv_g(p)) * m >> 8));
+          pv_b(p) = (uint8_t)(pv_b(p) + ((nb - pv_b(p)) * m >> 8));
+          p += PV_PX_STEP; // alpha kept
         }
         x += n; w -= n;
       }

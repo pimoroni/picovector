@@ -35,7 +35,9 @@ namespace picovector {
       return (uint32_t)std::lround(k * 65536.0f);
   }
 
-#if PV_BLUR_INTERP
+// The interpolator blends 8-bit lanes, so it only serves an 8-bit-per-channel
+// framebuffer. A narrower format takes the portable path below.
+#if PV_BLUR_INTERP && PV_PIXEL_FORMAT == PV_PIXEL_RGBA8888
 
   // Configure this core's INTERP0 for blend mode:
   //   peek[1] = base0 + ((base1-base0)*a)>>8,  a = ACCUM1[7:0]
@@ -104,17 +106,17 @@ namespace picovector {
   static void blur_hpass(uint8_t *buffer, size_t stride, uint32_t k,
                          int x0, int x1, int y0, int y1) {
     for (int y = y0; y < y1; ++y) {
-      uint8_t *row = buffer + (size_t)y * stride, *p = row + x0 * 4;
-      int r = p[0], g = p[1], b = p[2], a = p[3];
-      for (int x = x0 + 1; x < x1; ++x) { p = row + x * 4;
-        r = iir_step_q16(r, p[0], k); g = iir_step_q16(g, p[1], k);
-        b = iir_step_q16(b, p[2], k); a = iir_step_q16(a, p[3], k);
-        p[0] = r; p[1] = g; p[2] = b; p[3] = a; }
-      p = row + (x1 - 1) * 4; r = p[0]; g = p[1]; b = p[2]; a = p[3];
-      for (int x = x1 - 2; x >= x0; --x) { p = row + x * 4;
-        r = iir_step_q16(r, p[0], k); g = iir_step_q16(g, p[1], k);
-        b = iir_step_q16(b, p[2], k); a = iir_step_q16(a, p[3], k);
-        p[0] = r; p[1] = g; p[2] = b; p[3] = a; }
+      pv_px row = (pv_px)(buffer + (size_t)y * stride), p = row + x0 * PV_PX_STEP;
+      int r = pv_r(p), g = pv_g(p), b = pv_b(p), a = pv_a(p);
+      for (int x = x0 + 1; x < x1; ++x) { p = row + x * PV_PX_STEP;
+        r = iir_step_q16(r, pv_r(p), k); g = iir_step_q16(g, pv_g(p), k);
+        b = iir_step_q16(b, pv_b(p), k); a = iir_step_q16(a, pv_a(p), k);
+        pv_r(p) = r; pv_g(p) = g; pv_b(p) = b; pv_a(p) = a; }
+      p = row + (x1 - 1) * PV_PX_STEP; r = pv_r(p); g = pv_g(p); b = pv_b(p); a = pv_a(p);
+      for (int x = x1 - 2; x >= x0; --x) { p = row + x * PV_PX_STEP;
+        r = iir_step_q16(r, pv_r(p), k); g = iir_step_q16(g, pv_g(p), k);
+        b = iir_step_q16(b, pv_b(p), k); a = iir_step_q16(a, pv_a(p), k);
+        pv_r(p) = r; pv_g(p) = g; pv_b(p) = b; pv_a(p) = a; }
     }
   }
   static void blur_vpass(uint8_t *buffer, size_t stride, uint32_t k,
@@ -122,20 +124,20 @@ namespace picovector {
     const int B = 16; int rr[B], gg[B], bb[B], aa[B];
     for (int xb = x0; xb < x1; xb += B) {
       int bw = x1 - xb; if (bw > B) bw = B;
-      for (int c = 0; c < bw; ++c) { uint8_t *p = buffer + (size_t)y0 * stride + (xb + c) * 4;
-        rr[c] = p[0]; gg[c] = p[1]; bb[c] = p[2]; aa[c] = p[3]; }
-      for (int y = y0 + 1; y < y1; ++y) { uint8_t *rp = buffer + (size_t)y * stride + xb * 4;
-        for (int c = 0; c < bw; ++c) { uint8_t *p = rp + c * 4;
-          rr[c] = iir_step_q16(rr[c], p[0], k); gg[c] = iir_step_q16(gg[c], p[1], k);
-          bb[c] = iir_step_q16(bb[c], p[2], k); aa[c] = iir_step_q16(aa[c], p[3], k);
-          p[0] = rr[c]; p[1] = gg[c]; p[2] = bb[c]; p[3] = aa[c]; } }
-      for (int c = 0; c < bw; ++c) { uint8_t *p = buffer + (size_t)(y1 - 1) * stride + (xb + c) * 4;
-        rr[c] = p[0]; gg[c] = p[1]; bb[c] = p[2]; aa[c] = p[3]; }
-      for (int y = y1 - 2; y >= y0; --y) { uint8_t *rp = buffer + (size_t)y * stride + xb * 4;
-        for (int c = 0; c < bw; ++c) { uint8_t *p = rp + c * 4;
-          rr[c] = iir_step_q16(rr[c], p[0], k); gg[c] = iir_step_q16(gg[c], p[1], k);
-          bb[c] = iir_step_q16(bb[c], p[2], k); aa[c] = iir_step_q16(aa[c], p[3], k);
-          p[0] = rr[c]; p[1] = gg[c]; p[2] = bb[c]; p[3] = aa[c]; } }
+      for (int c = 0; c < bw; ++c) { pv_px p = (pv_px)(buffer + (size_t)y0 * stride) + (xb + c) * PV_PX_STEP;
+        rr[c] = pv_r(p); gg[c] = pv_g(p); bb[c] = pv_b(p); aa[c] = pv_a(p); }
+      for (int y = y0 + 1; y < y1; ++y) { pv_px rp = (pv_px)(buffer + (size_t)y * stride) + xb * PV_PX_STEP;
+        for (int c = 0; c < bw; ++c) { pv_px p = rp + c * PV_PX_STEP;
+          rr[c] = iir_step_q16(rr[c], pv_r(p), k); gg[c] = iir_step_q16(gg[c], pv_g(p), k);
+          bb[c] = iir_step_q16(bb[c], pv_b(p), k); aa[c] = iir_step_q16(aa[c], pv_a(p), k);
+          pv_r(p) = rr[c]; pv_g(p) = gg[c]; pv_b(p) = bb[c]; pv_a(p) = aa[c]; } }
+      for (int c = 0; c < bw; ++c) { pv_px p = (pv_px)(buffer + (size_t)(y1 - 1) * stride) + (xb + c) * PV_PX_STEP;
+        rr[c] = pv_r(p); gg[c] = pv_g(p); bb[c] = pv_b(p); aa[c] = pv_a(p); }
+      for (int y = y1 - 2; y >= y0; --y) { pv_px rp = (pv_px)(buffer + (size_t)y * stride) + xb * PV_PX_STEP;
+        for (int c = 0; c < bw; ++c) { pv_px p = rp + c * PV_PX_STEP;
+          rr[c] = iir_step_q16(rr[c], pv_r(p), k); gg[c] = iir_step_q16(gg[c], pv_g(p), k);
+          bb[c] = iir_step_q16(bb[c], pv_b(p), k); aa[c] = iir_step_q16(aa[c], pv_a(p), k);
+          pv_r(p) = rr[c]; pv_g(p) = gg[c]; pv_b(p) = bb[c]; pv_a(p) = aa[c]; } }
     }
   }
 
@@ -154,8 +156,12 @@ namespace picovector {
   static const int PV_BLUR_MIN_SPLIT = 64;
 #endif
 
+  // At four bits a channel the falloff is a staircase on multiples of 17, and a
+  // large radius shows about eight bands: the framebuffer's depth, not lost
+  // precision in the passes. Blurring at eight bits and quantising once gives the
+  // same ramp, so there is nothing to recover by widening the intermediates.
   void image_t::blur(float radius, float strength) {
-    // An indexed image is one byte a pixel; this writes four. See brush.cpp.
+    // An indexed image stores indices, not colours. See brush.cpp.
     if(_has_palette) return;
     radius *= strength;
     if (radius <= 0) return;

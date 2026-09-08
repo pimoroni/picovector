@@ -15,8 +15,8 @@ namespace picovector {
   static inline uint32_t chroma_at(image_t *target, int x, int y, int offset, int W, int H) {
     int xr = x - offset; if(xr < 0) xr = 0; else if(xr >= W) xr = W - 1;
     int xb = x + offset; if(xb < 0) xb = 0; else if(xb >= W) xb = W - 1;
-    uint8_t *pr = (uint8_t*)target->ptr(xr, y), *pg = (uint8_t*)target->ptr(x, y), *pb = (uint8_t*)target->ptr(xb, y);
-    return (uint32_t)(pr[0] | (pg[1] << 8) | (pb[2] << 16) | (pg[3] << 24)); // keeps pg's alpha
+    pv_px pr = (pv_px)target->ptr(xr, y), pg = (pv_px)target->ptr(x, y), pb = (pv_px)target->ptr(xb, y);
+    return (uint32_t)(pv_r(pr) | (pv_g(pg) << 8) | (pv_b(pb) << 16) | (pv_a(pg) << 24)); // keeps pg's alpha
   }
 
   void chromatic_brush_t::blend_spans(image_t *target, int i0, int i1, int step) {
@@ -28,8 +28,8 @@ namespace picovector {
       while(w > 0) {
         int n = w < CH ? w : CH;
         for(int k = 0; k < n; k++) tmp[k] = chroma_at(target, x + k, y, offset, W, H);
-        uint8_t *p = (uint8_t*)target->ptr(x, y);
-        for(int k = 0; k < n; k++) { *(uint32_t*)p = tmp[k]; p += 4; }
+        pv_px p = (pv_px)target->ptr(x, y);
+        for(int k = 0; k < n; k++) { pv_word(p) = tmp[k]; p += PV_PX_STEP; }
         x += n; w -= n;
       }
     }
@@ -45,15 +45,15 @@ namespace picovector {
       while(w > 0) {
         int n = w < CH ? w : CH;
         for(int k = 0; k < n; k++) if(mask[k]) tmp[k] = chroma_at(target, x + k, y, offset, W, H);
-        uint8_t *p = (uint8_t*)target->ptr(x, y);
+        pv_px p = (pv_px)target->ptr(x, y);
         // ease each channel toward the shifted sample by coverage so AA edges feather in
         for(int k = 0; k < n; k++) {
           int m = *mask++;
-          if(!m) { p += 4; continue; }
-          p[0] = (uint8_t)(p[0] + ((((int)(tmp[k] & 0xff)) - p[0]) * m >> 8));
-          p[1] = (uint8_t)(p[1] + ((((int)((tmp[k] >> 8) & 0xff)) - p[1]) * m >> 8));
-          p[2] = (uint8_t)(p[2] + ((((int)((tmp[k] >> 16) & 0xff)) - p[2]) * m >> 8));
-          p += 4; // alpha kept
+          if(!m) { p += PV_PX_STEP; continue; }
+          pv_r(p) = (uint8_t)(pv_r(p) + ((((int)(tmp[k] & 0xff)) - pv_r(p)) * m >> 8));
+          pv_g(p) = (uint8_t)(pv_g(p) + ((((int)((tmp[k] >> 8) & 0xff)) - pv_g(p)) * m >> 8));
+          pv_b(p) = (uint8_t)(pv_b(p) + ((((int)((tmp[k] >> 16) & 0xff)) - pv_b(p)) * m >> 8));
+          p += PV_PX_STEP; // alpha kept
         }
         x += n; w -= n;
       }

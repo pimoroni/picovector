@@ -63,13 +63,13 @@ namespace picovector {
     const pv_span *spans = _spans();
     for(int i = i0; i < i1; i += step) {
       int x = spans[i].x, y = spans[i].y;
-      uint8_t *p = (uint8_t*)target->ptr(x, y);
+      pv_px p = (pv_px)target->ptr(x, y);
       const uint8_t *row = bayer8 + (y & 7) * 8;
       for(int w = spans[i].w; w; w--) {
         int bias = ((row[x & 7] - 32) * spread) >> 6;
-        int r = clamp8(p[0] + bias), g = clamp8(p[1] + bias), b = clamp8(p[2] + bias);
-        *(uint32_t*)p = pal[cube[((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4)]];
-        p += 4; x++;
+        int r = clamp8(pv_r(p) + bias), g = clamp8(pv_g(p) + bias), b = clamp8(pv_b(p) + bias);
+        pv_word(p) = pal[cube[((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4)]];
+        p += PV_PX_STEP; x++;
       }
     }
   }
@@ -78,21 +78,21 @@ namespace picovector {
     const pv_masked_span *spans = _masked_spans();
     for(int i = i0; i < i1; i += step) {
       int x = spans[i].x, y = spans[i].y;
-      uint8_t *p = (uint8_t*)target->ptr(x, y);
+      pv_px p = (pv_px)target->ptr(x, y);
       const uint8_t *mask = spans[i].mask;
       const uint8_t *row = bayer8 + (y & 7) * 8;
       // ease each channel toward the palette colour by coverage so AA edges feather in
       for(int w = spans[i].w; w; w--) {
         int m = *mask++;
-        if(!m) { p += 4; x++; continue; }
+        if(!m) { p += PV_PX_STEP; x++; continue; }
         int bias = ((row[x & 7] - 32) * spread) >> 6;
-        int r = clamp8(p[0] + bias), g = clamp8(p[1] + bias), b = clamp8(p[2] + bias);
+        int r = clamp8(pv_r(p) + bias), g = clamp8(pv_g(p) + bias), b = clamp8(pv_b(p) + bias);
         uint32_t t = pal[cube[((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4)]];
         int nr = t & 0xff, ng = (t >> 8) & 0xff, nb = (t >> 16) & 0xff;
-        p[0] = (uint8_t)(p[0] + (((nr - p[0]) * m) >> 8));
-        p[1] = (uint8_t)(p[1] + (((ng - p[1]) * m) >> 8));
-        p[2] = (uint8_t)(p[2] + (((nb - p[2]) * m) >> 8));
-        p += 4; x++;
+        pv_r(p) = (uint8_t)(pv_r(p) + (((nr - pv_r(p)) * m) >> 8));
+        pv_g(p) = (uint8_t)(pv_g(p) + (((ng - pv_g(p)) * m) >> 8));
+        pv_b(p) = (uint8_t)(pv_b(p) + (((nb - pv_b(p)) * m) >> 8));
+        p += PV_PX_STEP; x++;
       }
     }
   }

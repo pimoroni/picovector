@@ -59,7 +59,7 @@ namespace picovector {
     _pixel_format = pixel_format;
     _has_palette = has_palette;
     _managed_buffer = true;
-    _bytes_per_pixel = this->_has_palette ? sizeof(uint8_t) : sizeof(uint32_t);
+    _bytes_per_pixel = this->_has_palette ? sizeof(uint8_t) : sizeof(pv_store_t);
     _row_stride = w * _bytes_per_pixel;
     _buffer = PV_MALLOC_NO_SCAN(this->buffer_size());
     alloc_palette(palette_entries);
@@ -89,7 +89,7 @@ namespace picovector {
     _has_palette = has_palette;
     _buffer = buffer;
     _managed_buffer = false;
-    _bytes_per_pixel = this->_has_palette ? sizeof(uint8_t) : sizeof(uint32_t);
+    _bytes_per_pixel = this->_has_palette ? sizeof(uint8_t) : sizeof(pv_store_t);
     _row_stride = w * _bytes_per_pixel;
     alloc_palette(palette_entries);
   }
@@ -232,7 +232,8 @@ namespace picovector {
   }
 
   void image_t::alpha(uint8_t alpha) {
-    // TODO: check if pixel format and palette mode supports alpha
+    // Folded into the source colour before the blend, so no storage format or
+    // palette mode constrains it.
     this->_alpha = alpha;
   }
 
@@ -241,7 +242,6 @@ namespace picovector {
   }
 
   void image_t::antialias(antialias_t antialias) {
-    // TODO: check if pixel format and palette mode supports alpha
     this->_antialias = antialias;
   }
 
@@ -270,7 +270,11 @@ namespace picovector {
   }
 
   pixel_format_t image_t::pixel_format() {
+#if PV_PIXEL_FORMAT == PV_PIXEL_RGBA4444
+    return RGBA4444;   // the compiled format; the stored field is RGBA8888 by default
+#else
     return this->_pixel_format;
+#endif
   }
 
   void image_t::pixel_format(pixel_format_t pixel_format) {

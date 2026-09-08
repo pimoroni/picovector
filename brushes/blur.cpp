@@ -24,10 +24,10 @@ namespace picovector {
 
     uint32_t sr = 0, sg = 0, sb = 0, sa = 0, n = 0;
     for(int yy = y0; yy <= y1; yy++) {
-      uint8_t *row = (uint8_t*)target->ptr(x0, yy);
+      pv_px row = (pv_px)target->ptr(x0, yy);
       for(int xx = x0; xx <= x1; xx++) {
-        sr += row[0]; sg += row[1]; sb += row[2]; sa += row[3];
-        row += 4;
+        sr += pv_r(row); sg += pv_g(row); sb += pv_b(row); sa += pv_a(row);
+        row += PV_PX_STEP;
         n++;
       }
     }
@@ -69,8 +69,8 @@ namespace picovector {
       if(c < 0 || c >= W) { csr[j] = csg[j] = csb[j] = csa[j] = 0; continue; }
       uint32_t sr = 0, sg = 0, sb = 0, sa = 0;
       for(int yy = y0; yy <= y1; yy++) {
-        uint8_t *px = (uint8_t*)target->ptr(c, yy);
-        sr += px[0]; sg += px[1]; sb += px[2]; sa += px[3];
+        pv_px px = (pv_px)target->ptr(c, yy);
+        sr += pv_r(px); sg += pv_g(px); sb += pv_b(px); sa += pv_a(px);
       }
       csr[j] = sr; csg[j] = sg; csb[j] = sb; csa[j] = sa;
     }
@@ -135,11 +135,11 @@ namespace picovector {
       }
       if(covered) {
         blur_row(target, x, y, n, r, W, H, tmp);
-        uint32_t *dst = (uint32_t*)target->ptr(x, y);
+        pv_store_t *dst = (pv_store_t*)target->ptr(x, y);
         if(mask) {
-          for(int i = 0; i < n; i++) if(mask[i]) dst[i] = blur_mask_lerp(dst[i], tmp[i], mask[i]);
+          for(int i = 0; i < n; i++) if(mask[i]) pv_store(&dst[i], blur_mask_lerp(pv_load(&dst[i]), tmp[i], mask[i]));
         } else {
-          for(int i = 0; i < n; i++) dst[i] = tmp[i];
+          for(int i = 0; i < n; i++) pv_store(&dst[i], tmp[i]);
         }
       }
       x += n;

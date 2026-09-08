@@ -101,7 +101,7 @@ namespace picovector {
     uint32_t alpha = target->alpha();
     for(int i = i0; i < i1; i += step) {
       int x = spans[i].x, y = spans[i].y, w = spans[i].w;
-      uint32_t *dst = (uint32_t*)target->ptr(x, y);
+      pv_store_t *dst = (pv_store_t*)target->ptr(x, y);
       rect_t b = p->src->bounds();
 
       fx16_vec2_t p1(x, y);
@@ -124,7 +124,7 @@ namespace picovector {
           int v = ((int(pt.y) >> 16) % th + th) % th;
           uint32_t c = p->src->get_unsafe(u, v);
           if(alpha != 255u) c = _premul_mul_alpha(c, alpha);
-          *dst = blend_over_premul(*dst, c);
+          pv_store(dst, blend_over_premul(pv_load(dst), c));
           dst++;
         }
       } else {
@@ -133,7 +133,7 @@ namespace picovector {
           pt.y += pd.y;
           uint32_t c = _sample_wrapped(p->src, pt.x, pt.y, tw, th, p->filter);
           if(alpha != 255u) c = _premul_mul_alpha(c, alpha);
-          *dst = blend_over_premul(*dst, c);
+          pv_store(dst, blend_over_premul(pv_load(dst), c));
           dst++;
         }
       }
@@ -147,7 +147,7 @@ namespace picovector {
     for(int i = i0; i < i1; i += step) {
       int x = spans[i].x, y = spans[i].y, w = spans[i].w;
       uint8_t *mask = (uint8_t*)spans[i].mask;
-      uint32_t *dst = (uint32_t*)target->ptr(x, y);
+      pv_store_t *dst = (pv_store_t*)target->ptr(x, y);
       rect_t b = p->src->bounds();
 
       fx16_vec2_t p1(x, y);
@@ -173,7 +173,7 @@ namespace picovector {
             int v = ((int(pt.y) >> 16) % th + th) % th;
             uint32_t c = p->src->get_unsafe(u, v);
             if(alpha != 255u) c = _premul_mul_alpha(c, alpha);
-            blend_masked_over_premul(dst, c, m);
+            pv_blend_masked(dst, c, m);
           }
           dst++;
         }
@@ -185,7 +185,7 @@ namespace picovector {
           if(m) {
             uint32_t c = _sample_wrapped(p->src, pt.x, pt.y, tw, th, p->filter);
             if(alpha != 255u) c = _premul_mul_alpha(c, alpha);
-            blend_masked_over_premul(dst, c, m);
+            pv_blend_masked(dst, c, m);
           }
           dst++;
         }

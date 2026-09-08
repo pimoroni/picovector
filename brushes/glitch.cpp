@@ -47,12 +47,12 @@ namespace picovector {
       row_params(t, amount, y, &line, &line_col, &shift, &ca);
       if(line) {
         int lr = line_col & 0xff, lg = (line_col >> 8) & 0xff, lb = (line_col >> 16) & 0xff;
-        uint8_t *p = (uint8_t*)target->ptr(x, y);
+        pv_px p = (pv_px)target->ptr(x, y);
         for(int k = 0; k < w; k++) {   // 50% opaque line over the content
-          p[0] = (uint8_t)(p[0] + (((lr - p[0]) * 128) >> 8));
-          p[1] = (uint8_t)(p[1] + (((lg - p[1]) * 128) >> 8));
-          p[2] = (uint8_t)(p[2] + (((lb - p[2]) * 128) >> 8));
-          p += 4;
+          pv_r(p) = (uint8_t)(pv_r(p) + (((lr - pv_r(p)) * 128) >> 8));
+          pv_g(p) = (uint8_t)(pv_g(p) + (((lg - pv_g(p)) * 128) >> 8));
+          pv_b(p) = (uint8_t)(pv_b(p) + (((lb - pv_b(p)) * 128) >> 8));
+          p += PV_PX_STEP;
         }
         continue;
       }
@@ -64,13 +64,13 @@ namespace picovector {
           if(xr < 0) xr = 0; else if(xr >= W) xr = W - 1;
           if(xg < 0) xg = 0; else if(xg >= W) xg = W - 1;
           if(xb < 0) xb = 0; else if(xb >= W) xb = W - 1;
-          uint8_t *pr = (uint8_t*)target->ptr(xr, y);
-          uint8_t *pg = (uint8_t*)target->ptr(xg, y);
-          uint8_t *pb = (uint8_t*)target->ptr(xb, y);
-          tmp[k] = (uint32_t)(pr[0] | (pg[1] << 8) | (pb[2] << 16) | (pg[3] << 24));
+          pv_px pr = (pv_px)target->ptr(xr, y);
+          pv_px pg = (pv_px)target->ptr(xg, y);
+          pv_px pb = (pv_px)target->ptr(xb, y);
+          tmp[k] = (uint32_t)(pv_r(pr) | (pv_g(pg) << 8) | (pv_b(pb) << 16) | (pv_a(pg) << 24));
         }
-        uint8_t *p = (uint8_t*)target->ptr(x, y);
-        for(int k = 0; k < n; k++) { *(uint32_t*)p = tmp[k]; p += 4; }
+        pv_px p = (pv_px)target->ptr(x, y);
+        for(int k = 0; k < n; k++) { pv_word(p) = tmp[k]; p += PV_PX_STEP; }
         x += n; w -= n;
       }
     }
@@ -84,29 +84,29 @@ namespace picovector {
       const uint8_t *mask = spans[i].mask;
       bool line; uint32_t line_col = 0; int shift = 0, ca = 0;
       row_params(t, amount, y, &line, &line_col, &shift, &ca);
-      uint8_t *p = (uint8_t*)target->ptr(x, y);
+      pv_px p = (pv_px)target->ptr(x, y);
       int lr = line_col & 0xff, lg = (line_col >> 8) & 0xff, lb = (line_col >> 16) & 0xff;
       // ease each channel toward the glitched value by coverage so AA edges feather in
       for(int w = spans[i].w; w; w--) {
         int m = *mask++, nr, ng, nb;
-        if(!m) { p += 4; x++; continue; }
+        if(!m) { p += PV_PX_STEP; x++; continue; }
         if(line) {   // 50% opaque line, then feathered by coverage
-          nr = p[0] + (((lr - p[0]) * 128) >> 8);
-          ng = p[1] + (((lg - p[1]) * 128) >> 8);
-          nb = p[2] + (((lb - p[2]) * 128) >> 8);
+          nr = pv_r(p) + (((lr - pv_r(p)) * 128) >> 8);
+          ng = pv_g(p) + (((lg - pv_g(p)) * 128) >> 8);
+          nb = pv_b(p) + (((lb - pv_b(p)) * 128) >> 8);
         } else {
           int sx = x + shift, xr = sx - ca, xb = sx + ca;
           if(xr < 0) xr = 0; else if(xr >= W) xr = W - 1;
           if(xb < 0) xb = 0; else if(xb >= W) xb = W - 1;
           int xg = sx < 0 ? 0 : (sx >= W ? W - 1 : sx);
-          nr = ((uint8_t*)target->ptr(xr, y))[0];
-          ng = ((uint8_t*)target->ptr(xg, y))[1];
-          nb = ((uint8_t*)target->ptr(xb, y))[2];
+          nr = pv_r((pv_px)target->ptr(xr, y));
+          ng = pv_g((pv_px)target->ptr(xg, y));
+          nb = pv_b((pv_px)target->ptr(xb, y));
         }
-        p[0] = (uint8_t)(p[0] + (((nr - p[0]) * m) >> 8));
-        p[1] = (uint8_t)(p[1] + (((ng - p[1]) * m) >> 8));
-        p[2] = (uint8_t)(p[2] + (((nb - p[2]) * m) >> 8));
-        p += 4; x++;
+        pv_r(p) = (uint8_t)(pv_r(p) + (((nr - pv_r(p)) * m) >> 8));
+        pv_g(p) = (uint8_t)(pv_g(p) + (((ng - pv_g(p)) * m) >> 8));
+        pv_b(p) = (uint8_t)(pv_b(p) + (((nb - pv_b(p)) * m) >> 8));
+        p += PV_PX_STEP; x++;
       }
     }
   }

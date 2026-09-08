@@ -12,8 +12,9 @@ namespace picovector {
   // the pixels; the halo is low-frequency so the downsample/upsample is
   // invisible. `strength` scales the intensity. blur() is the separable IIR pass.
 
+  // The halo is a blur, so at four bits a channel it bands like one: see blur().
   void image_t::bloom(int threshold, int intensity, float radius, float strength) {
-    // An indexed image is one byte a pixel; this writes four. See brush.cpp.
+    // An indexed image stores indices, not colours. See brush.cpp.
     if(_has_palette) return;
     intensity = (int)(intensity * strength);
     if(intensity <= 0) return;
@@ -25,13 +26,13 @@ namespace picovector {
 
     // bright pass at half res: one source texel per 2x2 block, thresholded
     for(int hy = 0; hy < hh; hy++) {
-      uint8_t *srow = (uint8_t*)ptr(0, hy * 2);
-      uint8_t *d = (uint8_t*)tmp->ptr(0, hy);
+      pv_px srow = (pv_px)ptr(0, hy * 2);
+      pv_px d = (pv_px)tmp->ptr(0, hy);
       for(int hx = 0; hx < hw; hx++) {
-        uint8_t *s = srow + (hx * 2) * 4;
-        if(luminance(s) >= threshold) { d[0] = s[0]; d[1] = s[1]; d[2] = s[2]; d[3] = 255; }
-        else { *(uint32_t*)d = 0; }
-        d += 4;
+        pv_px s = srow + (hx * 2) * PV_PX_STEP;
+        if(luminance(s) >= threshold) { pv_r(d) = pv_r(s); pv_g(d) = pv_g(s); pv_b(d) = pv_b(s); pv_a(d) = 255; }
+        else { pv_word(d) = 0; }
+        d += PV_PX_STEP;
       }
     }
 
@@ -45,16 +46,16 @@ namespace picovector {
 
     for(int y = fy0; y < fy1; y++) {
       int hy = y >> 1; if(hy >= hh) hy = hh - 1;
-      uint8_t *s = (uint8_t*)ptr(fx0, y);
-      uint8_t *hrow = (uint8_t*)tmp->ptr(0, hy);
+      pv_px s = (pv_px)ptr(fx0, y);
+      pv_px hrow = (pv_px)tmp->ptr(0, hy);
       for(int x = fx0; x < fx1; x++) {
         int hx = x >> 1; if(hx >= hw) hx = hw - 1;
-        uint8_t *h = hrow + hx * 4;
-        int r = s[0] + ((h[0] * intensity) >> 8); if(r > 255) r = 255;
-        int g = s[1] + ((h[1] * intensity) >> 8); if(g > 255) g = 255;
-        int b = s[2] + ((h[2] * intensity) >> 8); if(b > 255) b = 255;
-        s[0] = (uint8_t)r; s[1] = (uint8_t)g; s[2] = (uint8_t)b; // leave alpha
-        s += 4;
+        pv_px h = hrow + hx * PV_PX_STEP;
+        int r = pv_r(s) + ((pv_r(h) * intensity) >> 8); if(r > 255) r = 255;
+        int g = pv_g(s) + ((pv_g(h) * intensity) >> 8); if(g > 255) g = 255;
+        int b = pv_b(s) + ((pv_b(h) * intensity) >> 8); if(b > 255) b = 255;
+        pv_r(s) = (uint8_t)r; pv_g(s) = (uint8_t)g; pv_b(s) = (uint8_t)b; // leave alpha
+        s += PV_PX_STEP;
       }
     }
     free_scratch_image(tmp);

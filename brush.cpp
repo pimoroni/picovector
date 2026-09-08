@@ -36,9 +36,9 @@ namespace picovector {
   // core1 is available and the batch is large enough, the span list is split
   // across both cores (parity by span index -> disjoint framebuffer rows).
   void _blend_spans(image_t *target, brush_t *brush) {
-    // Nothing can write to an indexed image: every brush and filter stores a
-    // four-byte pixel, which would run four times past the end of each row of
-    // a one-byte-per-pixel buffer. It is a source, not a target.
+    // Nothing can write to an indexed image: a stored index is not a colour, so
+    // compositing onto it would need a nearest-palette resolve per pixel, and a
+    // brush storing a whole pixel runs past the end of each row. Source, not target.
     if(target->has_palette()) return;
     if(!brush) return;
     int n = _num_spans();
@@ -54,9 +54,9 @@ namespace picovector {
   }
 
   void _blend_masked_spans(image_t *target, brush_t *brush) {
-    // Nothing can write to an indexed image: every brush and filter stores a
-    // four-byte pixel, which would run four times past the end of each row of
-    // a one-byte-per-pixel buffer. It is a source, not a target.
+    // Nothing can write to an indexed image: a stored index is not a colour, so
+    // compositing onto it would need a nearest-palette resolve per pixel, and a
+    // brush storing a whole pixel runs past the end of each row. Source, not target.
     if(target->has_palette()) return;
     if(!brush) return;
     int n = _num_spans();

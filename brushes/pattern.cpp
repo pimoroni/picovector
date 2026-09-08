@@ -61,7 +61,7 @@ namespace picovector {
     pixel_t c2 = fold_target_alpha(target, p->c2);
     for(int i = i0; i < i1; i += step) {
       int x = spans[i].x, y = spans[i].y, w = spans[i].w;
-      uint32_t *dst = (uint32_t*)target->ptr(x, y);
+      pv_store_t *dst = (pv_store_t*)target->ptr(x, y);
 
       while(w--) {
         uint8_t u = 7 - (x & 0b111);
@@ -70,7 +70,7 @@ namespace picovector {
 
         uint32_t src = bit & (1 << u) ? c1 : c2;
 
-        *dst = blend_over_premul(*dst, src);
+        pv_store(dst, blend_over_premul(pv_load(dst), src));
         dst++;
         x++;
       }
@@ -85,7 +85,7 @@ namespace picovector {
     for(int i = i0; i < i1; i += step) {
       int x = spans[i].x, y = spans[i].y, w = spans[i].w;
       uint8_t *mask = (uint8_t*)spans[i].mask;
-      uint32_t *dst = (uint32_t*)target->ptr(x, y);
+      pv_store_t *dst = (pv_store_t*)target->ptr(x, y);
 
       while(w--) {
         uint32_t m = *mask++;
@@ -94,7 +94,7 @@ namespace picovector {
           uint8_t v = y & 0b111;
           uint8_t bit = p->p[v];
 
-          blend_masked_over_premul(dst, bit & (1 << u) ? c1 : c2, m);
+          pv_blend_masked(dst, bit & (1 << u) ? c1 : c2, m);
         }
         dst++;
         x++;

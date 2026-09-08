@@ -11,11 +11,11 @@ namespace picovector {
   void monochrome_brush_t::blend_spans(image_t *target, int i0, int i1, int step) {
     const pv_span *spans = _spans();
     for(int i = i0; i < i1; i += step) {
-      uint8_t *p = (uint8_t*)target->ptr(spans[i].x, spans[i].y);
+      pv_px p = (pv_px)target->ptr(spans[i].x, spans[i].y);
       for(int w = spans[i].w; w; w--) {
         int l = luminance(p);
-        p[0] = p[1] = p[2] = (uint8_t)l; // leave alpha
-        p += 4;
+        pv_r(p) = pv_g(p) = pv_b(p) = (uint8_t)l; // leave alpha
+        p += PV_PX_STEP;
       }
     }
   }
@@ -23,17 +23,17 @@ namespace picovector {
   void monochrome_brush_t::blend_masked_spans(image_t *target, int i0, int i1, int step) {
     const pv_masked_span *spans = _masked_spans();
     for(int i = i0; i < i1; i += step) {
-      uint8_t *p = (uint8_t*)target->ptr(spans[i].x, spans[i].y);
+      pv_px p = (pv_px)target->ptr(spans[i].x, spans[i].y);
       const uint8_t *mask = spans[i].mask;
       // ease each channel toward the grey by coverage so AA edges feather in
       for(int w = spans[i].w; w; w--) {
         int m = *mask++;
-        if(!m) { p += 4; continue; }
+        if(!m) { p += PV_PX_STEP; continue; }
         int l = luminance(p);
-        p[0] = (uint8_t)(p[0] + (((l - p[0]) * m) >> 8));
-        p[1] = (uint8_t)(p[1] + (((l - p[1]) * m) >> 8));
-        p[2] = (uint8_t)(p[2] + (((l - p[2]) * m) >> 8));
-        p += 4;
+        pv_r(p) = (uint8_t)(pv_r(p) + (((l - pv_r(p)) * m) >> 8));
+        pv_g(p) = (uint8_t)(pv_g(p) + (((l - pv_g(p)) * m) >> 8));
+        pv_b(p) = (uint8_t)(pv_b(p) + (((l - pv_b(p)) * m) >> 8));
+        p += PV_PX_STEP;
       }
     }
   }

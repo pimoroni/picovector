@@ -22,14 +22,14 @@ namespace picovector {
     uint32_t inv = 255u - alpha;
     for(int i = i0; i < i1; i += step) {
       int x = spans[i].x, y = spans[i].y, w = spans[i].w;
-      uint32_t *dst = (uint32_t *)target->ptr(x, y);
-      if(alpha == 255u) { while(w--) { *dst++ = s; } continue; }
+      pv_store_t *dst = (pv_store_t *)target->ptr(x, y);
+      if(alpha == 255u) { pv_store_t stored = pv_pack(s); while(w--) { *dst++ = stored; } continue; }
       while(w--) {
-        uint32_t D = *dst;
+        uint32_t D = pv_load(dst);
         uint32_t Drb = D & 0x00ff00ffu, Dga = (D >> 8) & 0x00ff00ffu;
         uint32_t rb = ((Drb * inv + Srb * alpha + 0x00800080u) >> 8) & 0x00ff00ffu;
         uint32_t ga = ((Dga * inv + Sga * alpha + 0x00800080u) >> 8) & 0x00ff00ffu;
-        *dst++ = rb | (ga << 8);
+        pv_store(dst, rb | (ga << 8)); dst++;
       }
     }
   }
@@ -48,20 +48,20 @@ namespace picovector {
     for(int i = i0; i < i1; i += step) {
       int x = spans[i].x, y = spans[i].y, w = spans[i].w;
       uint8_t *mask = (uint8_t*)spans[i].mask;
-      uint32_t *dst = (uint32_t *)target->ptr(x, y);
+      pv_store_t *dst = (pv_store_t *)target->ptr(x, y);
       uint32_t S = ((transparent_brush_t *)this)->tint;
       uint32_t Srb = S & 0x00ff00ffu, Sga = (S >> 8) & 0x00ff00ffu;
       while(w--) {
         uint32_t cov = *mask++;
         if(alpha != 255u) cov = (cov * alpha + 127u) / 255u;
         if(cov == 0u)   { dst++; continue; }     // outside the shape: leave dst exact
-        if(cov == 255u) { *dst++ = S; continue; } // fully inside: becomes the tint exact
-        uint32_t D = *dst;
+        if(cov == 255u) { pv_store(dst, S); dst++; continue; } // fully inside: becomes the tint exact
+        uint32_t D = pv_load(dst);
         uint32_t inv = 255u - cov;
         uint32_t Drb = D & 0x00ff00ffu, Dga = (D >> 8) & 0x00ff00ffu;
         uint32_t rb = ((Drb * inv + Srb * cov + 0x00800080u) >> 8) & 0x00ff00ffu;
         uint32_t ga = ((Dga * inv + Sga * cov + 0x00800080u) >> 8) & 0x00ff00ffu;
-        *dst++ = rb | (ga << 8);
+        pv_store(dst, rb | (ga << 8)); dst++;
       }
     }
   }

@@ -14,17 +14,19 @@ namespace picovector {
   // in Q8 sub-pixel precision so it scales smoothly as strength fades (no
   // integer-step snapping). `bilinear` interpolates the displaced sample for
   // fully sub-pixel smoothness; the default (nearest) rounds to the closest
-  // texel, which is cheaper. Samples the original from a scratch copy.
+  // texel, which is cheaper. Samples the original from a scratch copy, which is a
+  // whole second image: larger than the working buffer, it is a heap allocation
+  // the size of the framebuffer.
 
   void image_t::wave(int horizontal, int vertical, float strength, bool bilinear) {
-    // An indexed image is one byte a pixel; this writes four. See brush.cpp.
+    // An indexed image stores indices, not colours. See brush.cpp.
     if(_has_palette) return;
     rect_t bd = bounds(); int W = (int)bd.w, H = (int)bd.h;
     if(W < 1 || H < 1) return;
     image_t *src = make_scratch_image(W, H);
     if(!src) return;
     for(int y = 0; y < H; y++)
-      memcpy(src->ptr(0, y), ptr(0, y), (size_t)W * 4);
+      memcpy(src->ptr(0, y), ptr(0, y), (size_t)W * sizeof(pv_store_t));
 
     int slut[256];   // sine, Q8 (-256..256)
     for(int i = 0; i < 256; i++) slut[i] = (int)(sinf(i * 6.2831853f / 256.0f) * 256.0f);
@@ -40,7 +42,7 @@ namespace picovector {
 
     for(int y = fy0; y < fy1; y++) {
       int dxrow = ampH ? (ampH * slut[(y * freq + phase) & 0xff]) >> 8 : 0;   // Q8 px
-      uint8_t *out = (uint8_t*)ptr(fx0, y);
+      pv_px out = (pv_px)ptr(fx0, y);
       for(int x = fx0; x < fx1; x++) {
         int dy = ampV ? (ampV * slut[(x * freq + phase + 64) & 0xff]) >> 8 : 0;  // Q8 px
         int sxq = (x << 8) + dxrow, syq = (y << 8) + dy;
@@ -51,19 +53,19 @@ namespace picovector {
           if(x1 < 0) x1 = 0; else if(x1 >= W) x1 = W - 1;
           if(y0 < 0) y0 = 0; else if(y0 >= H) y0 = H - 1;
           if(y1 < 0) y1 = 0; else if(y1 >= H) y1 = H - 1;
-          uint8_t *p00 = (uint8_t*)src->ptr(x0, y0), *p10 = (uint8_t*)src->ptr(x1, y0);
-          uint8_t *p01 = (uint8_t*)src->ptr(x0, y1), *p11 = (uint8_t*)src->ptr(x1, y1);
+          pv_px p00 = (pv_px)src->ptr(x0, y0), p10 = (pv_px)src->ptr(x1, y0);
+          pv_px p01 = (pv_px)src->ptr(x0, y1), p11 = (pv_px)src->ptr(x1, y1);
           for(int c = 0; c < 3; c++) {
-            int top = p00[c] + (((p10[c] - p00[c]) * fx) >> 8);
-            int bot = p01[c] + (((p11[c] - p01[c]) * fx) >> 8);
-            out[c] = (uint8_t)(top + (((bot - top) * fy) >> 8));
+            int top = pv_ch(p00, c) + (((pv_ch(p10, c) - pv_ch(p00, c)) * fx) >> 8);
+            int bot = pv_ch(p01, c) + (((pv_ch(p11, c) - pv_ch(p01, c)) * fx) >> 8);
+            pv_ch(out, c) = (uint8_t)(top + (((bot - top) * fy) >> 8));
           }
         } else {
           int sx = (sxq + 128) >> 8; if(sx < 0) sx = 0; else if(sx >= W) sx = W - 1;   // round to nearest
           int sy = (syq + 128) >> 8; if(sy < 0) sy = 0; else if(sy >= H) sy = H - 1;
-          *(uint32_t*)out = *(uint32_t*)src->ptr(sx, sy);
+          pv_word(out) = pv_load((pv_store_t*)src->ptr(sx, sy));
         }
-        out += 4; // leave alpha
+        out += PV_PX_STEP; // leave alpha
       }
     }
     free_scratch_image(src);

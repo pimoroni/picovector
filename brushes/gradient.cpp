@@ -118,7 +118,7 @@ namespace picovector {
   // --- linear ---------------------------------------------------------------
 
   static void gradient_linear_span(image_t *target, gradient_brush_t *p, const pixel_t *lut, int x, int y, int w, const uint8_t *mask) {
-    uint32_t *dst = (uint32_t*)target->ptr(x, y);
+    pv_store_t *dst = (pv_store_t*)target->ptr(x, y);
 
     // pixel -> gradient space, plus the per-pixel step for a one-pixel screen step
     vec2_t pt = vec2_t((float)x, (float)y).transform(&p->inverse_transform);
@@ -138,7 +138,7 @@ namespace picovector {
       if(m) {
         int idx = (int)(t * 255.0f + 0.5f);
         if(idx < 0) idx = 0; else if(idx > 255) idx = 255;
-        blend_masked_over_premul(dst, lut[idx], m);
+        pv_blend_masked(dst, lut[idx], m);
       }
       dst++;
       t += dt;
@@ -148,7 +148,7 @@ namespace picovector {
   // --- radial ---------------------------------------------------------------
 
   static void gradient_radial_span(image_t *target, gradient_brush_t *p, const pixel_t *lut, int x, int y, int w, const uint8_t *mask) {
-    uint32_t *dst = (uint32_t*)target->ptr(x, y);
+    pv_store_t *dst = (pv_store_t*)target->ptr(x, y);
 
     vec2_t pt = vec2_t((float)x, (float)y).transform(&p->inverse_transform);
     float dpx = p->inverse_transform.v00;
@@ -168,7 +168,7 @@ namespace picovector {
         float t = sqrtf(ex * ex + ey * ey) * inv_r;
         int idx = (int)(t * 255.0f + 0.5f);
         if(idx < 0) idx = 0; else if(idx > 255) idx = 255;
-        blend_masked_over_premul(dst, lut[idx], m);
+        pv_blend_masked(dst, lut[idx], m);
       }
       dst++;
       px += dpx;
@@ -215,7 +215,7 @@ namespace picovector {
   // float->int convert, the register move and its hazard, and the two-sided
   // clamp that the other two samplers pay on every pixel.
   static void gradient_conical_span(image_t *target, gradient_brush_t *p, const pixel_t *lut, int x, int y, int w, const uint8_t *mask) {
-    uint32_t *dst = (uint32_t*)target->ptr(x, y);
+    pv_store_t *dst = (pv_store_t*)target->ptr(x, y);
 
     vec2_t pt = vec2_t((float)x, (float)y).transform(&p->inverse_transform);
     float dpx = p->inverse_transform.v00;
@@ -261,7 +261,7 @@ namespace picovector {
 
         // Q12 turns to a table index. The wrap is free and it is the right
         // answer here: the domain is a circle, so index 256 is index 0.
-        blend_masked_over_premul(dst, lut[((aq + 8u) >> 4) & 255u], m);
+        pv_blend_masked(dst, lut[((aq + 8u) >> 4) & 255u], m);
       }
       dst++;
       uq += duq;

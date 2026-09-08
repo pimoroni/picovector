@@ -88,8 +88,8 @@ namespace picovector {
 #endif
 
   void image_t::blit(image_t *target, const vec2_t p) {
-    // An indexed image is one byte a pixel and every blit writes four; it can be
-    // the source of one but never the destination. See brush.cpp.
+    // An indexed image stores indices, not colours, and is narrower than a blit
+    // writes; it can be the source of one but never the destination. See brush.cpp.
     if(target->has_palette()) return;
     rect_t sr = _bounds;
     sr = sr.floor();
@@ -133,8 +133,8 @@ namespace picovector {
 
   // blit from source rectangle into target rectangle
   void image_t::blit(image_t *target, rect_t sr, rect_t tr, filter_t filter) {
-    // An indexed image is one byte a pixel and every blit writes four; it can be
-    // the source of one but never the destination. See brush.cpp.
+    // An indexed image stores indices, not colours, and is narrower than a blit
+    // writes; it can be the source of one but never the destination. See brush.cpp.
     if(target->has_palette()) return;
     bool flip_h = tr.w < 0;
     bool flip_v = tr.h < 0;
@@ -209,8 +209,8 @@ namespace picovector {
     vertical (stepping one row down a column). Shared by blit_hspan/blit_vspan.
   */
   void image_t::blit_span(image_t *target, vec2_t p, float len, vec2_t uv0, vec2_t uv1, filter_t filter, bool vertical) {
-    // An indexed image is one byte a pixel and every blit writes four; it can be
-    // the source of one but never the destination. See brush.cpp.
+    // An indexed image stores indices, not colours, and is narrower than a blit
+    // writes; it can be the source of one but never the destination. See brush.cpp.
     if(target->has_palette()) return;
     if(len <= 0.0f) return; // degenerate span (also guards the /len below)
     rect_t b = target->_clip;
@@ -273,9 +273,9 @@ namespace picovector {
     uint32_t th = int(this->_bounds.h - 1);
 
     // one pixel across a row, or one row (stride) down a column
-    int dst_step = vertical ? (target->_row_stride >> 2) : 1;
+    int dst_step = vertical ? (int)(target->_row_stride / sizeof(pv_store_t)) : 1;
 
-    uint32_t *dst = (uint32_t *)target->ptr(p.x, p.y);
+    pv_store_t *dst = (pv_store_t *)target->ptr(p.x, p.y);
 
     // Palette images always resolve NEAREST (indices can't be interpolated).
     if(filter == NEAREST || this->_has_palette) {
@@ -292,7 +292,7 @@ namespace picovector {
           int ix = (int)(((uint64_t)(uint32_t)u * tw) >> 32);
           int iy = (int)(((uint64_t)(uint32_t)v * th) >> 32);
           uint32_t col = _premul_mul_alpha(this->get_unsafe(ix, iy), ga);
-          *dst = blend_over_premul(*dst, col);
+          pv_store(dst, blend_over_premul(pv_load(dst), col));
           dst += dst_step;
         }
       } else {
@@ -300,7 +300,7 @@ namespace picovector {
           u += ud; v += vd;
           int ix = (int)(((uint64_t)(uint32_t)u * tw) >> 32);
           int iy = (int)(((uint64_t)(uint32_t)v * th) >> 32);
-          *dst = blend_over_premul(*dst, this->get_unsafe(ix, iy));
+          pv_store(dst, blend_over_premul(pv_load(dst), this->get_unsafe(ix, iy)));
           dst += dst_step;
         }
       }
@@ -316,7 +316,7 @@ namespace picovector {
         fx16_t sx = (fx16_t)(((uint64_t)(uint32_t)u * tw) >> 16);
         fx16_t sy = (fx16_t)(((uint64_t)(uint32_t)v * th) >> 16);
         uint32_t col = _premul_mul_alpha(this->sample(sx, sy, filter), ga);
-        *dst = blend_over_premul(*dst, col);
+        pv_store(dst, blend_over_premul(pv_load(dst), col));
         dst += dst_step;
       }
     } else {
@@ -324,7 +324,7 @@ namespace picovector {
         u += ud; v += vd;
         fx16_t sx = (fx16_t)(((uint64_t)(uint32_t)u * tw) >> 16);
         fx16_t sy = (fx16_t)(((uint64_t)(uint32_t)v * th) >> 16);
-        *dst = blend_over_premul(*dst, this->sample(sx, sy, filter));
+        pv_store(dst, blend_over_premul(pv_load(dst), this->sample(sx, sy, filter)));
         dst += dst_step;
       }
     }
@@ -397,11 +397,11 @@ namespace picovector {
     for(int j = 0; j < 4; j++) {
       int y = iy - 1 + j;
       if(y < 0) y = 0; else if(y >= h) y = h - 1;
-      const uint32_t *row = (const uint32_t *)ptr(0, y);
+      const pv_store_t *row = (const pv_store_t *)ptr(0, y);
 
       int hr = 0, hg = 0, hb = 0, ha = 0;  // horizontal sums, Q12
       for(int i = 0; i < 4; i++) {
-        uint32_t c = row[xs[i]];
+        uint32_t c = pv_load(&row[xs[i]]);
         int wi = wx[i];
         hr += wi * (int)(c & 0xff);
         hg += wi * (int)((c >> 8) & 0xff);

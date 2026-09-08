@@ -305,7 +305,7 @@ namespace picovector {
       // per-pixel call; ptr() and _palette[] are already inline.
       inline uint32_t get_unsafe(int x, int y) const {
         if(this->_has_palette) return this->_palette[*((uint8_t *)ptr(x, y))];
-        return *((uint32_t *)ptr(x, y));
+        return pv_load((const pv_store_t *)ptr(x, y));
       }
 
       // sample a (premultiplied) texel at fixed-point 16.16 source coordinates
@@ -370,7 +370,7 @@ namespace picovector {
     if(w < 1 || h < 1) return nullptr;
     void *mem = PV_MALLOC(sizeof(image_t));
     if(!mem) return nullptr;
-    if((size_t)w * h * sizeof(uint32_t) <= working_buffer_size)
+    if((size_t)w * h * sizeof(pv_store_t) <= working_buffer_size)
       return new (mem) image_t((void*)PicoVector_working_buffer, w, h);
     return new (mem) image_t(w, h);
   }

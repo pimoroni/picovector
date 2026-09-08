@@ -234,7 +234,7 @@ namespace picovector {
   }
 
   static void fractal_span(image_t *target, fractal_brush_t *p, int x, int y, int w, const uint8_t *mask) {
-    uint32_t *dst = (uint32_t*)target->ptr(x, y);
+    pv_store_t *dst = (pv_store_t*)target->ptr(x, y);
     const pixel_t *lut = p->lut;
     const uint8_t *perm = p->perm;
     const int octaves = p->octaves;
@@ -290,7 +290,7 @@ namespace picovector {
         // Composited, not stored, so transparent stops overlay existing content.
         pixel_t src = lut[acc >> 8];
         if(alpha != 255u) src = _premul_mul_alpha(src, alpha);
-        *dst = blend_over_premul(*dst, m == 255u ? src : _premul_mul_alpha(src, m));
+        pv_store(dst, blend_over_premul(pv_load(dst), m == 255u ? src : _premul_mul_alpha(src, m)));
       }
       dst++;
       for(int o = 0; o < octaves; o++) { pos_x[o] += step_x[o]; pos_y[o] += step_y[o]; }

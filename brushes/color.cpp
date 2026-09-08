@@ -21,13 +21,13 @@ namespace picovector {
       // opaque: a straight copy - hoists blend_over_premul's a==255 early-out out
       // of the pixel loop. This is the clear()/solid-fill fast path.
       for(int i = i0; i < i1; i += step) {
-        uint32_t *dst = (uint32_t*)target->ptr(spans[i].x, spans[i].y);
-        for(int w = spans[i].w; w; w--) *dst++ = src;
+        pv_store_t *dst = (pv_store_t*)target->ptr(spans[i].x, spans[i].y);
+        pv_fill(dst, src, spans[i].w);
       }
     } else {
       for(int i = i0; i < i1; i += step) {
-        uint32_t *dst = (uint32_t*)target->ptr(spans[i].x, spans[i].y);
-        for(int w = spans[i].w; w; w--) { *dst = blend_over_premul(*dst, src); dst++; }
+        pv_store_t *dst = (pv_store_t*)target->ptr(spans[i].x, spans[i].y);
+        for(int w = spans[i].w; w; w--) { pv_store(dst, blend_over_premul(pv_load(dst), src)); dst++; }
       }
     }
   }
@@ -42,20 +42,20 @@ namespace picovector {
     const pv_masked_span *spans = _masked_spans();
     bool opaque = _a(src) == 255;
     for(int i = i0; i < i1; i += step) {
-      uint32_t *dst = (uint32_t*)target->ptr(spans[i].x, spans[i].y);
+      pv_store_t *dst = (pv_store_t*)target->ptr(spans[i].x, spans[i].y);
       const uint8_t *mask = spans[i].mask;
       if(opaque) {
         for(int w = spans[i].w; w; w--, dst++, mask++) {
           uint32_t m = *mask;
           if(m == 0u) continue;
-          if(m == 255u) { *dst = src; continue; }
-          *dst = blend_over_premul(*dst, _premul_mul_alpha(src, m));
+          if(m == 255u) { pv_store(dst, src); continue; }
+          pv_store(dst, blend_over_premul(pv_load(dst), _premul_mul_alpha(src, m)));
         }
       } else {
         for(int w = spans[i].w; w; w--, dst++, mask++) {
           uint32_t m = *mask;
           if(m == 0u) continue;
-          *dst = blend_over_premul(*dst, _premul_mul_alpha(src, m));
+          pv_store(dst, blend_over_premul(pv_load(dst), _premul_mul_alpha(src, m)));
         }
       }
     }

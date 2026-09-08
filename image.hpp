@@ -8,6 +8,7 @@
 #include "config.hpp"
 #include "types.hpp"
 #include "blend.hpp"
+#include "pixel_store.hpp"
 #include "picovector_working_buffer.h"   // make_scratch_image()
 
 using std::vector;

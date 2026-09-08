@@ -72,6 +72,21 @@
 #define PV_DUAL_CORE_BLEND_MIN_PX 64
 #endif
 
+// ── framebuffer pixel format ────────────────────────────────────────────────
+// How wide a stored pixel is, for the whole build. RGBA4444 halves what a
+// framebuffer costs, which is what makes a 320x240 screen fit alongside a
+// MicroPython heap, and matches a 12-bit panel exactly. It shows sixteen levels
+// a channel, so ramps band where RGBA8888's do not. Blending is at eight bits
+// either way; only the store quantises. See pixel_store.hpp.
+#define PV_PIXEL_RGBA8888 1
+#define PV_PIXEL_RGBA4444 2
+#ifndef PV_PIXEL_FORMAT
+#define PV_PIXEL_FORMAT PV_PIXEL_RGBA8888
+#endif
+#if PV_PIXEL_FORMAT != PV_PIXEL_RGBA8888 && PV_PIXEL_FORMAT != PV_PIXEL_RGBA4444
+#error "PV_PIXEL_FORMAT must be PV_PIXEL_RGBA8888 or PV_PIXEL_RGBA4444"
+#endif
+
 // ── curve tessellation ──────────────────────────────────────────────────────
 // The curved primitives (circle, ellipse, squircle, arc, pie) are polygons, and
 // the side count is chosen to keep each side near PV_CURVE_CHORD_PX pixels of

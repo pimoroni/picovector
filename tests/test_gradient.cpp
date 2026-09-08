@@ -291,10 +291,10 @@ void test_gradient() {
     int right = (int)_r(c.at(58, 32));
     int down  = (int)_r(c.at(32, 58));
     int left  = (int)_r(c.at(6, 32));
-    CHECK_MSG(up < 8, "the sweep does not start at its start direction");
-    CHECK_MSG(right > 55 && right < 72, "a quarter turn clockwise is not a quarter of the ramp");
-    CHECK_MSG(down > 120 && down < 136, "a half turn is not half of the ramp");
-    CHECK_MSG(left > 185 && left < 201, "three quarters of a turn is not three quarters of the ramp");
+    CHECK_MSG(up < 8 + pvtest::quant_tol, "the sweep does not start at its start direction");
+    CHECK_MSG(right > 55 - pvtest::quant_tol && right < 72 + pvtest::quant_tol, "a quarter turn clockwise is not a quarter of the ramp");
+    CHECK_MSG(down > 120 - pvtest::quant_tol && down < 136 + pvtest::quant_tol, "a half turn is not half of the ramp");
+    CHECK_MSG(left > 185 - pvtest::quant_tol && left < 201 + pvtest::quant_tol, "three quarters of a turn is not three quarters of the ramp");
     CHECK(up < right && right < down && down < left);
   }
 

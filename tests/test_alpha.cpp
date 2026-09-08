@@ -91,9 +91,9 @@ void test_alpha() {
     color_brush_t pen(rgb_color_t(255, 255, 255, 255));
 
     CHECK(solid(c, &pen, 255) == WHITE);
-    CHECK(solid(c, &pen, 128) == HALF_WHITE);
+    CHECK(solid(c, &pen, 128) == quant(HALF_WHITE));
     CHECK(solid(c, &pen, 0) == BLACK);
-    CHECK(masked(c, &pen, 128) == HALF_WHITE);
+    CHECK(masked(c, &pen, 128) == quant(HALF_WHITE));
     check_brush("color", &pen);
   }
 
@@ -104,20 +104,20 @@ void test_alpha() {
     check_brush("pattern", &pat);
 
     canvas_t c(16, 16);
-    CHECK(solid(c, &pat, 128) == HALF_WHITE);   // both colours white: same answer
+    CHECK(solid(c, &pat, 128) == quant(HALF_WHITE));   // both colours white: same answer
   }
 
   printf("alpha: a texture brush is weighted, and the texture's own alpha is not\n");
   {
     image_t tex(8, 8, RGBA8888, false, 0);
     for(int y = 0; y < 8; y++)
-      for(int x = 0; x < 8; x++) ((uint32_t *)tex.ptr(0, y))[x] = WHITE;
+      for(int x = 0; x < 8; x++) pv_store((pv_store_t *)tex.ptr(0, y) + x, WHITE);
 
     image_brush_t ib(&tex);
     check_brush("image", &ib);
 
     canvas_t c(16, 16);
-    CHECK(solid(c, &ib, 128) == HALF_WHITE);
+    CHECK(solid(c, &ib, 128) == quant(HALF_WHITE));
 
     // A source image carries no alpha: setting it changes nothing.
     uint32_t reference = solid(c, &ib, 255);
@@ -137,7 +137,7 @@ void test_alpha() {
       gradient_brush_t g(type, 0, 0, 16, 0, pos, cols, 2, nullptr);
       check_brush("gradient", &g);
       canvas_t c(16, 16);
-      CHECK(solid(c, &g, 128) == HALF_WHITE);   // a flat white ramp, so exact
+      CHECK(solid(c, &g, 128) == quant(HALF_WHITE));   // a flat white ramp, so exact
     }
   }
 
@@ -182,7 +182,7 @@ void test_alpha() {
     check_brush("fractal", &f);
 
     canvas_t c(16, 16);
-    CHECK(solid(c, &f, 128) == HALF_WHITE);     // a flat white ramp, so exact
+    CHECK(solid(c, &f, 128) == quant(HALF_WHITE));     // a flat white ramp, so exact
   }
 
   printf("alpha: erase is a partial erase at a partial alpha\n");

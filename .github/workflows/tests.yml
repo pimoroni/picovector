@@ -6,12 +6,16 @@ on:
 
 jobs:
   tests:
-    name: Host tests (${{ matrix.compiler }})
+    name: Host tests (${{ matrix.compiler }}, RGBA${{ matrix.format == 1 && '8888' || '4444' }})
     runs-on: ubuntu-24.04
 
+    # The library picks its storage format at compile time, so whichever format
+    # is not built is not tested - hence the second axis rather than one build.
     strategy:
       fail-fast: false
       matrix:
+        compiler: [gcc, clang]
+        format: [1, 2]
         include:
         - compiler: gcc
           cc: gcc
@@ -28,7 +32,9 @@ jobs:
     - uses: actions/checkout@v5
 
     - name: Configure
-      run: cmake -S tests -B build/tests -DCMAKE_BUILD_TYPE=Release
+      run: >
+        cmake -S tests -B build/tests -DCMAKE_BUILD_TYPE=Release
+        -DPV_PIXEL_FORMAT=${{ matrix.format }}
 
     # The test build is -Wall -Wextra -Werror. Both compilers are run because
     # they disagree about what is worth warning on, and the firmware toolchain is
@@ -40,8 +46,17 @@ jobs:
       run: ./build/tests/pv_tests
 
   sanitizers:
-    name: Host tests (address + undefined)
+    name: Host tests (address + undefined, RGBA${{ matrix.format == 1 && '8888' || '4444' }})
     runs-on: ubuntu-24.04
+
+    # Both formats again, and this is the job that most needs it: a store wider
+    # than the row it lands in is only a bug at two bytes a pixel, and the
+    # write-safety test in test_robustness.cpp uses an odd width so a stray
+    # four-byte store is a misaligned access this job trips on.
+    strategy:
+      fail-fast: false
+      matrix:
+        format: [1, 2]
 
     steps:
     - uses: actions/checkout@v5
@@ -52,6 +67,7 @@ jobs:
     - name: Configure
       run: >
         cmake -S tests -B build/asan -DCMAKE_BUILD_TYPE=Debug
+        -DPV_PIXEL_FORMAT=${{ matrix.format }}
         -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all"
 
     - name: Build

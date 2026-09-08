@@ -429,7 +429,7 @@ void test_robustness() {
   printf("robust: blitting an image onto itself\n");
   {
     arena_t a(32, 32);
-    for(int i = 0; i < 32 * 32; i++) ((uint32_t *)a.img.ptr(0, 0))[i] = 0xff000000u | (uint32_t)i;
+    for(int i = 0; i < 32 * 32; i++) pv_store((pv_store_t *)a.img.ptr(0, 0) + i, 0xff000000u | (uint32_t)i);
     a.img.blit(&a.img, vec2_t(4, 4));
     a.img.blit(&a.img, rect_t(0, 0, 32, 32), rect_t(8, 8, 16, 16));
     CHECK(a.intact());
@@ -625,11 +625,77 @@ void test_palette() {
     CHECK(sprite.palette(3) == 0xff778899u);
   }
 
+
+  printf("format: every draw entry point writes inside a narrow buffer, and writes\n");
+  {
+    // The mirror of the indexed canary above, and the more valuable half: that
+    // one proves nothing happened, which cannot catch a store wider than the row
+    // it lands in. This proves the writes land AND stay inside the buffer.
+    //
+    // The width is odd on purpose. At two bytes a pixel a 33-wide row is 66
+    // bytes, so every odd row starts 2-byte but not 4-byte aligned, and any
+    // surviving four-byte store becomes a misaligned access the sanitiser job
+    // trips on by itself. Do not tidy it to 32.
+    const uint8_t guard = 0xA5u;
+    const int w = 33, h = 17, pad = 4096;
+    size_t span = (size_t)w * h * sizeof(pv_store_t);
+    std::vector<uint8_t> arena(pad * 2 + span, guard);
+    uint8_t *pixels = arena.data() + pad;
+
+    color_brush_t pen(rgb_color_t(255, 255, 255, 255));
+    shape_t *box = rectangle(4, 4, 12, 8);
+
+    struct entry_t { const char *name; void (*run)(image_t &, shape_t *); };
+    static const entry_t entries[] = {
+      { "clear",     [](image_t &i, shape_t *) { i.clear(); } },
+      { "rectangle", [](image_t &i, shape_t *) { i.rectangle(rect_t(1, 1, 30, 14)); } },
+      { "circle",    [](image_t &i, shape_t *) { i.circle(vec2_t(16, 8), 7); } },
+      { "line",      [](image_t &i, shape_t *) { i.line(vec2_t(0, 0), vec2_t(32, 16)); } },
+      { "put",       [](image_t &i, shape_t *) { i.put(32, 16); } },
+      { "hspan",     [](image_t &i, shape_t *) { i.hspan(0, 8, 33); } },
+      { "vspan",     [](image_t &i, shape_t *) { i.vspan(32, 0, 17); } },
+      { "triangle",  [](image_t &i, shape_t *) { i.triangle(vec2_t(0, 0), vec2_t(32, 0), vec2_t(16, 16)); } },
+      { "shape",     [](image_t &i, shape_t *s) { i.shape(s); } },
+      { "blur",      [](image_t &i, shape_t *) { i.blur(3.0f); } },
+      { "bloom",     [](image_t &i, shape_t *) { i.bloom(120, 180, 3.0f); } },
+      { "wave",      [](image_t &i, shape_t *) { i.wave(4, 3); } },
+      { "zoom",      [](image_t &i, shape_t *) { i.zoom(96); } },
+      { "edgeglow",  [](image_t &i, shape_t *) { i.edgeglow(200); } },
+      { "invert",    [](image_t &i, shape_t *) { i.invert(); } },
+      { "monochrome",[](image_t &i, shape_t *) { i.monochrome(); } },
+      { "dither",    [](image_t &i, shape_t *) { i.dither(); } },
+      { "oilpaint",  [](image_t &i, shape_t *) { i.oilpaint(2, 128); } },
+      { "chromatic", [](image_t &i, shape_t *) { i.chromatic(3); } },
+      { "crt",       [](image_t &i, shape_t *) { i.crt(3, 60); } },
+      { "vignette",  [](image_t &i, shape_t *) { i.vignette(160); } },
+    };
+
+    for(const entry_t &e : entries) {
+      // A fresh, varied field each time, so "did it write" is a real question:
+      // a content-dependent filter has nothing to do on a flat one.
+      for(int i = 0; i < w * h; i++)
+        pv_store((pv_store_t *)pixels + i, 0xff000000u | (uint32_t)((i * 37) & 0xff)
+                 | ((uint32_t)((i * 91) & 0xff) << 8) | ((uint32_t)((i * 13) & 0xff) << 16));
+      std::vector<uint8_t> before(pixels, pixels + span);
+
+      image_t img(pixels, w, h);
+      img.brush(&pen);
+      img.antialias(X4);
+      e.run(img, box);
+
+      bool intact = true;
+      for(int i = 0; i < pad; i++) if(arena[i] != guard) intact = false;
+      for(size_t i = pad + span; i < arena.size(); i++) if(arena[i] != guard) intact = false;
+      CHECK_MSG(intact, e.name);                                  // stayed inside
+      CHECK_MSG(memcmp(before.data(), pixels, span) != 0, e.name); // and did something
+    }
+    PV_FREE(box);
+  }
   printf("palette: writing to an indexed image is refused, not attempted\n");
   {
-    // Every brush and filter stores a four-byte pixel. An indexed image is one
-    // byte a pixel, so any of them would write four times past the end of every
-    // row - image.oilpaint() on a GIF was heap corruption, not a bad picture.
+    // Every brush and filter stores a whole pixel. An indexed image is one byte a
+    // pixel, so any of them would write past the end of every row -
+    // image.oilpaint() on a GIF was heap corruption, not a bad picture.
     // A canary arena either side proves nothing lands outside the buffer.
     const uint32_t guard = 0xDEADBEEFu;
     const int w = 32, h = 32, pad = 1024;
@@ -675,7 +741,7 @@ void test_palette() {
     canvas_t dst(w, h);
     dst.flat(0xff000000u);
     sheet.blit(&dst.img, vec2_t(0, 0));
-    CHECK(dst.at(3, 0) == rgb_color_t(10, 20, 30, 255)._p);
+    CHECK(dst.at(3, 0) == quant(rgb_color_t(10, 20, 30, 255)._p));
 
     canvas_t src(8, 8);
     src.flat(0xffffffffu);

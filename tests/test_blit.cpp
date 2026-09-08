@@ -124,7 +124,7 @@ void test_blit() {
     // 32-bit size_t a large one wraps to something small and plausible.
     for(int n : { 4096, 46341, 65535 }) {
       image_t img(nullptr, n, n);
-      uint64_t want = 4ull * (uint64_t)n * (uint64_t)n;
+      uint64_t want = (uint64_t)sizeof(pv_store_t) * (uint64_t)n * (uint64_t)n;
       if(want <= (uint64_t)SIZE_MAX)
         CHECK_MSG((uint64_t)img.buffer_size() == want, "byte count lost precision");
     }
@@ -145,14 +145,14 @@ void test_blit() {
     canvas_t sheet_c(70, 16);                       // a 7x2 grid of 10x8 cells
     image_t cell = sheet_c.img.window(rect_t(30, 8, 10, 8));
 
-    CHECK(sheet_c.img.row_stride() == 70 * 4);
-    CHECK(cell.row_stride() == 70 * 4);             // inherited, not 10 * 4
-    CHECK(cell.buffer_size() == 10 * 8 * 4);        // the pixels it owns
-    CHECK(cell.buffer_extent() == 7 * 70 * 4 + 10 * 4);   // ...and what it spans
+    CHECK(sheet_c.img.row_stride() == 70 * (int)sizeof(pv_store_t));
+    CHECK(cell.row_stride() == 70 * (int)sizeof(pv_store_t));         // inherited, not 10 wide
+    CHECK(cell.buffer_size() == 10 * 8 * (int)sizeof(pv_store_t));    // the pixels it owns
+    CHECK(cell.buffer_extent() == 7 * 70 * (int)sizeof(pv_store_t) + 10 * (int)sizeof(pv_store_t)); // ...and what it spans
 
     // Which is the property that matters: the last row is inside the extent.
     uint8_t *base = (uint8_t *)cell.ptr(0, 0);
-    size_t last = (size_t)((uint8_t *)cell.ptr(0, 7) - base) + 10 * 4;
+    size_t last = (size_t)((uint8_t *)cell.ptr(0, 7) - base) + 10 * sizeof(pv_store_t);
     CHECK(last <= cell.buffer_extent());
     CHECK(last > cell.buffer_size());               // and outside the old bound
 
@@ -274,11 +274,12 @@ void test_blit() {
     dst.img.alpha(128);
     src->alpha(64);                             // ignored: a source has no say
     src->blit(&dst.img, vec2_t(0, 0));
-    CHECK(dst.at(0, 0) == HALF_GREEN);
+    CHECK(dst.at(0, 0) == quant(HALF_GREEN));
 
     pal_src.alpha(64);                          // also ignored, through a palette
     pal_src.blit(&dst.img, vec2_t(0, 0));
-    CHECK(dst.at(0, 0) == blend_over_premul(HALF_GREEN, _premul_mul_alpha(PAL_RED, 128u)));
+    // the second blit composites over what the first actually stored
+    CHECK(dst.at(0, 0) == quant(blend_over_premul(quant(HALF_GREEN), _premul_mul_alpha(PAL_RED, 128u))));
 
     // Setting the source's alpha changes nothing at all.
     dst.flat(0xff000000u);
@@ -293,7 +294,7 @@ void test_blit() {
     // A scaled blit reads the same alpha as an unscaled one.
     dst.flat(0xff000000u);
     src->blit(&dst.img, rect_t(0, 0, 8, 8), rect_t(0, 0, 16, 16));
-    CHECK(dst.at(0, 0) == HALF_GREEN);
+    CHECK(dst.at(0, 0) == quant(HALF_GREEN));
 
     dst.img.alpha(255);
     src->alpha(255);

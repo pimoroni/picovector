@@ -21,8 +21,8 @@ namespace {
   // tile and one across the wrap, so both are visible in a single row.
   void two_column(image_t &tex) {
     for(int y = 0; y < 2; y++) {
-      ((uint32_t *)tex.ptr(0, y))[0] = BLACK;
-      ((uint32_t *)tex.ptr(0, y))[1] = WHITE;
+      pv_store((pv_store_t *)tex.ptr(0, y) + 0, BLACK);
+      pv_store((pv_store_t *)tex.ptr(0, y) + 1, WHITE);
     }
   }
 

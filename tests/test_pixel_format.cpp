@@ -14,8 +14,6 @@
 
 using namespace picovector;
 
-static inline uint32_t chan(uint32_t p, int i) { return (p >> (i * 8)) & 0xffu; }
-
 // round(v / 17), what packing one channel is meant to produce
 static inline uint32_t ref_quantise(uint32_t v) { return (2u * v + 17u) / 34u; }
 

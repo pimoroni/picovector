@@ -27,7 +27,7 @@ namespace picovector {
     } else {
       for(int i = i0; i < i1; i += step) {
         pv_store_t *dst = (pv_store_t*)target->ptr(spans[i].x, spans[i].y);
-        for(int w = spans[i].w; w; w--) { pv_store(dst, blend_over_premul(pv_load(dst), src)); dst++; }
+        for(int w = spans[i].w; w; w--) { pv_blend_over(dst, src); dst++; }
       }
     }
   }
@@ -45,17 +45,18 @@ namespace picovector {
       pv_store_t *dst = (pv_store_t*)target->ptr(spans[i].x, spans[i].y);
       const uint8_t *mask = spans[i].mask;
       if(opaque) {
+        pv_store_t s = pv_pack(src);
         for(int w = spans[i].w; w; w--, dst++, mask++) {
           uint32_t m = *mask;
           if(m == 0u) continue;
-          if(m == 255u) { pv_store(dst, src); continue; }
-          pv_store(dst, blend_over_premul(pv_load(dst), _premul_mul_alpha(src, m)));
+          if(m == 255u) { *dst = s; continue; }
+          pv_blend_over(dst, _premul_mul_alpha(src, m));
         }
       } else {
         for(int w = spans[i].w; w; w--, dst++, mask++) {
           uint32_t m = *mask;
           if(m == 0u) continue;
-          pv_store(dst, blend_over_premul(pv_load(dst), _premul_mul_alpha(src, m)));
+          pv_blend_over(dst, _premul_mul_alpha(src, m));
         }
       }
     }

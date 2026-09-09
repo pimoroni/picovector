@@ -292,7 +292,7 @@ namespace picovector {
           int ix = (int)(((uint64_t)(uint32_t)u * tw) >> 32);
           int iy = (int)(((uint64_t)(uint32_t)v * th) >> 32);
           uint32_t col = _premul_mul_alpha(this->get_unsafe(ix, iy), ga);
-          pv_store(dst, blend_over_premul(pv_load(dst), col));
+          pv_blend_over(dst, col);
           dst += dst_step;
         }
       } else {
@@ -300,7 +300,7 @@ namespace picovector {
           u += ud; v += vd;
           int ix = (int)(((uint64_t)(uint32_t)u * tw) >> 32);
           int iy = (int)(((uint64_t)(uint32_t)v * th) >> 32);
-          pv_store(dst, blend_over_premul(pv_load(dst), this->get_unsafe(ix, iy)));
+          pv_blend_over(dst, this->get_unsafe(ix, iy));
           dst += dst_step;
         }
       }
@@ -316,7 +316,7 @@ namespace picovector {
         fx16_t sx = (fx16_t)(((uint64_t)(uint32_t)u * tw) >> 16);
         fx16_t sy = (fx16_t)(((uint64_t)(uint32_t)v * th) >> 16);
         uint32_t col = _premul_mul_alpha(this->sample(sx, sy, filter), ga);
-        pv_store(dst, blend_over_premul(pv_load(dst), col));
+        pv_blend_over(dst, col);
         dst += dst_step;
       }
     } else {
@@ -324,7 +324,7 @@ namespace picovector {
         u += ud; v += vd;
         fx16_t sx = (fx16_t)(((uint64_t)(uint32_t)u * tw) >> 16);
         fx16_t sy = (fx16_t)(((uint64_t)(uint32_t)v * th) >> 16);
-        pv_store(dst, blend_over_premul(pv_load(dst), this->sample(sx, sy, filter)));
+        pv_blend_over(dst, this->sample(sx, sy, filter));
         dst += dst_step;
       }
     }

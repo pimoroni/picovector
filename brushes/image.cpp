@@ -124,7 +124,7 @@ namespace picovector {
           int v = ((int(pt.y) >> 16) % th + th) % th;
           uint32_t c = p->src->get_unsafe(u, v);
           if(alpha != 255u) c = _premul_mul_alpha(c, alpha);
-          pv_store(dst, blend_over_premul(pv_load(dst), c));
+          pv_blend_over(dst, c);
           dst++;
         }
       } else {
@@ -133,7 +133,7 @@ namespace picovector {
           pt.y += pd.y;
           uint32_t c = _sample_wrapped(p->src, pt.x, pt.y, tw, th, p->filter);
           if(alpha != 255u) c = _premul_mul_alpha(c, alpha);
-          pv_store(dst, blend_over_premul(pv_load(dst), c));
+          pv_blend_over(dst, c);
           dst++;
         }
       }

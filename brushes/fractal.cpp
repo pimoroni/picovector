@@ -290,7 +290,7 @@ namespace picovector {
         // Composited, not stored, so transparent stops overlay existing content.
         pixel_t src = lut[acc >> 8];
         if(alpha != 255u) src = _premul_mul_alpha(src, alpha);
-        pv_store(dst, blend_over_premul(pv_load(dst), m == 255u ? src : _premul_mul_alpha(src, m)));
+        pv_blend_over(dst, m == 255u ? src : _premul_mul_alpha(src, m));
       }
       dst++;
       for(int o = 0; o < octaves; o++) { pos_x[o] += step_x[o]; pos_y[o] += step_y[o]; }

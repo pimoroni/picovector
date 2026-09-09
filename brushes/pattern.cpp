@@ -70,7 +70,7 @@ namespace picovector {
 
         uint32_t src = bit & (1 << u) ? c1 : c2;
 
-        pv_store(dst, blend_over_premul(pv_load(dst), src));
+        pv_blend_over(dst, src);
         dst++;
         x++;
       }

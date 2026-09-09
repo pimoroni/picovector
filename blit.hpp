@@ -12,14 +12,18 @@ namespace picovector {
   // a compile-time choice instead of a per-pixel branch, and lets the palette
   // path index a raw uint32_t* (no per-pixel out-of-line palette(i) call, no
   // by-value palette copy per span).
+  // stored(i) is the same texel in the framebuffer's stored form, for the span
+  // cores that composite without touching it first.
   struct src_rgba {
     const pv_store_t *base;
     inline __attribute__((always_inline)) uint32_t operator[](int i) const { return pv_load(&base[i]); }
+    inline __attribute__((always_inline)) pv_store_t stored(int i) const { return base[i]; }
   };
   struct src_pal {
     const uint8_t  *base;
     const uint32_t *pal;
     inline __attribute__((always_inline)) uint32_t operator[](int i) const { return pal[base[i]]; }
+    inline __attribute__((always_inline)) pv_store_t stored(int i) const { return pv_pack(pal[base[i]]); }
   };
 
   // --- templated span cores --------------------------------------------------
@@ -32,9 +36,14 @@ namespace picovector {
   static inline __attribute__((always_inline))
   void span_over(Src src, pv_store_t *pd, int w, uint32_t alpha) {
     for(int i = 0; i < w; i++) {
-      uint32_t c = src[i];
-      if(ApplyAlpha) c = _premul_mul_alpha(c, alpha);
-      pv_store(&pd[i], blend_over_premul(pv_load(&pd[i]), c));
+      if(ApplyAlpha) {
+        uint32_t c = src[i];
+        c = _premul_mul_alpha(c, alpha);
+        pv_blend_over(&pd[i], c);
+      } else {
+        pv_store_t s = src.stored(i);
+        pv_blend_stored(&pd[i], s);
+      }
     }
   }
 
@@ -53,18 +62,28 @@ namespace picovector {
     int64_t ex = (int64_t)sx + (int64_t)(w - 1) * sx_step; // Q16 end coordinate
     if((unsigned)(sx >> 16) < (unsigned)sw && ex >= 0 && (ex >> 16) < sw) {
       for(int i = 0; i < w; i++) {
-        uint32_t c = src[sx >> 16];
-        if(ApplyAlpha) c = _premul_mul_alpha(c, alpha);
-        pv_store(&pd[i], blend_over_premul(pv_load(&pd[i]), c));
+        if(ApplyAlpha) {
+          uint32_t c = src[sx >> 16];
+          c = _premul_mul_alpha(c, alpha);
+          pv_blend_over(&pd[i], c);
+        } else {
+          pv_store_t s = src.stored(sx >> 16);
+          pv_blend_stored(&pd[i], s);
+        }
         sx += sx_step;
       }
     } else {
       for(int i = 0; i < w; i++) {
         int ix = sx >> 16;
         if(ix < 0) ix = 0; else if(ix >= sw) ix = sw - 1;
-        uint32_t c = src[ix];
-        if(ApplyAlpha) c = _premul_mul_alpha(c, alpha);
-        pv_store(&pd[i], blend_over_premul(pv_load(&pd[i]), c));
+        if(ApplyAlpha) {
+          uint32_t c = src[ix];
+          c = _premul_mul_alpha(c, alpha);
+          pv_blend_over(&pd[i], c);
+        } else {
+          pv_store_t s = src.stored(ix);
+          pv_blend_stored(&pd[i], s);
+        }
         sx += sx_step;
       }
     }
@@ -130,7 +149,7 @@ namespace picovector {
     while(w--) {
       uint32_t c = src->sample(sx, sy, filter);
       if(dst_alpha != 255u) c = _premul_mul_alpha(c, dst_alpha);
-      pv_store(pd, blend_over_premul(pv_load(pd), c));
+      pv_blend_over(pd, c);
       pd++;
       sx += sx_step;
     }

@@ -28,23 +28,20 @@ namespace picovector {
   // the same as it does in pixel_t. Little-endian, byte 0 is [G:R] and byte 1 is
   // [A:B]; a consumer reading the buffer as bytes needs that.
 
-  // Two SWAR lanes 16 bits apart, the same shape _premul_mul_alpha uses: spread
-  // each nibble into its own byte, then scale by 17, which maps 0 to 0 and 15 to
-  // 255 exactly. Those two values are what every early-out in blend.hpp tests
-  // for, so a stored opaque pixel loads as opaque and a stored transparent one as
-  // the zero word.
-  //
-  // The * 0x101 spread is x + (x << 8). The two nibbles collide in bits 8..11 and
-  // can sum to 30, but that carries only as far as bit 12, which the mask drops.
+  // Spread the four nibbles into the low nibble of their own byte in two doubling
+  // steps, then scale by 17, which maps 0 to 0 and 15 to 255 exactly. Those two
+  // values are what every early-out in blend.hpp tests for, so a stored opaque
+  // pixel loads as opaque and a stored transparent one as the zero word.
   static inline __attribute__((always_inline))
   pixel_t pv_expand4444(uint16_t s) {
-    uint32_t rb = ((uint32_t)( s       & 0x0f0fu) * 0x101u) & 0x000f000fu;  // R:[0:3], B:[16:19]
-    uint32_t ga = ((uint32_t)((s >> 4) & 0x0f0fu) * 0x101u) & 0x000f000fu;  // G:[0:3], A:[16:19]
-    return (rb * 17u) | ((ga * 17u) << 8);
+    uint32_t x = ((uint32_t)s | ((uint32_t)s << 8)) & 0x00ff00ffu;  // [A:B] in byte 2, [G:R] in byte 0
+    uint32_t y = (x | (x << 4)) & 0x0f0f0f0fu;                     // one nibble per byte, R lowest
+    return y * 17u;
   }
 
-  // (v * 241 + 2048) >> 12 is exactly round(v / 17) for every v in 0..255, and
-  // the product peaks at 63503, so two channels ride one multiply.
+  // round(v / 17) in every byte lane at once, without a multiply, as
+  // (v - v / 16 + 7 + [v mod 16 < 8]) / 16. The lane sum peaks at 247, so
+  // nothing carries into a neighbour.
   //
   // Rounding rather than truncating. Truncation errs in [-15, 0], biasing every
   // store downwards into a visible darkening across a ramp; rounding errs in
@@ -53,11 +50,11 @@ namespace picovector {
   // has just read, and drifts if a round trip moves them.
   static inline __attribute__((always_inline))
   uint16_t pv_pack4444(pixel_t c) {
-    uint32_t rb = ((( c       & 0x00ff00ffu) * 241u + 0x08000800u) >> 12) & 0x000f000fu;
-    uint32_t ga = ((((c >> 8) & 0x00ff00ffu) * 241u + 0x08000800u) >> 12) & 0x000f000fu;
-    uint32_t rbp = (rb | (rb >> 8)) & 0x0f0fu;   // R:[0:3], B:[8:11]
-    uint32_t gap = (ga | (ga >> 8)) & 0x0f0fu;   // G:[0:3], A:[8:11]
-    return (uint16_t)(rbp | (gap << 4));
+    uint32_t below_half = (~c >> 3) & 0x01010101u;
+    uint32_t w = c - ((c >> 4) & 0x0f0f0f0fu) + 0x07070707u + below_half;
+    uint32_t y = (w >> 4) & 0x0f0f0f0fu;          // one nibble per byte, R lowest
+    uint32_t z = (y | (y >> 4)) & 0x00ff00ffu;    // [A:B] in byte 2, [G:R] in byte 0
+    return (uint16_t)(z | (z >> 8));
   }
 
   // Both directions are monotonic per channel, which is what keeps a
@@ -91,25 +88,62 @@ namespace picovector {
 
   // A run of one colour. The stored form is invariant across the run, so it is
   // packed once and the loop is a plain store.
+#if PV_PIXEL_FORMAT == PV_PIXEL_RGBA4444
+  static inline __attribute__((always_inline))
+  void pv_fill(pv_store_t *dst, pixel_t c, int n) {
+    // Two stored pixels a word and two words a step, after a lone half-word
+    // brings the pointer to word alignment.
+    pv_store_t s = pv_pack4444(c);
+    if(n > 0 && ((uintptr_t)dst & 2u)) { *dst++ = s; n--; }
+    uint32_t pair = (uint32_t)s | ((uint32_t)s << 16);
+    uint32_t *d = (uint32_t *)dst;
+    int quads = n >> 2;
+    if(quads) do { d[0] = pair; d[1] = pair; d += 2; } while(--quads);
+    if(n & 2) *d++ = pair;
+    if(n & 1) *(pv_store_t *)d = s;
+  }
+#else
   static inline __attribute__((always_inline))
   void pv_fill(pv_store_t *dst, pixel_t c, int n) {
     pv_store_t s = pv_pack(c);
     for(; n; n--) *dst++ = s;
   }
+#endif
 
-  // Composite a premultiplied source into one stored pixel under coverage `m`.
-  // The storage-aware form of blend.hpp's blend_masked_over_premul: zero coverage
-  // leaves the pixel untouched, which matters because the rasteriser emits one
-  // span per row from the first to the last covered pixel, so a hollow shape
-  // leaves most of that run at zero.
+  // Compositing into storage. At RGBA8888 each of these is the callers' original
+  // text, blend_over_premul on the loaded word followed by the store.
 #if PV_PIXEL_FORMAT == PV_PIXEL_RGBA4444
+  // Composite a premultiplied source over one stored pixel.
+  static inline __attribute__((always_inline))
+  void pv_blend_over(pv_store_t *dst, pixel_t src) {
+    // The source alpha decides the outcome before the destination is read, so an
+    // opaque or transparent source costs no expand and no blend.
+    uint32_t a = src >> 24;
+    if(a == 0u) return;
+    if(a == 255u) { *dst = pv_pack4444(src); return; }
+    *dst = pv_pack4444(blend_over_premul(pv_expand4444(*dst), src));
+  }
+  // Composite under coverage `m`. Zero coverage leaves the pixel untouched, which
+  // matters because a span runs from the first to the last covered pixel of its
+  // row, so a hollow shape leaves most of that run at zero.
   static inline __attribute__((always_inline))
   void pv_blend_masked(pv_store_t *dst, pixel_t src, uint32_t m) {
     if(m == 0u) return;
-    pv_store(dst, blend_over_premul(pv_load(dst), m == 255u ? src : _premul_mul_alpha(src, m)));
+    pv_blend_over(dst, m == 255u ? src : _premul_mul_alpha(src, m));
+  }
+  // Composite a source already in stored form. An opaque source is copied as it
+  // is, since a stored word survives a round trip unchanged.
+  static inline __attribute__((always_inline))
+  void pv_blend_stored(pv_store_t *dst, pv_store_t src) {
+    uint32_t a = src >> 12;
+    if(a == 0u) return;
+    if(a == 15u) { *dst = src; return; }
+    *dst = pv_pack4444(blend_over_premul(pv_expand4444(*dst), pv_expand4444(src)));
   }
 #else
+  #define pv_blend_over(dst, src) (*(dst) = blend_over_premul(*(dst), (src)))
   #define pv_blend_masked blend_masked_over_premul
+  #define pv_blend_stored pv_blend_over
 #endif
 
   // ── a stored pixel seen as channels ─────────────────────────────────────────
@@ -125,15 +159,36 @@ namespace picovector {
 #if PV_PIXEL_FORMAT == PV_PIXEL_RGBA4444
   typedef pv_store_t *pv_px;
 
+  // round(v / 17) for every v in 0..255, the per-channel form of pv_pack4444. An
+  // inline variable, so the build carries one copy.
+  inline constexpr uint8_t pv_quant17[256] = {
+     0,  0,  0,  0,  0,  0,  0,  0,  0,  1,  1,  1,  1,  1,  1,  1,
+     1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  2,  2,  2,  2,  2,  2,
+     2,  2,  2,  2,  2,  2,  2,  2,  2,  2,  2,  3,  3,  3,  3,  3,
+     3,  3,  3,  3,  3,  3,  3,  3,  3,  3,  3,  3,  4,  4,  4,  4,
+     4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  5,  5,  5,
+     5,  5,  5,  5,  5,  5,  5,  5,  5,  5,  5,  5,  5,  5,  6,  6,
+     6,  6,  6,  6,  6,  6,  6,  6,  6,  6,  6,  6,  6,  6,  6,  7,
+     7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,
+     8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,
+     8,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,
+     9,  9, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10,
+    10, 10, 10, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11,
+    11, 11, 11, 11, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12,
+    12, 12, 12, 12, 12, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13,
+    13, 13, 13, 13, 13, 13, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14,
+    14, 14, 14, 14, 14, 14, 14, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+  };
+
   struct pv_nibble {
     pv_store_t *p; unsigned shift;
-    inline operator uint8_t() const { return (uint8_t)(((*p >> shift) & 0xfu) * 17u); }
-    // round(v / 17), the per-channel form of pv_pack4444
+    inline operator int() const { return (int)(((*p >> shift) & 0xfu) * 17u); }
+    // The low byte of v, as a byte store would keep
     inline pv_nibble &operator=(int v) {
-      *p = (pv_store_t)((*p & ~(0xfu << shift)) | ((((uint32_t)v * 241u + 2048u) >> 12) << shift));
+      *p = (pv_store_t)((*p & ~(0xfu << shift)) | ((uint32_t)pv_quant17[(uint8_t)v] << shift));
       return *this;
     }
-    inline pv_nibble &operator=(const pv_nibble &o) { return *this = (int)(uint8_t)o; }
+    inline pv_nibble &operator=(const pv_nibble &o) { return *this = (int)o; }
   };
   struct pv_wordref {
     pv_store_t *p;

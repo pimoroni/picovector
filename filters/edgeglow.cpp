@@ -16,6 +16,21 @@ namespace picovector {
 
   static inline uint8_t clamp8(int v) { return v < 0 ? 0 : (v > 255 ? 255 : (uint8_t)v); }
 
+  // One column's two Sobel combinations, plus the centre luminance the colouring
+  // step needs. V is the vertically weighted sum that gx differences across
+  // columns; D the bottom-minus-top that gy weights across columns.
+  struct edge_col_t { int c, v, d, m; };
+
+  static inline void edge_column(edge_col_t &k, int c, const uint8_t *rt,
+                                 const uint8_t *rm, const uint8_t *rb) {
+    int t = luminance(rt + (size_t)c * 4);
+    int b = luminance(rb + (size_t)c * 4);
+    k.c = c;
+    k.m = luminance(rm + (size_t)c * 4);
+    k.v = t + 2 * k.m + b;
+    k.d = b - t;
+  }
+
   void image_t::edgeglow(int strength) {
     // An indexed image is one byte a pixel; this writes four. See brush.cpp.
     if(_has_palette) return;
@@ -31,20 +46,34 @@ namespace picovector {
 
     for(int y = fy0; y < fy1; y++) {
       int y0 = y > 0 ? y - 1 : 0, y1 = y < H - 1 ? y + 1 : H - 1;
+      const uint8_t *rt = (const uint8_t*)src->ptr(0, y0);
+      const uint8_t *rm = (const uint8_t*)src->ptr(0, y);
+      const uint8_t *rb = (const uint8_t*)src->ptr(0, y1);
       uint8_t *out = (uint8_t*)ptr(fx0, y);
+
+      // Sobel reads three columns a pixel, and consecutive pixels share two of
+      // them. Carrying the columns along the row takes the nine luminance taps
+      // a pixel down to three, which is the whole cost of this loop.
+      edge_col_t col[3];
+      edge_column(col[0], fx0 > 0 ? fx0 - 1 : 0, rt, rm, rb);
+      edge_column(col[1], fx0, rt, rm, rb);
+      edge_column(col[2], fx0 < W - 1 ? fx0 + 1 : W - 1, rt, rm, rb);
+
       for(int x = fx0; x < fx1; x++) {
-        int x0 = x > 0 ? x - 1 : 0, x1 = x < W - 1 ? x + 1 : W - 1;
-        // Sobel on luminance over the 3x3 neighbourhood
-        int tl = luminance((uint8_t*)src->ptr(x0, y0)), tc = luminance((uint8_t*)src->ptr(x, y0)), tr = luminance((uint8_t*)src->ptr(x1, y0));
-        int ml = luminance((uint8_t*)src->ptr(x0, y)),                                              mr = luminance((uint8_t*)src->ptr(x1, y));
-        int bl = luminance((uint8_t*)src->ptr(x0, y1)), bc = luminance((uint8_t*)src->ptr(x, y1)), br = luminance((uint8_t*)src->ptr(x1, y1));
-        int gx = (tr + 2 * mr + br) - (tl + 2 * ml + bl);
-        int gy = (bl + 2 * bc + br) - (tl + 2 * tc + tr);
+        if(x > fx0) {
+          int right = x < W - 1 ? x + 1 : W - 1;
+          col[0] = col[1];
+          col[1] = col[2];
+          // at the right edge the clamp leaves the carried column already right
+          if(col[2].c != right) edge_column(col[2], right, rt, rm, rb);
+        }
+        int gx = col[2].v - col[0].v;
+        int gy = col[0].d + 2 * col[1].d + col[2].d;
         int mag = ((abs(gx) + abs(gy)) * strength) >> 8;
         if(mag > 255) mag = 255;
         // edges glow in the source colour (saturation-boosted); flat areas go black
-        uint8_t *s = (uint8_t*)src->ptr(x, y);
-        int l = luminance(s);
+        const uint8_t *s = rm + (size_t)x * 4;
+        int l = col[1].m;
         int r = clamp8(l + (s[0] - l) * 2), g = clamp8(l + (s[1] - l) * 2), b = clamp8(l + (s[2] - l) * 2);
         out[0] = (uint8_t)(r * mag / 255);
         out[1] = (uint8_t)(g * mag / 255);

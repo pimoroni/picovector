@@ -30,6 +30,7 @@ void test_pico3d_alpha();
 void test_pico3d_clip();
 void test_pico3d_scene();
 void test_pico3d_fog();
+void test_brush_oracle();
 
 int main() {
   test_geometry();
@@ -60,5 +61,6 @@ int main() {
   test_pico3d_clip();
   test_pico3d_scene();
   test_pico3d_fog();
+  test_brush_oracle();
   return pvtest::summary();
 }

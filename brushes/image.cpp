@@ -23,14 +23,21 @@ namespace picovector {
     inverse_transform.multiply(inv);
   }
 
-  static inline int _wrap(int v, int n) {
-    v %= n;
-    return v < 0 ? v + n : v;
+  // Reduce a fixed-point source coordinate into [0, n << 16), exactly. Used per
+  // span rather than per pixel: the walk stays reduced from there on.
+  static inline uint32_t _reduce_fx(fx16_t v, int32_t limit) {
+    if(v >= 0 && v < limit) return (uint32_t)v;   // the usual case for a step
+    int32_t m = v % limit;
+    return (uint32_t)(m < 0 ? m + limit : m);
   }
 
   // The wrapping counterpart to image_t::sample(), which edge-clamps: the brush
   // tiles, so clamped taps would seam at every tile boundary. Taps go through
   // get_unsafe(), so a palette source interpolates its resolved colours.
+  //
+  // sx and sy are already reduced into [0, tw << 16) and [0, th << 16) by the
+  // caller's walk, so every tap is within a texel or two of the range and wraps
+  // by compare rather than by division.
   static inline uint32_t _sample_wrapped(image_t *src, fx16_t sx, fx16_t sy, int tw, int th, filter_t filter) {
     int ix = sx >> 16;
     int iy = sy >> 16;
@@ -38,7 +45,8 @@ namespace picovector {
     if(filter == BILINEAR) {
       uint32_t fx = (sx >> 8) & 0xffu;  // sub-texel fraction 0..255
       uint32_t fy = (sy >> 8) & 0xffu;
-      int x0 = _wrap(ix, tw), y0 = _wrap(iy, th);
+      // ix and iy are already inside the tile, so only the +1 taps can wrap.
+      int x0 = ix, y0 = iy;
       int x1 = x0 + 1 == tw ? 0 : x0 + 1;
       int y1 = y0 + 1 == th ? 0 : y0 + 1;
       uint32_t c00 = src->get_unsafe(x0, y0), c10 = src->get_unsafe(x1, y0);
@@ -62,12 +70,17 @@ namespace picovector {
     cubic_weights_fx((sx >> 4) & 0xfff, wx);  // sx/sy fraction (Q16) -> Q12
     cubic_weights_fx((sy >> 4) & 0xfff, wy);
 
+    // The four taps are consecutive texels, so stepping one index round the
+    // tile costs a compare where wrapping each of them separately cost a
+    // division. Correct for any tile size, down to a single texel.
     int xs[4];
-    for(int k = 0; k < 4; k++) xs[k] = _wrap(ix - 1 + k, tw);
+    for(int k = 0, x = ix ? ix - 1 : tw - 1; k < 4; k++) {
+      xs[k] = x;
+      if(++x == tw) x = 0;
+    }
 
     int ar = 0, ag = 0, ab = 0, aa = 0;  // vertical accumulators, Q18
-    for(int j = 0; j < 4; j++) {
-      int y = _wrap(iy - 1 + j, th);
+    for(int j = 0, y = iy ? iy - 1 : th - 1; j < 4; j++, y = (y + 1 == th) ? 0 : y + 1) {
 
       int hr = 0, hg = 0, hb = 0, ha = 0;  // horizontal sums, Q12
       for(int i = 0; i < 4; i++) {
@@ -99,10 +112,15 @@ namespace picovector {
     // The texel varies per pixel, so the fold cannot be hoisted the way a solid
     // colour's can - but the test can, leaving the opaque path a plain blend.
     uint32_t alpha = target->alpha();
+    // The source does not change across the batch, and the walk needs its size
+    // in fixed point.
+    rect_t b = p->src->bounds();
+    const int tw = int(b.w), th = int(b.h);
+    if(tw <= 0 || th <= 0) return;
+    const int32_t limx = (int32_t)tw << 16, limy = (int32_t)th << 16;
     for(int i = i0; i < i1; i += step) {
       int x = spans[i].x, y = spans[i].y, w = spans[i].w;
       uint32_t *dst = (uint32_t*)target->ptr(x, y);
-      rect_t b = p->src->bounds();
 
       fx16_vec2_t p1(x, y);
       fx16_vec2_t p2((x + w), y);
@@ -111,27 +129,28 @@ namespace picovector {
       p2 = p2.transform(&p->inverse_transform);
 
       fx16_vec2_t pd((p2.x - p1.x) / w, (p2.y - p1.y) / w);
-      fx16_vec2_t pt = p1;
 
-      int tw = int(b.w);
-      int th = int(b.h);
+      // Walk the source coordinate reduced into one tile. The step is reduced
+      // with it, which is what makes one compare and subtract enough however
+      // far a device pixel moves through the texture, and the sample then needs
+      // no modulo at all where it used to need four.
+      uint32_t sx = _reduce_fx(p1.x, limx), sy = _reduce_fx(p1.y, limy);
+      const uint32_t dx = _reduce_fx(pd.x, limx), dy = _reduce_fx(pd.y, limy);
 
       if(p->filter == NEAREST) {
         for(int j = 0; j < w; j++) {
-          pt.x += pd.x;
-          pt.y += pd.y;
-          int u = ((int(pt.x) >> 16) % tw + tw) % tw;
-          int v = ((int(pt.y) >> 16) % th + th) % th;
-          uint32_t c = p->src->get_unsafe(u, v);
+          sx += dx; if(sx >= (uint32_t)limx) sx -= (uint32_t)limx;
+          sy += dy; if(sy >= (uint32_t)limy) sy -= (uint32_t)limy;
+          uint32_t c = p->src->get_unsafe((int)(sx >> 16), (int)(sy >> 16));
           if(alpha != 255u) c = _premul_mul_alpha(c, alpha);
           *dst = blend_over_premul(*dst, c);
           dst++;
         }
       } else {
         for(int j = 0; j < w; j++) {
-          pt.x += pd.x;
-          pt.y += pd.y;
-          uint32_t c = _sample_wrapped(p->src, pt.x, pt.y, tw, th, p->filter);
+          sx += dx; if(sx >= (uint32_t)limx) sx -= (uint32_t)limx;
+          sy += dy; if(sy >= (uint32_t)limy) sy -= (uint32_t)limy;
+          uint32_t c = _sample_wrapped(p->src, (fx16_t)sx, (fx16_t)sy, tw, th, p->filter);
           if(alpha != 255u) c = _premul_mul_alpha(c, alpha);
           *dst = blend_over_premul(*dst, c);
           dst++;
@@ -144,11 +163,14 @@ namespace picovector {
     image_brush_t *p = this;
     const pv_masked_span *spans = _masked_spans();
     uint32_t alpha = target->alpha();
+    rect_t b = p->src->bounds();
+    const int tw = int(b.w), th = int(b.h);
+    if(tw <= 0 || th <= 0) return;
+    const int32_t limx = (int32_t)tw << 16, limy = (int32_t)th << 16;
     for(int i = i0; i < i1; i += step) {
       int x = spans[i].x, y = spans[i].y, w = spans[i].w;
       uint8_t *mask = (uint8_t*)spans[i].mask;
       uint32_t *dst = (uint32_t*)target->ptr(x, y);
-      rect_t b = p->src->bounds();
 
       fx16_vec2_t p1(x, y);
       fx16_vec2_t p2((x + w), y);
@@ -157,21 +179,19 @@ namespace picovector {
       p2 = p2.transform(&p->inverse_transform);
 
       fx16_vec2_t pd((p2.x - p1.x) / w, (p2.y - p1.y) / w);
-      fx16_vec2_t pt = p1;
 
-      int tw = int(b.w);
-      int th = int(b.h);
+      // The reduced walk, as in blend_spans().
+      uint32_t sx = _reduce_fx(p1.x, limx), sy = _reduce_fx(p1.y, limy);
+      const uint32_t dx = _reduce_fx(pd.x, limx), dy = _reduce_fx(pd.y, limy);
 
       if(p->filter == NEAREST) {
         for(int j = 0; j < w; j++) {
           // the source position steps whether or not the pixel is covered
-          pt.x += pd.x;
-          pt.y += pd.y;
+          sx += dx; if(sx >= (uint32_t)limx) sx -= (uint32_t)limx;
+          sy += dy; if(sy >= (uint32_t)limy) sy -= (uint32_t)limy;
           uint32_t m = *mask++;
           if(m) {
-            int u = ((int(pt.x) >> 16) % tw + tw) % tw;
-            int v = ((int(pt.y) >> 16) % th + th) % th;
-            uint32_t c = p->src->get_unsafe(u, v);
+            uint32_t c = p->src->get_unsafe((int)(sx >> 16), (int)(sy >> 16));
             if(alpha != 255u) c = _premul_mul_alpha(c, alpha);
             blend_masked_over_premul(dst, c, m);
           }
@@ -179,11 +199,11 @@ namespace picovector {
         }
       } else {
         for(int j = 0; j < w; j++) {
-          pt.x += pd.x;
-          pt.y += pd.y;
+          sx += dx; if(sx >= (uint32_t)limx) sx -= (uint32_t)limx;
+          sy += dy; if(sy >= (uint32_t)limy) sy -= (uint32_t)limy;
           uint32_t m = *mask++;
           if(m) {
-            uint32_t c = _sample_wrapped(p->src, pt.x, pt.y, tw, th, p->filter);
+            uint32_t c = _sample_wrapped(p->src, (fx16_t)sx, (fx16_t)sy, tw, th, p->filter);
             if(alpha != 255u) c = _premul_mul_alpha(c, alpha);
             blend_masked_over_premul(dst, c, m);
           }

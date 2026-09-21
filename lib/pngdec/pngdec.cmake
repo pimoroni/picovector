@@ -22,6 +22,8 @@ if (NOT DEFINED PNGDEC_ONCE)
 
     target_include_directories(pngdec INTERFACE ${CMAKE_CURRENT_LIST_DIR})
 
+    target_compile_definitions(pngdec PUBLIC PNG_MAX_BUFFERED_PIXELS=16386)
+
     target_link_libraries(pngdec)
 
 endif() 

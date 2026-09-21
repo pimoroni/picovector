@@ -1480,7 +1480,7 @@ int ZEXPORT inflateGetDictionary(z_streamp strm, Bytef *dictionary, uInt *dictLe
     return Z_OK;
 }
 
-int ZEXPORT inflateSetDictionary(z_streamp strm, const Bytef *dictionary, uint dictLength)
+int ZEXPORT inflateSetDictionary(z_streamp strm, const Bytef *dictionary, unsigned int dictLength)
 {
     struct inflate_state FAR *state;
     unsigned long dictid;

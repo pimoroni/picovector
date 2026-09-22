@@ -1,5 +1,7 @@
 add_library(usermod_picovector INTERFACE)
 
+option(PV_PICO3D "Build the pico3d 3D module" ON)
+
 # pico3d rasteriser backend:
 #   "float"         - pico3d_raster.cpp           (reference, float hot path)
 #   "int"           - pico3d_raster_int.cpp       (integer fixed-point hot path)
@@ -29,8 +31,6 @@ list(APPEND SOURCES
   ${CMAKE_CURRENT_LIST_DIR}/brush.cpp
   ${CMAKE_CURRENT_LIST_DIR}/color.cpp
   ${CMAKE_CURRENT_LIST_DIR}/primitive.cpp
-  ${PICO3D_RASTER_SRC}
-  ${CMAKE_CURRENT_LIST_DIR}/pico3d_draw.cpp
   ${CMAKE_CURRENT_LIST_DIR}/algorithms/geometry.cpp
   ${CMAKE_CURRENT_LIST_DIR}/algorithms/dda.cpp
   ${CMAKE_CURRENT_LIST_DIR}/tween/easing.cpp
@@ -71,6 +71,16 @@ list(APPEND SOURCES
   # Vendored third-party, see lib/qrcodegen/README.md
   ${CMAKE_CURRENT_LIST_DIR}/lib/qrcodegen/qrcodegen.c
 )
+
+if(PV_PICO3D)
+  list(APPEND SOURCES
+    ${PICO3D_RASTER_SRC}
+    ${CMAKE_CURRENT_LIST_DIR}/pico3d_draw.cpp
+  )
+  target_compile_definitions(usermod_picovector INTERFACE PV_PICO3D=1)
+else()
+  target_compile_definitions(usermod_picovector INTERFACE PV_PICO3D=0)
+endif()
 
 # The MicroPython bindings, decoders, allocator config and build knobs live in
 # the sibling picovector-micropython component, wired in separately (see

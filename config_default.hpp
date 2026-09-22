@@ -36,6 +36,10 @@
 #define PV_DUAL_CORE 0
 #endif
 
+#ifndef PV_PICO3D
+#define PV_PICO3D 1
+#endif
+
 // On the device, do the per-channel IIR lerp with an RP2350 hardware interpolator
 // (blend mode). We also benchmarked a hand-tuned M33 SIMD version; it was no faster
 // (~21ms/frame either way — the blur is limited by per-pixel bus/compute throughput,

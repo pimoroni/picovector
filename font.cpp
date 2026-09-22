@@ -112,15 +112,26 @@ namespace picovector {
   // with a piece missing, or with nothing at all when it had one contour. So the size is
   // what decides how detailed a font may be, and 256 was not enough for ordinary text - a
   // converted digit reached 259 points and vanished.
-  static vec2_t glyph_point_buf[512];
+  // A contour longer than this drops the whole glyph (see below). 512 is ample
+  // for .af, whose outlines are flattened coarsely ahead of time; outlines
+  // decomposed from TTF/OTF at a fine tolerance need more headroom.
+  #ifndef PV_GLYPH_POINT_BUF
+  #define PV_GLYPH_POINT_BUF 512
+  #endif
+  static vec2_t glyph_point_buf[PV_GLYPH_POINT_BUF];
 
   // Draw a single glyph through the retained renderer (begin / add_path / flush).
   // This is the old render_glyph, hoisted out of picovector so the renderer
   // stays agnostic of the font's point representation. Points are a byte or 16
   // bits wide per the font, picked once per contour.
-  static void draw_glyph(glyph_t *glyph, bool wide_points, image_t *target,
-                         mat3_t *transform, brush_t *brush) {
+  static void draw_glyph(glyph_t *glyph, bool wide_points, bool nonzero_fill,
+                         image_t *target, mat3_t *transform, brush_t *brush) {
     if(!glyph->path_count) return;
+
+    // The rasteriser reads the rule off the target at flush, so borrow it for
+    // the glyph and hand it back.
+    fill_rule_t was_rule = target->fill_rule();
+    if(nonzero_fill) target->fill_rule(NON_ZERO);
 
     render_begin();
     for(int i = 0; i < glyph->path_count; i++) {
@@ -130,7 +141,10 @@ namespace picovector {
       // A glyph is a shape, so it is all of its contours or none of it: an 'o'
       // missing its outer contour is not a partial 'o', it is a filled blob
       // where the counter should be. See render() in rasteriser.cpp.
-      if(count > (int)(sizeof(glyph_point_buf) / sizeof(glyph_point_buf[0]))) return;
+      if(count > (int)(sizeof(glyph_point_buf) / sizeof(glyph_point_buf[0]))) {
+        if(nonzero_fill) target->fill_rule(was_rule);
+        return;
+      }
       if(wide_points) {
         glyph_path_point16_t *points = (glyph_path_point16_t *)path.points;
         for(int k = 0; k < count; k++) {
@@ -142,9 +156,13 @@ namespace picovector {
           glyph_point_buf[k] = vec2_t((float)points[k].x, (float)points[k].y);
         }
       }
-      if(render_add_path(glyph_point_buf, count, transform) < 0) return;
+      if(render_add_path(glyph_point_buf, count, transform) < 0) {
+        if(nonzero_fill) target->fill_rule(was_rule);
+        return;
+      }
     }
     render_flush(target, brush);
+    if(nonzero_fill) target->fill_rule(was_rule);
   }
 
   void font_t::draw(image_t *target, const char *text, float size, const mat3_t *transform) {
@@ -190,7 +208,8 @@ namespace picovector {
       // find the glyph
       for(int j = 0; j < this->glyph_count; j++) {
         if(this->glyphs[j].codepoint == codepoint) {
-          draw_glyph(&this->glyphs[j], this->wide_points, target, &placement, target->brush());
+          draw_glyph(&this->glyphs[j], this->wide_points, this->nonzero_fill,
+                     target, &placement, target->brush());
           float a = this->glyphs[j].advance;
           placement = placement.translate(a, 0);
           c->x += a * s;

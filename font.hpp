@@ -55,6 +55,13 @@ namespace picovector {
     // a point size is scaled against.
     float units_per_em = 128.0f;
     bool wide_points = false;
+    // Which fill rule the outlines were authored for. The .af packer emits every
+    // contour the same way round -- an 'o' has two negative-area contours -- so
+    // its counters only appear under EVEN_ODD. TrueType and CFF instead specify
+    // NON_ZERO, and rely on it: a heavy weight commonly draws a bowl overlapping
+    // a stem, which EVEN_ODD punches a hole through. So the rule belongs to the
+    // font, not to whatever the target happened to be set to.
+    bool nonzero_fill = false;
 
     // `transform` maps the drawn glyph outlines in target space, on top of the
     // placement the caret and `size` give them: nullptr is the plain case and

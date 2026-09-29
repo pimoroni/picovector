@@ -132,6 +132,18 @@ namespace picovector {
   // ~240 bytes per triangle (murders the small-triangle geometry profile); by
   // reference its int32 fields can alias the uint32 colour write, forcing per-pixel
   // reloads. Instead raster_fill hoists the (used) steps to locals and steps this.
+  // Saturate a signed 8.8 fixed-point value to an unsigned range, shift folded
+  // in: one USAT instruction on the M33, and the identical shift-then-clamp in
+  // plain C for the host tests. The asr-by-8 matches `v >> 8` on the signed
+  // accumulators exactly.
+#if defined(__arm__)
+  static inline uint32_t sat8_asr8(int32_t v)  { uint32_t r; __asm("usat %0, #8, %1, asr #8"  : "=r"(r) : "r"(v)); return r; }
+  static inline uint32_t sat16_asr8(int32_t v) { uint32_t r; __asm("usat %0, #16, %1, asr #8" : "=r"(r) : "r"(v)); return r; }
+#else
+  static inline uint32_t sat8_asr8(int32_t v)  { v >>= 8; return v < 0 ? 0u : (v > 255 ? 255u : (uint32_t)v); }
+  static inline uint32_t sat16_asr8(int32_t v) { v >>= 8; return v < 0 ? 0u : (v > 65535 ? 65535u : (uint32_t)v); }
+#endif
+
   struct cur_t {
     int32_t dep, r, g, b, u, v;
     float uw, vw, iw;
@@ -149,18 +161,13 @@ namespace picovector {
   bool emit(const shade_t &s, void *cpx, uint16_t *dpx, const cur_t &c, uint32_t cc) {
     uint16_t d16 = 0;
     if constexpr (DEPTH) {
-      int dd = c.dep >> 8;
-      d16 = (uint16_t)(dd < 0 ? 0 : (dd > 65535 ? 65535 : dd));
+      d16 = (uint16_t)sat16_asr8(c.dep);
       if (d16 >= *dpx) return false;
     }
 
     uint32_t col;
     if constexpr (VARYING) {
-      int R = c.r >> 8, G = c.g >> 8, B = c.b >> 8;
-      R = R < 0 ? 0 : (R > 255 ? 255 : R);
-      G = G < 0 ? 0 : (G > 255 ? 255 : G);
-      B = B < 0 ? 0 : (B > 255 ? 255 : B);
-      col = (uint32_t)R | ((uint32_t)G << 8) | ((uint32_t)B << 16);
+      col = sat8_asr8(c.r) | (sat8_asr8(c.g) << 8) | (sat8_asr8(c.b) << 16);
     } else col = cc;
 
     if constexpr (NMAP) {

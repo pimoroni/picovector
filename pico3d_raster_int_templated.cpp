@@ -243,6 +243,7 @@ namespace picovector {
       }
     }
     if (k0 > k1) { PICO3D_PD_COUNTN(PICO3D_PD_ROWS_EMPTY, 1); return false; }   // XP
+    PICO3D_PD_COUNTN(PICO3D_PD_SPAN_PX, k1 - k0 + 1);                            // XP
     k0_out = k0; k1_out = k1;
     return true;
   }

@@ -180,7 +180,8 @@ namespace picovector {
     float sx[3], sy[3], z[3], iw[3], uw[3], vw[3], uv0[3], uv1[3];
     uint32_t rgb[3];
     for (int i = 0; i < 3; i++) {
-      sx[i] = tri->sx[i]; sy[i] = tri->sy[i];   // cached screen position (no divide here)
+      sx[i] = (float)tri->sxq[i] * 0.0625f;     // cached 28.4 screen position
+      sy[i] = (float)tri->syq[i] * 0.0625f;
       z[i]  = tri->z[i];  iw[i] = tri->iw[i];
       uv0[i] = tri->uv_[i].x;            // raw u
       uv1[i] = tri->uv_[i].y;            // raw v

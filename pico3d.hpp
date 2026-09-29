@@ -136,11 +136,13 @@ namespace picovector {
   // A single triangle ready to rasterise: clip-space positions plus the
   // per-vertex varyings (uv + already-lit colour). The world-space normal/tangent
   // are only filled (and interpolated) when a normal map is in use.
+  constexpr int16_t PICO3D_PARKED_Q = INT16_MIN;   // vcache sxq/syq sentinel
+
   struct pico3d_tri_t {
     // Pre-projected screen-space vertices (computed once per vertex in the transform
     // pass and cached, so the rasteriser does NO perspective divide — the big setup win
     // for high-vertex meshes, and it parallelises because the transform pass is split).
-    float    sx[3], sy[3];   // screen pixel position
+    int32_t  sxq[3], syq[3]; // screen pixel position, 28.4 (the raster's own snap)
     float    z[3], iw[3];    // depth (z/w) and 1/w (for perspective-correct interpolation)
     vec3_t   uv_[3];    // .x=u .y=v (.z unused, keeps it cheap to pass)
     uint32_t rgb[3];    // per-vertex colour, lighting pre-applied (unless normal-mapped)
@@ -232,11 +234,15 @@ namespace picovector {
   // device, where each entry is written once and read back per triangle, so
   // the fewer bytes a vertex touches, the faster the frame.
   struct pico3d_vcache_t {
-    // In 8-byte PSRAM cache lines: [sx sy] is all the extent pass reads, [z rgb]
+    // In 8-byte cache lines: [sxq syq z] is all the extent pass reads, plus rgb
     // completes what an untextured, unfogged triangle needs, and [w nd] is read
     // only for 1/w (texture coordinates) or fog.
-    float    sx, sy;  // pre-projected screen position (computed once here, not per triangle)
-    float    z;       // depth (z/w)
+    // sxq/syq hold the rasteriser's own 28.4 snap (int16: +/-2048 px covers the
+    // guard band), computed once here instead of per triangle per band. A vertex
+    // behind the near plane or outside the guard band parks at PICO3D_PARKED_Q,
+    // which routes its triangles to the clipper exactly as the old sentinel did.
+    int16_t  sxq, syq;   // screen position, 28.4 fixed point (or PICO3D_PARKED_Q)
+    float    z;          // depth (z/w)
     uint32_t rgb;     // per-vertex colour: final for UNLIT/GOURAUD, base for FLAT/normal-mapped
     // Written only when something will read them (texture coordinates, per-pixel
     // lighting, or fog on the target at add() time): without them an entry is

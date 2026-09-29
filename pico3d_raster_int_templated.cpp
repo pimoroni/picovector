@@ -386,35 +386,46 @@ namespace picovector {
 #if PICO3D_PROF
     uint32_t ps = pico3d_prof_cyc();
 #endif
-    // --- float setup (per triangle) ------------------------------------------
+    // --- setup (per triangle) -------------------------------------------------
+    // The vertices arrive already in the coverage snap (28.4 integers, computed
+    // once per vertex in the transform pass), so the backface test, the bbox
+    // and the edge functions below all run on exactly the values the fill
+    // steps - no conversions and no float/int sign disagreement on slivers.
     // iw / uv are copied further down, only once `uvs` says a path will read
     // them: the draw stage leaves them unwritten for a material with nothing
     // to sample, and the multiplies are the cost either way.
-    float sx[3], sy[3], z[3], iw[3], uw[3], vw[3], uv0[3], uv1[3];
+    const int32_t X0 = tri->sxq[0], Y0 = tri->syq[0];
+    const int32_t X1 = tri->sxq[1], Y1 = tri->syq[1];
+    const int32_t X2 = tri->sxq[2], Y2 = tri->syq[2];
+    float z[3], iw[3], uw[3], vw[3], uv0[3], uv1[3];
     uint32_t rgb[3];
-    for (int i = 0; i < 3; i++) {
-      sx[i] = tri->sx[i]; sy[i] = tri->sy[i]; z[i] = tri->z[i];
-      rgb[i] = tri->rgb[i];
-    }
+    for (int i = 0; i < 3; i++) { z[i] = tri->z[i]; rgb[i] = tri->rgb[i]; }
 
-    float denomf = (sx[1]-sx[0]) * (sy[2]-sy[0]) - (sy[1]-sy[0]) * (sx[2]-sx[0]);
-    if (denomf == 0.0f) { RT_SETUP_END(); return 0; }
+    // Snapping can collapse a sliver to zero area or turn it over; with
+    // collinear vertices every edge value is zero along the whole line, so the
+    // >= 0 test would draw that line. (64-bit: each product can reach 2^30
+    // inside the guard band.)
+    const int64_t area2 = (int64_t)(X1 - X0) * (Y2 - Y0) - (int64_t)(Y1 - Y0) * (X2 - X0);
+    if (area2 == 0) { RT_SETUP_END(); return 0; }
     int sign;
-    if (denomf < 0.0f) sign = -1;
+    if (area2 < 0) sign = -1;
     else { if (!m->double_sided) { RT_SETUP_END(); return 0; } sign = 1; }
 
-    float minxf = min(sx[0], min(sx[1], sx[2])), maxxf = max(sx[0], max(sx[1], sx[2]));
-    float minyf = min(sy[0], min(sy[1], sy[2])), maxyf = max(sy[0], max(sy[1], sy[2]));
-    int minx = max(t->clip_x0, (int)floorf(minxf));
-    int maxx = min(t->clip_x1 - 1, (int)floorf(maxxf) + 1);
-    int miny = max(t->clip_y0, (int)floorf(minyf));
-    int maxy = min(t->clip_y1 - 1, (int)floorf(maxyf) + 1);
+    int32_t minxq = min(X0, min(X1, X2)), maxxq = max(X0, max(X1, X2));
+    int32_t minyq = min(Y0, min(Y1, Y2)), maxyq = max(Y0, max(Y1, Y2));
+    int minx = max(t->clip_x0, (int)(minxq >> 4));
+    int maxx = min(t->clip_x1 - 1, (int)(maxxq >> 4) + 1);
+    int miny = max(t->clip_y0, (int)(minyq >> 4));
+    int maxy = min(t->clip_y1 - 1, (int)(maxyq >> 4) + 1);
     if (minx > maxx || miny > maxy) { RT_SETUP_END(); return 0; }
+    // The gradient planes still evaluate in float: recover pixel positions once.
+    const float sx[3] = { (float)X0 * 0.0625f, (float)X1 * 0.0625f, (float)X2 * 0.0625f };
+    const float sy[3] = { (float)Y0 * 0.0625f, (float)Y1 * 0.0625f, (float)Y2 * 0.0625f };
 #if PICO3D_PROF
     uint32_t tp = pico3d_prof_cyc(); pico3d_prof_project_cyc[PICO3D_PC] += tp - ps;   // project done
 #endif
 
-    float invD = 1.0f / denomf;
+    float invD = 256.0f / (float)area2;   // denom in px^2: area2 is in (1/16 px)^2
     float dx1 = sx[1]-sx[0], dy1 = sy[1]-sy[0];
     float dx2 = sx[2]-sx[0], dy2 = sy[2]-sy[0];
     float px0 = (float)minx + 0.5f, py0 = (float)miny + 0.5f;
@@ -503,9 +514,6 @@ namespace picovector {
     // PICO3D_RASTER_LIMIT_PX of the origin, which the draw stage guarantees by
     // clipping to a guard band inside it.
     edges_t ed;
-    const int32_t X0 = (int32_t)(sx[0] * (float)COV_FX), Y0 = (int32_t)(sy[0] * (float)COV_FX);
-    const int32_t X1 = (int32_t)(sx[1] * (float)COV_FX), Y1 = (int32_t)(sy[1] * (float)COV_FX);
-    const int32_t X2 = (int32_t)(sx[2] * (float)COV_FX), Y2 = (int32_t)(sy[2] * (float)COV_FX);
     const int32_t PX = minx * COV_FX + COV_FX / 2, PY = miny * COV_FX + COV_FX / 2;
     ed.A0 = (Y1 - Y2) * COV_FX; ed.B0 = (X2 - X1) * COV_FX;
     ed.A1 = (Y2 - Y0) * COV_FX; ed.B1 = (X0 - X2) * COV_FX;
@@ -513,19 +521,7 @@ namespace picovector {
     ed.e0_row = (X2 - X1) * (PY - Y1) - (Y2 - Y1) * (PX - X1);
     ed.e1_row = (X0 - X2) * (PY - Y2) - (Y0 - Y2) * (PX - X2);
     ed.e2_row = (X1 - X0) * (PY - Y0) - (Y1 - Y0) * (PX - X0);
-    // Snapping can collapse a sliver to zero area, or turn it over. Either way it
-    // covers nothing: with collinear vertices every edge value is zero along the
-    // whole line through them, so the >= 0 test would draw that line across the
-    // box, and a flipped one would be drawn inside out. Its neighbours share its
-    // snapped vertices, so they still meet exactly without it. (64-bit: each
-    // product can reach 2^30 inside the guard band.)
-    const int64_t area2 = (int64_t)(X1 - X0) * (Y2 - Y0) - (int64_t)(Y1 - Y0) * (X2 - X0);
-    if (area2 == 0 || (area2 < 0) != (sign < 0)) {
-#if PICO3D_PROF
-      pico3d_prof_edges_cyc[PICO3D_PC] += pico3d_prof_cyc() - tpl;
-#endif
-      return 0;
-    }
+    // (zero/flipped snapped area was already rejected up top, on these values)
     // The rows whose pixel centres (y * COV_FX + COV_FX / 2) fall within the
     // snapped triangle's vertical extent: the only ones that can be covered.
     // The float bounding box is looser - up to a row each end, which for small

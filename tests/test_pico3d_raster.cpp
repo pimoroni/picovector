@@ -30,9 +30,10 @@ static pico3d_tri_t screen_tri(float ax, float ay, float bx, float by,
                             float cx, float cy, float ndcz,
                             uint32_t c0, uint32_t c1, uint32_t c2) {
   pico3d_tri_t tri{};
-  tri.sx[0] = ax; tri.sy[0] = ay;
-  tri.sx[1] = bx; tri.sy[1] = by;
-  tri.sx[2] = cx; tri.sy[2] = cy;
+  // the transform's own snap: the raster now takes 28.4 integers
+  tri.sxq[0] = (int32_t)(ax * 16.0f); tri.syq[0] = (int32_t)(ay * 16.0f);
+  tri.sxq[1] = (int32_t)(bx * 16.0f); tri.syq[1] = (int32_t)(by * 16.0f);
+  tri.sxq[2] = (int32_t)(cx * 16.0f); tri.syq[2] = (int32_t)(cy * 16.0f);
   for (int i = 0; i < 3; i++) { tri.z[i] = ndcz; tri.iw[i] = 1.0f; }
   tri.uv_[0] = vec3_t(0,0,0); tri.uv_[1] = vec3_t(1,0,0); tri.uv_[2] = vec3_t(0,1,0);
   tri.rgb[0] = c0; tri.rgb[1] = c1; tri.rgb[2] = c2;

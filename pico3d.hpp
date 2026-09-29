@@ -406,6 +406,7 @@ namespace picovector {
     // banded draw bands only these, so empty rows above and below cost nothing
     // and the bands are spread over what is actually there.
     int32_t          ymin, ymax;
+    int32_t          xmin, xmax;   // columns touched, same contract as ymin/ymax
   };
 
   // --- whole-mesh frustum culling -------------------------------------------
@@ -436,7 +437,8 @@ namespace picovector {
                         const pico3d_mesh_t *mesh, const mat4_t *model,
                         const mat4_t *view_proj, const pico3d_material_t *material,
                         pico3d_shading_t shading, const pico3d_light_t *light,
-                        const mat4_t *view = nullptr, const char **why = nullptr);
+                        const mat4_t *view = nullptr, const char **why = nullptr,
+                        bool flat_depth = false);
 
   // Rasterise the scene into `t`, `band_rows` rows at a time (<= 0 means one
   // band covering the whole clip). When `t->depth` is only band_rows tall, pass

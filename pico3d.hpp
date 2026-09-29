@@ -219,10 +219,14 @@ namespace picovector {
   // device, where each entry is written once and read back per triangle, so
   // the fewer bytes a vertex touches, the faster the frame.
   struct pico3d_vcache_t {
+    // In 8-byte PSRAM cache lines: [sx sy] is all the extent pass reads, [z rgb]
+    // completes what an untextured, unfogged triangle needs, and [w nd] is read
+    // only for 1/w (texture coordinates) or fog.
     float    sx, sy;  // pre-projected screen position (computed once here, not per triangle)
-    float    nd;      // distance in front of the near plane in clip space (z + w)
+    float    z;       // depth (z/w)
     uint32_t rgb;     // per-vertex colour: final for UNLIT/GOURAUD, base for FLAT/normal-mapped
-    float    z, w;    // depth (z/w) and clip-space w; 1/w is recomputed from it
+    float    w;       // clip-space w; 1/w is recomputed from it
+    float    nd;      // distance in front of the near plane in clip space (z + w)
     // Only in the entries whose material needs them:
     //   FLAT:          ext[0] = world position (face normals)
     //   matcap:        ext[0] = normal mapped to matcap uv

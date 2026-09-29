@@ -281,6 +281,9 @@ namespace picovector {
     };
     uint32_t n = bin ? bincount : mesh->triangle_count;
     int drawn = 0;
+    // the rasteriser reads iw only to interpolate texture coordinates
+    const pico3d_material_t *mt = j.material;
+    const bool need_iw = mt->texture || mt->matcap || mt->normal_map || mt->specular || do_nmap || do_matcap;
     PICO3D_PD_START(pd_p2);
     PICO3D_PD_COUNTN(PICO3D_PD_TRIS_IN, n);
     for (uint32_t bi = 0; bi < n; bi++) {
@@ -326,7 +329,10 @@ namespace picovector {
         for (int k = 0; k < 3; k++) {                   // copy the CACHED screen projection
           const pico3d_vcache_t &e = V(idx[k]);
           tri.sx[k] = e.sx; tri.sy[k] = e.sy;
-          tri.z[k]  = e.z;  tri.iw[k] = inv_w(e.w);
+          tri.z[k]  = e.z;
+          // 1/w only matters to texture coordinates; skipping it otherwise
+          // leaves the entry's last cache line unread
+          tri.iw[k] = need_iw ? inv_w(e.w) : 1.0f;
           tri.uv_[k] = vuv[k]; tri.rgb[k] = vrgb[k];
         }
         if (do_nmap) for (int k = 0; k < 3; k++) { tri.n[k] = vn[k]; tri.tan[k] = vtan[k]; }

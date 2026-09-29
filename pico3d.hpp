@@ -367,6 +367,9 @@ namespace picovector {
     bool                     do_nmap, do_matcap;
     uint32_t                 vbase;        // its vertices, from this BYTE offset in the arena
     uint32_t                 vstride;      // bytes a vertex entry takes (see pico3d_vcache_t)
+    // The index list the bands read: the mesh's own, or a copy the scene cached
+    // in fast memory (see pico3d_scene_t.cache_low).
+    const uint16_t          *indices;
     mat4_t                   mvp;          // to re-project a triangle the near plane cuts
     uint32_t                 tbase;        // its triangles' screen-Y extents, from here
     // Scratch, refilled for each band: this submission's live triangles, as a
@@ -382,6 +385,15 @@ namespace picovector {
     pico3d_sub_t    *subs;   uint32_t sub_cap,  sub_count;
     pico3d_vcache_t *verts;  uint32_t vert_cap, vert_count;
     uint32_t         vert_bytes;                 // bytes of `verts` used (entries are packed)
+    // Size of `verts` in bytes when the embedder set it (an SRAM pool region);
+    // 0 keeps the historic bound of vert_cap worst-case entries.
+    uint32_t         vert_arena_bytes;
+    // Index copies cached in the tail of `verts`' region, growing DOWN from
+    // vert_arena_bytes while the per-frame entries grow up: cache_low is the
+    // watermark, cache_count the meshes cached so far (in `cached`). 0/empty
+    // when the region is the plain heap, where a copy would gain nothing.
+    uint32_t         cache_low, cache_count;
+    struct { const pico3d_mesh_t *mesh; const uint16_t *copy; } cached[16];
     int16_t         *ys;     uint32_t tri_cap,  tri_count;
     uint16_t        *bin;    uint32_t bin_cap;   // scratch: one submission's live triangles
     // Optional second bin, bin_cap long, for core1. With it, two cores split each
@@ -418,12 +430,13 @@ namespace picovector {
   void pico3d_scene_reset(pico3d_scene_t *sc);
 
   // Transform, light and project one mesh into the scene. Returns false if any
-  // of the scene's arrays is too small, having added nothing.
+  // of the scene's arrays is too small, having added nothing; `why`, when
+  // given, names the array so a binding can raise something legible.
   bool pico3d_scene_add(pico3d_scene_t *sc, const pico3d_target_t *t,
                         const pico3d_mesh_t *mesh, const mat4_t *model,
                         const mat4_t *view_proj, const pico3d_material_t *material,
                         pico3d_shading_t shading, const pico3d_light_t *light,
-                        const mat4_t *view = nullptr);
+                        const mat4_t *view = nullptr, const char **why = nullptr);
 
   // Rasterise the scene into `t`, `band_rows` rows at a time (<= 0 means one
   // band covering the whole clip). When `t->depth` is only band_rows tall, pass

@@ -44,6 +44,10 @@ namespace picovector {
     // staging shim only re-creates the span itself, so it skips these brushes
     // rather than let them read past the scratch row.
     virtual bool samples_neighbourhood() const { return false; }
+    // A brush that would write one opaque colour to every covered pixel of this
+    // target reports it here, so a 16-bit framebuffer can take the packed-fill
+    // fast path (clear() and solid fills) instead of staging every span.
+    virtual bool solid_opaque(image_t *target, pixel_t &out) const { (void)target; (void)out; return false; }
 
     // Fold the shape's transform into the brush's own coordinate space, so a
     // brush with geometry (e.g. a gradient) moves with the shape it fills.
@@ -63,6 +67,7 @@ namespace picovector {
     color_brush_t(const color_t& c);
     void blend_spans(image_t *target, int i0, int i1, int step) override;
     void blend_masked_spans(image_t *target, int i0, int i1, int step) override;
+    bool solid_opaque(image_t *target, pixel_t &out) const override;
   };
 
   // Window / erase brush: lerps the destination toward a premultiplied target

@@ -83,6 +83,23 @@ namespace picovector {
     if(n <= 0) return;
     if(target->pixel_format() == RGB565) {           // staged: see above
       if(brush->samples_neighbourhood()) return;     // scratch row can't feed it
+      pixel_t solid;
+      if(brush->solid_opaque(target, solid)) {
+        // clear() and solid fills: write the packed colour straight to the
+        // framebuffer, word-doubled, instead of staging every span
+        const uint16_t p16 = pv_8888_to_565(solid);
+        const uint32_t p32 = (uint32_t)p16 | ((uint32_t)p16 << 16);
+        const pv_span *sp = _spans();
+        for(int i = 0; i < n; i++) {
+          uint16_t *d = (uint16_t *)target->ptr(sp[i].x, sp[i].y);
+          int w = sp[i].w;
+          if(w && ((uintptr_t)d & 2)) { *d++ = p16; w--; }      // align to a word
+          uint32_t *d32 = (uint32_t *)d;
+          for(; w >= 2; w -= 2) *d32++ = p32;
+          if(w) *(uint16_t *)d32 = p16;
+        }
+        return;
+      }
       _blend_spans_565<pv_span>(target, brush, n, false);
       return;
     }

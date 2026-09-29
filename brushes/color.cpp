@@ -14,6 +14,13 @@ namespace picovector {
 
   color_brush_t::color_brush_t(const color_t& c) : c(c._p) {}
 
+  bool color_brush_t::solid_opaque(image_t *target, pixel_t &out) const {
+    pixel_t src = color_src(target, (brush_t *)this);
+    if(_a(src) != 255) return false;
+    out = src;
+    return true;
+  }
+
   void color_brush_t::blend_spans(image_t *target, int i0, int i1, int step) {
     pixel_t src = color_src(target, this);
     const pv_span *spans = _spans();

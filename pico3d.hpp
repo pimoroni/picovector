@@ -162,6 +162,13 @@ namespace picovector {
     const uint32_t *colors;     // vertex_count, 0x00BBGGRR, or null (-> material.color)
     const float    *tangents;   // 3 * vertex_count  (tx,ty,tz) or null (for normal maps)
     const uint16_t *indices;    // 3 * triangle_count
+    // Quantised positions: when set, the vertex transform reads THESE instead
+    // of `positions` (half the memory traffic - positions are re-read every
+    // frame) and reconstructs p = q_bias + q_scale * q per axis. The clipper
+    // reconstructs the same way, so a clipped triangle still shares exact
+    // vertices with its unclipped neighbours. Fill with pico3d_mesh_quantise.
+    const int16_t  *positions_q;  // 3 * vertex_count, or null
+    vec3_t          q_scale, q_bias;
     uint32_t        vertex_count;
     uint32_t        triangle_count;
     // Model-space bounding box, for whole-mesh frustum culling. `has_bounds`
@@ -263,6 +270,11 @@ namespace picovector {
   static constexpr int PICO3D_RASTER_LIMIT_PX = 1023;
 
   // --- API ------------------------------------------------------------------
+
+  // Measure `positions` and fill `out` (3 * vertex_count int16) with the
+  // quantised form, setting positions_q/q_scale/q_bias. Bounds must not be
+  // stale: call pico3d_mesh_bounds first (or construct through a binding).
+  void pico3d_mesh_quantise(pico3d_mesh_t *mesh, int16_t *out);
 
   // Clear the depth buffer (no-op if target has none).
   void pico3d_depth_clear(pico3d_target_t *t, uint16_t value = 0xFFFF);

@@ -215,6 +215,36 @@ namespace picovector {
   // hoisted to locals once, then the scanline steps a small cur_t — so the loop
   // touches only locals (registers; no aliasing with the colour write) and the
   // per-triangle cost is a few words, not a 240-byte struct copy.
+  // The covered pixels of one row, as offsets [k0, k1] from the bounding box's
+  // left edge, straight from the exact integer edge values: edge i is e_i + A_i*k,
+  // and a pixel is covered where all three are >= 0 - the same test the per-pixel
+  // loop made, solved for k rather than tried at every k. Returns false for an
+  // empty row. Out of line and shared by every raster_fill specialisation, so
+  // it costs SRAM once.
+  static bool __not_in_flash_func(row_span)(int32_t e0, int32_t e1, int32_t e2,
+                                            int32_t A0, int32_t A1, int32_t A2,
+                                            int kmax, int &k0_out, int &k1_out) {
+    int k0 = 0, k1 = kmax;
+    const int32_t e[3] = { e0, e1, e2 }, A[3] = { A0, A1, A2 };
+    for (int i = 0; i < 3; i++) {
+      if (A[i] > 0) {               // rising: covered from ceil(-e / A) on
+        if (e[i] < 0) {
+          int32_t k = (-e[i] + A[i] - 1) / A[i];
+          if (k > k0) k0 = k;
+        }
+      } else if (A[i] < 0) {        // falling: covered up to floor(e / -A)
+        if (e[i] < 0) return false;
+        int32_t k = e[i] / -A[i];
+        if (k < k1) k1 = k;
+      } else if (e[i] < 0) {        // flat and outside: the whole row is out
+        return false;
+      }
+    }
+    if (k0 > k1) return false;
+    k0_out = k0; k1_out = k1;
+    return true;
+  }
+
   template<bool TEX, bool VARYING, bool NMAP, bool DEPTH>
   __attribute__((always_inline)) static inline
   int raster_fill(const shade_t &s, const attrs_t &at, uint32_t cc,
@@ -266,18 +296,22 @@ namespace picovector {
     for (int y = miny; y <= maxy; y++) {
       if (pending) { pending--; PV_ROW_ADVANCE(); continue; }
       pending = ystep - 1;
-      int32_t e0 = ed.e0_row, e1 = ed.e1_row, e2 = ed.e2_row;
-      c.dep = dep_row;
-      if constexpr (VARYING) { c.r=r_row; c.g=g_row; c.b=b_row; }
-      if constexpr (UVS) { if (persp) { c.uw=uw_row; c.vw=vw_row; c.iw=iw_row; }
-                           else        { c.u=u_row; c.v=v_row; } }
-      if constexpr (NMAP) for (int k=0;k<3;k++){ c.nrm[k]=nrm_row[k]; c.tan[k]=tan_row[k]; }
+      // Only the covered span, with every value set up at its first pixel:
+      // no coverage test, and nothing stepped across the empty part of the
+      // box, which for small triangles is most of it.
+      int k0, k1;
+      if (!row_span(ed.e0_row, ed.e1_row, ed.e2_row, ed.A0, ed.A1, ed.A2, maxx - minx, k0, k1)) {
+        PV_ROW_ADVANCE();
+        continue;
+      }
+      c.dep = dep_row + ddep_dx * k0;
+      if constexpr (VARYING) { c.r=r_row+dr_dx*k0; c.g=g_row+dg_dx*k0; c.b=b_row+db_dx*k0; }
+      if constexpr (UVS) { if (persp) { c.uw=uw_row+duwdx*k0; c.vw=vw_row+dvwdx*k0; c.iw=iw_row+diwdx*k0; }
+                           else        { c.u=u_row+du_dx*k0; c.v=v_row+dv_dx*k0; } }
+      if constexpr (NMAP) for (int k=0;k<3;k++){ c.nrm[k]=nrm_row[k]+nrm_dx[k]*k0; c.tan[k]=tan_row[k]+tan_dx[k]*k0; }
 
-      for (int x = minx; x <= maxx; x++) {
-        if ((e0 | e1 | e2) >= 0) {
-          if (emit<TEX,VARYING,NMAP,DEPTH>(s, x, y, c, cc)) written++;
-        }
-        e0 += ed.A0; e1 += ed.A1; e2 += ed.A2;
+      for (int x = minx + k0, xe = minx + k1; x <= xe; x++) {
+        if (emit<TEX,VARYING,NMAP,DEPTH>(s, x, y, c, cc)) written++;
         c.dep += ddep_dx;
         if constexpr (VARYING) { c.r+=dr_dx; c.g+=dg_dx; c.b+=db_dx; }
         if constexpr (UVS) { if (persp) { c.uw+=duwdx; c.vw+=dvwdx; c.iw+=diwdx; }

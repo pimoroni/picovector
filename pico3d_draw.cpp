@@ -141,6 +141,14 @@ namespace picovector {
     return sx < -GUARD_PX || sx > GUARD_PX || sy < -GUARD_PX || sy > GUARD_PX;
   }
 
+  // Screen position given to a vertex behind the near plane. It has no real
+  // projection, and parking it far outside the guard band means the one
+  // screen-position test every hot path already makes sends its triangles to
+  // the clipper - so they need not read the entry's near distance, which sits
+  // in another 8-byte PSRAM cache line from sx, sy.
+  static constexpr float BEHIND_NEAR = 1.0e30f;
+  static inline bool behind_near(float sx) { return sx == BEHIND_NEAR; }
+
   // Sutherland-Hodgman against one plane, as a . (x, y, z, w) >= 0 in clip
   // space: a convex polygon of n vertices in, at most n + 1 out. Interpolating in
   // clip space - before the perspective divide - is what keeps the new vertices
@@ -311,8 +319,8 @@ namespace picovector {
         }
       }
 
-      if (V(i0).nd >= 0.0f && V(i1).nd >= 0.0f && V(i2).nd >= 0.0f &&
-          !outside_guard(V(i0).sx, V(i0).sy) && !outside_guard(V(i1).sx, V(i1).sy) &&
+      // (a vertex behind the near plane is parked outside the guard band too)
+      if (!outside_guard(V(i0).sx, V(i0).sy) && !outside_guard(V(i1).sx, V(i1).sy) &&
           !outside_guard(V(i2).sx, V(i2).sy)) {
         pico3d_tri_t tri{};
         for (int k = 0; k < 3; k++) {                   // copy the CACHED screen projection
@@ -381,7 +389,7 @@ namespace picovector {
       for (uint32_t v = 0, nv = job.mesh->vertex_count; v < nv; v++) {
         // Only to pick where to split the screen, so a vertex with no meaningful
         // projection is simply left out of the extent.
-        if (V(v).w <= NEAR_EPS) continue;
+        if (V(v).w <= NEAR_EPS || behind_near(V(v).sx)) continue;
         float sy = V(v).sy;
         if (sy < mny) mny = sy;
         if (sy > mxy) mxy = sy;
@@ -396,7 +404,7 @@ namespace picovector {
         const uint16_t *ind = job.mesh->indices;
         for (uint32_t f = 0, T = job.mesh->triangle_count; f < T; f++) {
           uint16_t a = ind[f*3], b = ind[f*3+1], c = ind[f*3+2];
-          if (V(a).nd < 0.0f || V(b).nd < 0.0f || V(c).nd < 0.0f) {
+          if (behind_near(V(a).sx) || behind_near(V(b).sx) || behind_near(V(c).sx)) {
             // Crosses the near plane, so its cached sy is meaningless and there
             // is no telling which band the clipped pieces land in. Bin it to
             // both and let each core clip it against its own rows.
@@ -456,9 +464,13 @@ namespace picovector {
       pico3d_vcache_t &o = *(pico3d_vcache_t *)(j.vc + (size_t)v * j.vs);
       vec4_t c = mvp * p;
       float w = inv_w(c.w);                              // pre-project to screen, once
-      o.sx = (c.x * w * 0.5f + 0.5f) * j.tw;
-      o.sy = (1.0f - (c.y * w * 0.5f + 0.5f)) * j.th;
       o.nd = near_distance(c);
+      if (o.nd < 0.0f) {                                 // behind the near plane: no projection
+        o.sx = o.sy = BEHIND_NEAR;
+      } else {
+        o.sx = (c.x * w * 0.5f + 0.5f) * j.tw;
+        o.sy = (1.0f - (c.y * w * 0.5f + 0.5f)) * j.th;
+      }
       o.z  = c.z * w;
       o.w  = c.w;
       uint32_t b = mesh->colors ? mesh->colors[v] : material->color;
@@ -531,7 +543,7 @@ namespace picovector {
     int32_t ymin = INT32_MAX, ymax = INT32_MIN;
     for (uint32_t f = f0; f < f1; f++) {
       uint16_t a = ind[f*3], b = ind[f*3+1], c = ind[f*3+2];
-      if (V(a).nd < 0.0f || V(b).nd < 0.0f || V(c).nd < 0.0f) {
+      if (behind_near(V(a).sx) || behind_near(V(b).sx) || behind_near(V(c).sx)) {
         // Crosses the near plane, so its cached sy means nothing and there is no
         // telling which rows the clipped pieces land in. Claim every band and
         // let each one clip it.

@@ -222,7 +222,8 @@ namespace picovector {
   // loop made, solved for k rather than tried at every k. Returns false for an
   // empty row. Out of line and shared by every raster_fill specialisation, so
   // it costs SRAM once.
-  static bool __not_in_flash_func(row_span)(int32_t e0, int32_t e1, int32_t e2,
+  __attribute__((always_inline))
+  static inline bool row_span(int32_t e0, int32_t e1, int32_t e2,
                                             int32_t A0, int32_t A1, int32_t A2,
                                             int kmax, int &k0_out, int &k1_out) {
     PICO3D_PD_COUNTN(PICO3D_PD_ROWS, 1);                  // XP

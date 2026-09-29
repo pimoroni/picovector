@@ -209,8 +209,13 @@ namespace picovector {
       col = s.white ? (px & 0xffffffu) : pico3d_modulate(col, px);
     }
 
-    if constexpr (FB565) *(uint16_t *)cpx = pico3d_pack_565(col);
-    else                 *(uint32_t *)cpx = col | 0xff000000u;
+    if constexpr (FB565) {
+      // a flat, untextured triangle's colour is constant: the caller packed it
+      // once (see raster_fill), so the store is just a store
+      if constexpr (!VARYING && !TEX && !NMAP) *(uint16_t *)cpx = (uint16_t)cc;
+      else *(uint16_t *)cpx = pico3d_pack_565(col);
+    }
+    else *(uint32_t *)cpx = col | 0xff000000u;
     if constexpr (DEPTH) *dpx = d16;
     return true;
   }
@@ -225,7 +230,8 @@ namespace picovector {
   // loop made, solved for k rather than tried at every k. Returns false for an
   // empty row. Out of line and shared by every raster_fill specialisation, so
   // it costs SRAM once.
-  static bool __not_in_flash_func(row_span)(int32_t e0, int32_t e1, int32_t e2,
+  __attribute__((always_inline))
+  static inline bool row_span(int32_t e0, int32_t e1, int32_t e2,
                                             int32_t A0, int32_t A1, int32_t A2,
                                             int kmax, int &k0_out, int &k1_out) {
     PICO3D_PD_COUNTN(PICO3D_PD_ROWS, 1);                  // XP
@@ -277,6 +283,7 @@ namespace picovector {
     if constexpr (NMAP) for (int k=0;k<3;k++){ nrm_dx[k]=at.nrm_dx[k];nrm_dy[k]=at.nrm_dy[k];nrm_row[k]=at.nrm_row[k];
                                                tan_dx[k]=at.tan_dx[k];tan_dy[k]=at.tan_dy[k];tan_row[k]=at.tan_row[k]; }
 
+    if constexpr (FB565 && !VARYING && !TEX && !NMAP) cc = pico3d_pack_565(cc);
     int written = 0;
     cur_t c{};   // value-init once (silences -Wmaybe-uninitialized; DCE'd where set before use)
 

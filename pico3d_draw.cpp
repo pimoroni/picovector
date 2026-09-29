@@ -210,6 +210,7 @@ namespace picovector {
   struct pass2_job_t {
     pico3d_target_t          target;        // a COPY; clip_y0/clip_y1 select the band
     const pico3d_mesh_t     *mesh;
+    const uint16_t          *ind;           // the mesh's indices, or the scene's SRAM copy
     const char              *vc;            // packed vertex cache, vs bytes an entry
     uint32_t                 vs;
     mat4_t                   mvp;           // to re-project a triangle the near plane cuts
@@ -306,7 +307,7 @@ namespace picovector {
     PICO3D_PD_COUNTN(PICO3D_PD_TRIS_IN, n);
     for (uint32_t bi = 0; bi < n; bi++) {
       uint32_t f = bin ? bin[bi] : bi;
-      uint16_t i0 = mesh->indices[f*3], i1 = mesh->indices[f*3+1], i2 = mesh->indices[f*3+2];
+      uint16_t i0 = j.ind[f*3], i1 = j.ind[f*3+1], i2 = j.ind[f*3+2];
       const uint16_t idx[3] = {i0, i1, i2};
 
       // The varyings, resolved once per vertex whichever path takes them. FLAT
@@ -426,7 +427,7 @@ namespace picovector {
         uint16_t *top_bin = (uint16_t *)pool;
         uint16_t *bot_bin = top_bin + bin_cap;
         uint32_t nt = 0, nb = 0;
-        const uint16_t *ind = job.mesh->indices;
+        const uint16_t *ind = job.ind;
         for (uint32_t f = 0, T = job.mesh->triangle_count; f < T; f++) {
           uint16_t a = ind[f*3], b = ind[f*3+1], c = ind[f*3+2];
           if (behind_near(V(a).sx) || behind_near(V(b).sx) || behind_near(V(c).sx)) {
@@ -734,6 +735,7 @@ namespace picovector {
     // --- pass 2: assemble + rasterise (optionally split across both cores) -----
     pass2_job_t job;
     job.target = *t;          job.mesh = mesh;     job.vc = (const char *)vc;
+    job.ind = mesh->indices;
     job.vs = vs;               job.mvp = mvp;
     job.material = material;   job.light = light;   job.raster_light = raster_light;
     job.L = L;                 job.shading = shading;
@@ -815,7 +817,8 @@ namespace picovector {
                         const pico3d_mesh_t *mesh, const mat4_t *model,
                         const mat4_t *view_proj, const pico3d_material_t *material,
                         pico3d_shading_t shading, const pico3d_light_t *light,
-                        const mat4_t *view) {
+                        const mat4_t *view, const char **why) {
+    if (why) *why = nullptr;
     // Cull FIRST, before even the capacity checks: a mesh outside the frustum
     // takes no room in the scene, so a full scene should still swallow one
     // rather than report failure. This is the cheapest work in the pipeline and
@@ -826,19 +829,54 @@ namespace picovector {
     prepared_t p = prepare_draw(mesh, model, view_proj, material, shading, light, view);
     if (pico3d_cull_mesh(mesh, &p.mvp)) { PICO3D_PD_ADD(PICO3D_PD_ADD_WALL, pd_add); return true; }
 
-    // Nothing here allocates: a full scene is refused so a frame can never
-    // stall on a heap. bin holds one submission's live triangles, so it has to
-    // fit the largest mesh rather than the whole scene.
-    if (sc->sub_count >= sc->sub_cap) return false;
-    // Entries pack to what the material needs, so room is counted in bytes. The
-    // arena is sized for vert_cap of the largest entry, so vert_cap vertices
-    // always fit, whatever the materials.
+    // Nothing here allocates from a heap: a full scene is refused so a frame
+    // can never stall on one. bin holds one submission's live triangles, so it
+    // has to fit the largest mesh rather than the whole scene.
+    if (sc->sub_count >= sc->sub_cap) { if (why) *why = "meshes"; return false; }
+    // Entries pack to what the material needs, so room is counted in bytes.
+    // An embedder-set region (an SRAM pool) is bounded by its real size, less
+    // whatever the index cache has taken of its tail; the heap arena keeps the
+    // historic bound of vert_cap worst-case entries.
     const uint32_t vs = vcache_stride(p.shading, p.do_nmap, p.do_matcap,
                                       vcache_need_w(t, material));
-    if ((size_t)sc->vert_bytes + (size_t)mesh->vertex_count * vs >
-        (size_t)sc->vert_cap * sizeof(pico3d_vcache_t)) return false;
-    if (sc->tri_count + mesh->triangle_count > sc->tri_cap) return false;
-    if (mesh->triangle_count > sc->bin_cap) return false;
+    const size_t vert_bound = sc->vert_arena_bytes
+        ? (size_t)(sc->cache_low ? sc->cache_low : sc->vert_arena_bytes)
+        : (size_t)sc->vert_cap * sizeof(pico3d_vcache_t);
+    if (sc->vert_count + mesh->vertex_count > sc->vert_cap) { if (why) *why = "vertices"; return false; }
+    if ((size_t)sc->vert_bytes + (size_t)mesh->vertex_count * vs > vert_bound) {
+      if (why) *why = "vertex arena";
+      return false;
+    }
+    if (sc->tri_count + mesh->triangle_count > sc->tri_cap) { if (why) *why = "triangles"; return false; }
+    if (mesh->triangle_count > sc->bin_cap) { if (why) *why = "bin"; return false; }
+
+    // The bands read this mesh's indices once per band; when the arena has an
+    // SRAM tail free, cache a copy there the first time the mesh appears and
+    // read fast memory every frame after. The copy is not re-checked: a mesh
+    // whose *index* buffer is rewritten keeps drawing the cached list until a
+    // new scene is built (positions stay live as ever).
+    const uint16_t *indices = mesh->indices;
+    if (sc->vert_arena_bytes) {
+      if (!sc->cache_low) sc->cache_low = sc->vert_arena_bytes;
+      bool hit = false;
+      for (uint32_t i = 0; i < sc->cache_count; i++) {
+        if (sc->cached[i].mesh == mesh) { indices = sc->cached[i].copy; hit = true; break; }
+      }
+      if (!hit && sc->cache_count < (uint32_t)(sizeof(sc->cached) / sizeof(sc->cached[0]))) {
+        size_t bytes = ((size_t)mesh->triangle_count * 6 + 7) & ~(size_t)7;
+        if (sc->cache_low >= sc->vert_bytes + bytes &&
+            (size_t)sc->cache_low - bytes >= (size_t)sc->vert_bytes) {
+          sc->cache_low -= (uint32_t)bytes;
+          uint16_t *copy = (uint16_t *)((char *)sc->verts + sc->cache_low);
+          const uint16_t *src = mesh->indices;
+          for (uint32_t k = 0, n = mesh->triangle_count * 3; k < n; k++) copy[k] = src[k];
+          sc->cached[sc->cache_count].mesh = mesh;
+          sc->cached[sc->cache_count].copy = copy;
+          sc->cache_count++;
+          indices = copy;
+        }
+      }
+    }
 
     char *vb = (char *)sc->verts + sc->vert_bytes;
     sc->tw = (float)t->width;
@@ -878,7 +916,7 @@ namespace picovector {
     // since a triangle's vertices can come from either core's half.
     extents_job_t ej;
     ej.vb = vb;                 ej.vs = vs;
-    ej.ind = mesh->indices;     ej.ys = sc->ys + (size_t)sc->tri_count * 2;
+    ej.ind = indices;           ej.ys = sc->ys + (size_t)sc->tri_count * 2;
     ej.cull_back = !material->double_sided;
     ej.tw = (float)t->width;
     const uint32_t T = mesh->triangle_count;
@@ -903,6 +941,7 @@ namespace picovector {
     sub->L = p.L;                 sub->shading = p.shading;
     sub->do_nmap = p.do_nmap;     sub->do_matcap = p.do_matcap;
     sub->vbase = sc->vert_bytes;  sub->vstride = vs;
+    sub->indices = indices;
     sub->mvp = p.mvp;             sub->tbase = sc->tri_count;
     sc->vert_bytes += mesh->vertex_count * vs;
     sc->vert_count += mesh->vertex_count;
@@ -938,6 +977,7 @@ namespace picovector {
       pass2_job_t job;
       job.target = *bt;             job.mesh = sub.mesh;
       job.vc = (const char *)sc->verts + sub.vbase;
+      job.ind = sub.indices;
       job.vs = sub.vstride;         job.mvp = sub.mvp;
       job.material = sub.material;  job.light = sub.light;
       job.raster_light = sub.raster_lit ? &sub.rlight : nullptr;

@@ -113,14 +113,29 @@ namespace picovector {
 
   // Bytes a vertex-cache entry takes for a draw: the common prefix, plus the
   // extras its shading path reads (see pico3d_vcache_t).
-  static inline uint32_t vcache_stride(pico3d_shading_t shading, bool do_nmap, bool do_matcap) {
-    const uint32_t base = (uint32_t)offsetof(pico3d_vcache_t, ext);
-    if (do_nmap) return base + 2 * (uint32_t)sizeof(vec3_t);
-    if (do_matcap || shading == PICO3D_FLAT) return base + (uint32_t)sizeof(vec3_t);
-    return base;
+  // need_w: some path will read the entry's w - texture coordinates (1/w), a
+  // per-pixel-lit or matcap material, or depth fog on the target at add()
+  // time. Without it (and with no ext fields) an entry is two 8-byte lines,
+  // [sx sy][z rgb], and the transform's PSRAM writes drop by a third. Fog
+  // switched on between add() and draw() is skipped for such a submission:
+  // the eye-space depth it needs was never stored.
+  static inline uint32_t vcache_stride(pico3d_shading_t shading, bool do_nmap, bool do_matcap,
+                                       bool need_w) {
+    if (do_nmap) return (uint32_t)offsetof(pico3d_vcache_t, ext) + 2 * (uint32_t)sizeof(vec3_t);
+    if (do_matcap || shading == PICO3D_FLAT)
+      return (uint32_t)offsetof(pico3d_vcache_t, ext) + (uint32_t)sizeof(vec3_t);
+    return need_w ? (uint32_t)offsetof(pico3d_vcache_t, ext)
+                  : (uint32_t)offsetof(pico3d_vcache_t, w);
   }
+  static_assert(offsetof(pico3d_vcache_t, w) == 16, "the short vcache entry is 16 bytes");
   static_assert(offsetof(pico3d_vcache_t, ext) == 24, "vcache prefix is 24 bytes");
   static_assert(sizeof(pico3d_vcache_t) == 48, "vcache entry is at most 48 bytes");
+
+  // Does a draw to this target with this material read the entries' w?
+  static inline bool vcache_need_w(const pico3d_target_t *t, const pico3d_material_t *m) {
+    return (t->fog_far > t->fog_near) ||
+           m->texture || m->matcap || m->normal_map || m->specular != 0;
+  }
 
   // Entry i of a packed cache.
   static inline const pico3d_vcache_t &vcache_at(const char *vb, uint32_t vs, uint32_t i) {
@@ -281,9 +296,12 @@ namespace picovector {
     };
     uint32_t n = bin ? bincount : mesh->triangle_count;
     int drawn = 0;
-    // the rasteriser reads iw only to interpolate texture coordinates
+    // The rasteriser reads iw and uv_ only to interpolate texture coordinates,
+    // so a material with nothing to sample leaves both unwritten (and the
+    // entry's [w nd] cache line unread). The rasteriser only looks at them on
+    // its textured or per-pixel-lit paths, which such a material never takes.
     const pico3d_material_t *mt = j.material;
-    const bool need_iw = mt->texture || mt->matcap || mt->normal_map || mt->specular || do_nmap || do_matcap;
+    const bool need_uv = mt->texture || mt->matcap || mt->normal_map || mt->specular || do_nmap || do_matcap;
     PICO3D_PD_START(pd_p2);
     PICO3D_PD_COUNTN(PICO3D_PD_TRIS_IN, n);
     for (uint32_t bi = 0; bi < n; bi++) {
@@ -296,7 +314,7 @@ namespace picovector {
       // the same for every piece a clip leaves behind.
       vec3_t vuv[3], vn[3], vtan[3];
       uint32_t vrgb[3];
-      vuv[0] = uv(i0); vuv[1] = uv(i1); vuv[2] = uv(i2);
+      if (need_uv) { vuv[0] = uv(i0); vuv[1] = uv(i1); vuv[2] = uv(i2); }
       if (do_nmap) {
         for (int k = 0; k < 3; k++) {
           vrgb[k] = V(idx[k]).rgb; vn[k] = V(idx[k]).ext[0]; vtan[k] = V(idx[k]).ext[1];
@@ -314,7 +332,7 @@ namespace picovector {
       // Depth fog, after the light so it cannot pick up the surface's facing.
       // w is the eye-space depth the projection already worked out, so this
       // costs a subtract, a clamp and a mix per vertex.
-      if (j.fog_scale != 0.0f) {
+      if (j.fog_scale != 0.0f && j.vs > (uint32_t)offsetof(pico3d_vcache_t, w)) {
         for (int k = 0; k < 3; k++) {
           float f = (j.fog_far - V(idx[k]).w) * j.fog_scale;
           f = f < 0.0f ? 0.0f : (f > 1.0f ? 1.0f : f);
@@ -325,15 +343,16 @@ namespace picovector {
       // (a vertex behind the near plane is parked outside the guard band too)
       if (!outside_guard(V(i0).sx, V(i0).sy) && !outside_guard(V(i1).sx, V(i1).sy) &&
           !outside_guard(V(i2).sx, V(i2).sy)) {
-        pico3d_tri_t tri{};
+        // Deliberately not value-initialised: it is 168 bytes, and zeroing it
+        // per triangle cost more than some triangles' fill. Every field a path
+        // reads is written on that path: sx/sy/z/rgb always, iw and uv_ for
+        // materials with something to sample, n/tan when normal-mapped.
+        pico3d_tri_t tri;
         for (int k = 0; k < 3; k++) {                   // copy the CACHED screen projection
           const pico3d_vcache_t &e = V(idx[k]);
           tri.sx[k] = e.sx; tri.sy[k] = e.sy;
-          tri.z[k]  = e.z;
-          // 1/w only matters to texture coordinates; skipping it otherwise
-          // leaves the entry's last cache line unread
-          tri.iw[k] = need_iw ? inv_w(e.w) : 1.0f;
-          tri.uv_[k] = vuv[k]; tri.rgb[k] = vrgb[k];
+          tri.z[k]  = e.z; tri.rgb[k] = vrgb[k];
+          if (need_uv) { tri.iw[k] = inv_w(e.w); tri.uv_[k] = vuv[k]; }
         }
         if (do_nmap) for (int k = 0; k < 3; k++) { tri.n[k] = vn[k]; tri.tan[k] = vtan[k]; }
         PICO3D_PD_START(pd_r);
@@ -395,7 +414,7 @@ namespace picovector {
       for (uint32_t v = 0, nv = job.mesh->vertex_count; v < nv; v++) {
         // Only to pick where to split the screen, so a vertex with no meaningful
         // projection is simply left out of the extent.
-        if (V(v).w <= NEAR_EPS || behind_near(V(v).sx)) continue;
+        if (outside_guard(V(v).sx, V(v).sy)) continue;   // sentinel or off in the guard band
         float sy = V(v).sy;
         if (sy < mny) mny = sy;
         if (sy > mxy) mxy = sy;
@@ -470,15 +489,16 @@ namespace picovector {
       pico3d_vcache_t &o = *(pico3d_vcache_t *)(j.vc + (size_t)v * j.vs);
       vec4_t c = mvp * p;
       float w = inv_w(c.w);                              // pre-project to screen, once
-      o.nd = near_distance(c);
-      if (o.nd < 0.0f) {                                 // behind the near plane: no projection
+      float nd = near_distance(c);
+      if (nd < 0.0f) {                                   // behind the near plane: no projection
         o.sx = o.sy = BEHIND_NEAR;
       } else {
         o.sx = (c.x * w * 0.5f + 0.5f) * j.tw;
         o.sy = (1.0f - (c.y * w * 0.5f + 0.5f)) * j.th;
       }
       o.z  = c.z * w;
-      o.w  = c.w;
+      // a short entry ends at z/rgb: nothing will read w or nd (see vcache_stride)
+      if (j.vs > (uint32_t)offsetof(pico3d_vcache_t, w)) { o.w = c.w; o.nd = nd; }
       uint32_t b = mesh->colors ? mesh->colors[v] : material->color;
       if (do_nmap) {
         o.rgb = b;
@@ -566,6 +586,28 @@ namespace picovector {
       if (denom == 0.0f || (cull_back && denom > 0.0f) || xhi < 0.0f || xlo >= tw) {
         ys[f*2] = 32767; ys[f*2+1] = -32768;        // touches no band
         continue;
+      }
+      // Sub-pixel cull: a triangle that spans no pixel centre on either axis
+      // writes nothing, so it gets an empty extent here and no band ever bins
+      // or sets it up. The test snaps the way the rasteriser does ((int) of
+      // sx * 16) and asks the question it would ask - is there a pixel centre
+      // (k * 16 + 8) inside the snapped min and max - so it culls exactly the
+      // triangles the fill would have walked and thrown away. Dense meshes at
+      // this screen size (the eyes) are full of them. Skipped outside the
+      // guard band, where the clipper reshapes the triangle anyway and the
+      // int conversion could not hold the value.
+      if (!outside_guard(sx0, sy0) && !outside_guard(sx1, sy1) && !outside_guard(sx2, sy2)) {
+        const int32_t SX0 = (int32_t)(sx0 * 16.0f), SY0 = (int32_t)(sy0 * 16.0f);
+        const int32_t SX1 = (int32_t)(sx1 * 16.0f), SY1 = (int32_t)(sy1 * 16.0f);
+        const int32_t SX2 = (int32_t)(sx2 * 16.0f), SY2 = (int32_t)(sy2 * 16.0f);
+        const int32_t Xl = SX0 < SX1 ? (SX0 < SX2 ? SX0 : SX2) : (SX1 < SX2 ? SX1 : SX2);
+        const int32_t Xh = SX0 > SX1 ? (SX0 > SX2 ? SX0 : SX2) : (SX1 > SX2 ? SX1 : SX2);
+        const int32_t Yl = SY0 < SY1 ? (SY0 < SY2 ? SY0 : SY2) : (SY1 < SY2 ? SY1 : SY2);
+        const int32_t Yh = SY0 > SY1 ? (SY0 > SY2 ? SY0 : SY2) : (SY1 > SY2 ? SY1 : SY2);
+        if (((Xl - 8 + 15) >> 4) > ((Xh - 8) >> 4) || ((Yl - 8 + 15) >> 4) > ((Yh - 8) >> 4)) {
+          ys[f*2] = 32767; ys[f*2+1] = -32768;      // spans no pixel centre
+          continue;
+        }
       }
       float lo = sy0, hi = lo, sy;
       sy = sy1; if (sy < lo) lo = sy; else if (sy > hi) hi = sy;
@@ -667,7 +709,8 @@ namespace picovector {
     // --- pass 1: transform + light every vertex — split across both cores in 2-core --
     vec3_t L = p.L;
     xform_job_t xj;
-    const uint32_t vs = vcache_stride(shading, do_nmap, do_matcap);
+    const uint32_t vs = vcache_stride(shading, do_nmap, do_matcap,
+                                      vcache_need_w(t, material));
     xj.mesh = mesh;       xj.vc = (char *)vc;     xj.vs = vs;
     xj.material = material; xj.light = light;
     xj.model = model;     xj.mvp = mvp;           xj.mc_nrm = mc_nrm;     xj.L = L;
@@ -790,7 +833,8 @@ namespace picovector {
     // Entries pack to what the material needs, so room is counted in bytes. The
     // arena is sized for vert_cap of the largest entry, so vert_cap vertices
     // always fit, whatever the materials.
-    const uint32_t vs = vcache_stride(p.shading, p.do_nmap, p.do_matcap);
+    const uint32_t vs = vcache_stride(p.shading, p.do_nmap, p.do_matcap,
+                                      vcache_need_w(t, material));
     if ((size_t)sc->vert_bytes + (size_t)mesh->vertex_count * vs >
         (size_t)sc->vert_cap * sizeof(pico3d_vcache_t)) return false;
     if (sc->tri_count + mesh->triangle_count > sc->tri_cap) return false;

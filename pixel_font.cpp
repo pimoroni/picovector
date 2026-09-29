@@ -251,7 +251,7 @@ namespace picovector {
             draw_glyph(target, glyph, data, brush, bounds,
                        glyph_placement(*transform, c->x, c->y, scale));
           } else {
-            draw_glyph(target, glyph, data, brush, bounds, (int)c->x, (int)c->y, scale);
+            draw_glyph(target, glyph, data, brush, bounds, (int)floorf(c->x), (int)floorf(c->y), scale);
           }
         }
 

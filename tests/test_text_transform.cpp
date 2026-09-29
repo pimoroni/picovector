@@ -84,6 +84,16 @@ void test_text_transform() {
     CHECK(measure_ink(plain).full == GW * GH * scale * scale);
   }
 
+  printf("text transform: a fractional caret left of the origin floors, not truncates\n");
+  for(int scale = 1; scale <= 3; scale++) {
+    ink_canvas_t left(48, 48, OFF), right(48, 48, OFF);
+    draw_block(left, &bf.font, -0.5f, -0.5f, scale, nullptr);
+    draw_block(right, &bf.font, 0.5f, 0.5f, scale, nullptr);
+    ink_t kl = measure_ink(left), kr = measure_ink(right);
+    CHECK(kl.maxx == kr.maxx - 1);
+    CHECK(kl.maxy == kr.maxy - 1);
+  }
+
   printf("text transform: translating the matrix moves the drawn glyph\n");
   {
     ink_canvas_t moved(48, 48, OFF), placed(48, 48, OFF);

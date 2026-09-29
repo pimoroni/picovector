@@ -225,6 +225,9 @@ namespace picovector {
     float    sx, sy;  // pre-projected screen position (computed once here, not per triangle)
     float    z;       // depth (z/w)
     uint32_t rgb;     // per-vertex colour: final for UNLIT/GOURAUD, base for FLAT/normal-mapped
+    // Written only when something will read them (texture coordinates, per-pixel
+    // lighting, or fog on the target at add() time): without them an entry is
+    // 16 bytes, two lines. See vcache_stride.
     float    w;       // clip-space w; 1/w is recomputed from it
     float    nd;      // distance in front of the near plane in clip space (z + w)
     // Only in the entries whose material needs them:

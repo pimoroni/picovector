@@ -368,12 +368,13 @@ namespace picovector {
     uint32_t ps = pico3d_prof_cyc();
 #endif
     // --- float setup (per triangle) ------------------------------------------
+    // iw / uv are copied further down, only once `uvs` says a path will read
+    // them: the draw stage leaves them unwritten for a material with nothing
+    // to sample, and the multiplies are the cost either way.
     float sx[3], sy[3], z[3], iw[3], uw[3], vw[3], uv0[3], uv1[3];
     uint32_t rgb[3];
     for (int i = 0; i < 3; i++) {
-      sx[i] = tri->sx[i]; sy[i] = tri->sy[i]; z[i] = tri->z[i]; iw[i] = tri->iw[i];
-      uv0[i] = tri->uv_[i].x; uv1[i] = tri->uv_[i].y;
-      uw[i] = uv0[i] * iw[i]; vw[i] = uv1[i] * iw[i];   // perspective uv (iw is cached)
+      sx[i] = tri->sx[i]; sy[i] = tri->sy[i]; z[i] = tri->z[i];
       rgb[i] = tri->rgb[i];
     }
 
@@ -414,6 +415,13 @@ namespace picovector {
     bool has_tex = (tx != nullptr);
     bool varying = !(rgb[0] == rgb[1] && rgb[1] == rgb[2]);
     bool uvs     = has_tex || nmap;
+    if (uvs) {
+      for (int i = 0; i < 3; i++) {
+        iw[i] = tri->iw[i];
+        uv0[i] = tri->uv_[i].x; uv1[i] = tri->uv_[i].y;
+        uw[i] = uv0[i] * iw[i]; vw[i] = uv1[i] * iw[i]; // perspective uv (iw is cached)
+      }
+    }
     // value-initialised: the if-constexpr-gated reads in raster_fill confuse
     // -Wmaybe-uninitialized (it can't prove the runtime varying/persp/nmap flags
     // match the template params), and removing it gave no measured geometry win.

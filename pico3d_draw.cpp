@@ -127,9 +127,9 @@ namespace picovector {
     return need_w ? (uint32_t)offsetof(pico3d_vcache_t, ext)
                   : (uint32_t)offsetof(pico3d_vcache_t, w);
   }
-  static_assert(offsetof(pico3d_vcache_t, w) == 16, "the short vcache entry is 16 bytes");
-  static_assert(offsetof(pico3d_vcache_t, ext) == 24, "vcache prefix is 24 bytes");
-  static_assert(sizeof(pico3d_vcache_t) == 48, "vcache entry is at most 48 bytes");
+  static_assert(offsetof(pico3d_vcache_t, w) == 12, "the short vcache entry is 12 bytes");
+  static_assert(offsetof(pico3d_vcache_t, ext) == 20, "vcache prefix is 20 bytes");
+  static_assert(sizeof(pico3d_vcache_t) == 44, "vcache entry is at most 44 bytes");
 
   // Does a draw to this target with this material read the entries' w?
   static inline bool vcache_need_w(const pico3d_target_t *t, const pico3d_material_t *m) {
@@ -156,13 +156,12 @@ namespace picovector {
     return sx < -GUARD_PX || sx > GUARD_PX || sy < -GUARD_PX || sy > GUARD_PX;
   }
 
-  // Screen position given to a vertex behind the near plane. It has no real
-  // projection, and parking it far outside the guard band means the one
-  // screen-position test every hot path already makes sends its triangles to
-  // the clipper - so they need not read the entry's near distance, which sits
-  // in another 8-byte PSRAM cache line from sx, sy.
-  static constexpr float BEHIND_NEAR = 1.0e30f;
-  static inline bool behind_near(float sx) { return sx == BEHIND_NEAR; }
+  // A vertex behind the near plane has no real projection, and one beyond the
+  // guard band has no storable one: both park at the sentinel, and the one
+  // screen-position test every hot path already makes sends their triangles to
+  // the clipper (which recomputes from the mesh).
+  static inline bool parked(int16_t sxq) { return sxq == PICO3D_PARKED_Q; }
+  static inline int16_t snap_q(float s) { return (int16_t)(int32_t)(s * 16.0f); }
 
   // Sutherland-Hodgman against one plane, as a . (x, y, z, w) >= 0 in clip
   // space: a convex polygon of n vertices in, at most n + 1 out. Interpolating in
@@ -191,8 +190,10 @@ namespace picovector {
   static inline void project_into(pico3d_tri_t &tri, int k, const clipvert_t &v,
                                   float tw, float th) {
     float w = 1.0f / v.clip.w;
-    tri.sx[k]  = (v.clip.x * w * 0.5f + 0.5f) * tw;
-    tri.sy[k]  = (1.0f - (v.clip.y * w * 0.5f + 0.5f)) * th;
+    // the same 28.4 snap the transform caches, so a clipped triangle lands on
+    // the same pixels its unclipped neighbours do and shared edges stay tight
+    tri.sxq[k] = (int32_t)((v.clip.x * w * 0.5f + 0.5f) * tw * 16.0f);
+    tri.syq[k] = (int32_t)((1.0f - (v.clip.y * w * 0.5f + 0.5f)) * th * 16.0f);
     tri.z[k]   = v.clip.z * w;
     tri.iw[k]  = w;
     tri.uv_[k] = v.uv;
@@ -341,9 +342,8 @@ namespace picovector {
         }
       }
 
-      // (a vertex behind the near plane is parked outside the guard band too)
-      if (!outside_guard(V(i0).sx, V(i0).sy) && !outside_guard(V(i1).sx, V(i1).sy) &&
-          !outside_guard(V(i2).sx, V(i2).sy)) {
+      // (a vertex behind the near plane is parked, as is one beyond the guard)
+      if (!parked(V(i0).sxq) && !parked(V(i1).sxq) && !parked(V(i2).sxq)) {
         // Deliberately not value-initialised: it is 168 bytes, and zeroing it
         // per triangle cost more than some triangles' fill. Every field a path
         // reads is written on that path: sx/sy/z/rgb always, iw and uv_ for
@@ -351,7 +351,7 @@ namespace picovector {
         pico3d_tri_t tri;
         for (int k = 0; k < 3; k++) {                   // copy the CACHED screen projection
           const pico3d_vcache_t &e = V(idx[k]);
-          tri.sx[k] = e.sx; tri.sy[k] = e.sy;
+          tri.sxq[k] = e.sxq; tri.syq[k] = e.syq;
           tri.z[k]  = e.z; tri.rgb[k] = vrgb[k];
           if (need_uv) { tri.iw[k] = inv_w(e.w); tri.uv_[k] = vuv[k]; }
         }
@@ -411,26 +411,26 @@ namespace picovector {
       // is split between the cores instead of duplicated (only band-straddling triangles
       // are set up twice). Bins live in picovector's working buffer.
       auto V = [&](uint32_t i) -> const pico3d_vcache_t & { return vcache_at(job.vc, job.vs, i); };
-      float mny = 1e30f, mxy = -1e30f;
+      int32_t mny = INT32_MAX, mxy = INT32_MIN;
       for (uint32_t v = 0, nv = job.mesh->vertex_count; v < nv; v++) {
         // Only to pick where to split the screen, so a vertex with no meaningful
         // projection is simply left out of the extent.
-        if (outside_guard(V(v).sx, V(v).sy)) continue;   // sentinel or off in the guard band
-        float sy = V(v).sy;
+        if (parked(V(v).sxq)) continue;
+        int32_t sy = V(v).syq;
         if (sy < mny) mny = sy;
         if (sy > mxy) mxy = sy;
       }
       if (mxy > mny) {
-        int mid = (int)((mny + mxy) * 0.5f);
+        int mid = (int)((mny + mxy) / 32);               // mean of two 28.4 rows, in pixels
         if (mid < y0) mid = y0; else if (mid > y1) mid = y1;
-        float midf = (float)mid;
+        const int32_t midq = mid * 16;
         uint16_t *top_bin = (uint16_t *)pool;
         uint16_t *bot_bin = top_bin + bin_cap;
         uint32_t nt = 0, nb = 0;
         const uint16_t *ind = job.ind;
         for (uint32_t f = 0, T = job.mesh->triangle_count; f < T; f++) {
           uint16_t a = ind[f*3], b = ind[f*3+1], c = ind[f*3+2];
-          if (behind_near(V(a).sx) || behind_near(V(b).sx) || behind_near(V(c).sx)) {
+          if (parked(V(a).sxq) || parked(V(b).sxq) || parked(V(c).sxq)) {
             // Crosses the near plane, so its cached sy is meaningless and there
             // is no telling which band the clipped pieces land in. Bin it to
             // both and let each core clip it against its own rows.
@@ -438,11 +438,11 @@ namespace picovector {
             bot_bin[nb++] = (uint16_t)f;
             continue;
           }
-          float lo = V(a).sy, hi = lo, s;
-          s = V(b).sy; if (s < lo) lo = s; else if (s > hi) hi = s;
-          s = V(c).sy; if (s < lo) lo = s; else if (s > hi) hi = s;
-          if (lo <  midf) top_bin[nt++] = (uint16_t)f;
-          if (hi >= midf) bot_bin[nb++] = (uint16_t)f;
+          int32_t lo = V(a).syq, hi = lo, sv;
+          sv = V(b).syq; if (sv < lo) lo = sv; else if (sv > hi) hi = sv;
+          sv = V(c).syq; if (sv < lo) lo = sv; else if (sv > hi) hi = sv;
+          if (lo <  midq) top_bin[nt++] = (uint16_t)f;
+          if (hi >= midq) bot_bin[nb++] = (uint16_t)f;
         }
         pass2_job_t top = job, bot = job;
         top.target.clip_y1 = mid;                        // core0: rows [y0, mid)
@@ -492,10 +492,15 @@ namespace picovector {
       float w = inv_w(c.w);                              // pre-project to screen, once
       float nd = near_distance(c);
       if (nd < 0.0f) {                                   // behind the near plane: no projection
-        o.sx = o.sy = BEHIND_NEAR;
+        o.sxq = o.syq = PICO3D_PARKED_Q;
       } else {
-        o.sx = (c.x * w * 0.5f + 0.5f) * j.tw;
-        o.sy = (1.0f - (c.y * w * 0.5f + 0.5f)) * j.th;
+        float sx = (c.x * w * 0.5f + 0.5f) * j.tw;
+        float sy = (1.0f - (c.y * w * 0.5f + 0.5f)) * j.th;
+        if (outside_guard(sx, sy)) {                     // clipper recomputes from the mesh
+          o.sxq = o.syq = PICO3D_PARKED_Q;
+        } else {
+          o.sxq = snap_q(sx); o.syq = snap_q(sy);        // the raster's own 28.4 snap, once
+        }
       }
       o.z  = c.z * w;
       // a short entry ends at z/rgb: nothing will read w or nd (see vcache_stride)
@@ -558,7 +563,9 @@ namespace picovector {
     float tw;
   };
 
-  // Triangles [f0, f1), reporting the rows the visible ones touch.
+  // Triangles [f0, f1), reporting the rows the visible ones touch. Pure
+  // integer: the cached 28.4 positions are the same values the raster snaps
+  // to, so the backface sign here agrees with the fill exactly.
   static void __not_in_flash_func(extents_range)(const extents_job_t &j, uint32_t f0, uint32_t f1,
                                                  int32_t &ymin_out, int32_t &ymax_out,
                                                  int32_t &xmin_out, int32_t &xmax_out) {
@@ -567,69 +574,54 @@ namespace picovector {
     const uint16_t *ind = j.ind;
     int16_t *ys = j.ys;
     const bool cull_back = j.cull_back;
-    const float tw = j.tw;
+    const int32_t twq = (int32_t)j.tw * 16;
     int32_t ymin = INT32_MAX, ymax = INT32_MIN;
     int32_t xmin = INT32_MAX, xmax = INT32_MIN;
     for (uint32_t f = f0; f < f1; f++) {
       uint16_t a = ind[f*3], b = ind[f*3+1], c = ind[f*3+2];
-      if (behind_near(V(a).sx) || behind_near(V(b).sx) || behind_near(V(c).sx)) {
-        // Crosses the near plane, so its cached sy means nothing and there is no
-        // telling which rows the clipped pieces land in. Claim every band and
-        // let each one clip it.
+      const pico3d_vcache_t &va = V(a), &vb_ = V(b), &vc_ = V(c);
+      if (parked(va.sxq) || parked(vb_.sxq) || parked(vc_.sxq)) {
+        // Behind the near plane or beyond the guard band: the cached snap means
+        // nothing and there is no telling which rows the clipped pieces land
+        // in. Claim every band and let each one clip it.
         ys[f*2] = -32768; ys[f*2+1] = 32767;
         ymin = -32768; ymax = 32767;
         xmin = -32768; xmax = 32767;
         continue;
       }
-      const pico3d_vcache_t &va = V(a), &vb_ = V(b), &vc_ = V(c);
-      float sx0 = va.sx, sx1 = vb_.sx, sx2 = vc_.sx;
-      float sy0 = va.sy, sy1 = vb_.sy, sy2 = vc_.sy;
-      float denom = (sx1 - sx0) * (sy2 - sy0) - (sy1 - sy0) * (sx2 - sx0);
-      float xlo = sx0 < sx1 ? sx0 : sx1; if (sx2 < xlo) xlo = sx2;
-      float xhi = sx0 > sx1 ? sx0 : sx1; if (sx2 > xhi) xhi = sx2;
-      if (denom == 0.0f || (cull_back && denom > 0.0f) || xhi < 0.0f || xlo >= tw) {
+      const int32_t sx0 = va.sxq, sx1 = vb_.sxq, sx2 = vc_.sxq;   // 28.4
+      const int32_t sy0 = va.syq, sy1 = vb_.syq, sy2 = vc_.syq;
+      // In-guard coordinates are at most +/-16000, so each product is under
+      // 2^30 and the difference fits 32 bits - the raster's own bound.
+      const int32_t denom = (sx1 - sx0) * (sy2 - sy0) - (sy1 - sy0) * (sx2 - sx0);
+      int32_t xlo = sx0 < sx1 ? sx0 : sx1; if (sx2 < xlo) xlo = sx2;
+      int32_t xhi = sx0 > sx1 ? sx0 : sx1; if (sx2 > xhi) xhi = sx2;
+      if (denom == 0 || (cull_back && denom > 0) || xhi < 0 || xlo >= twq) {
         ys[f*2] = 32767; ys[f*2+1] = -32768;        // touches no band
         continue;
       }
-      // Sub-pixel cull: a triangle that spans no pixel centre on either axis
-      // writes nothing, so it gets an empty extent here and no band ever bins
-      // or sets it up. The test snaps the way the rasteriser does ((int) of
-      // sx * 16) and asks the question it would ask - is there a pixel centre
-      // (k * 16 + 8) inside the snapped min and max - so it culls exactly the
-      // triangles the fill would have walked and thrown away. Dense meshes at
-      // this screen size (the eyes) are full of them. Skipped outside the
-      // guard band, where the clipper reshapes the triangle anyway and the
-      // int conversion could not hold the value.
-      if (!outside_guard(sx0, sy0) && !outside_guard(sx1, sy1) && !outside_guard(sx2, sy2)) {
-        const int32_t SX0 = (int32_t)(sx0 * 16.0f), SY0 = (int32_t)(sy0 * 16.0f);
-        const int32_t SX1 = (int32_t)(sx1 * 16.0f), SY1 = (int32_t)(sy1 * 16.0f);
-        const int32_t SX2 = (int32_t)(sx2 * 16.0f), SY2 = (int32_t)(sy2 * 16.0f);
-        const int32_t Xl = SX0 < SX1 ? (SX0 < SX2 ? SX0 : SX2) : (SX1 < SX2 ? SX1 : SX2);
-        const int32_t Xh = SX0 > SX1 ? (SX0 > SX2 ? SX0 : SX2) : (SX1 > SX2 ? SX1 : SX2);
-        const int32_t Yl = SY0 < SY1 ? (SY0 < SY2 ? SY0 : SY2) : (SY1 < SY2 ? SY1 : SY2);
-        const int32_t Yh = SY0 > SY1 ? (SY0 > SY2 ? SY0 : SY2) : (SY1 > SY2 ? SY1 : SY2);
-        if (((Xl - 8 + 15) >> 4) > ((Xh - 8) >> 4) || ((Yl - 8 + 15) >> 4) > ((Yh - 8) >> 4)) {
-          ys[f*2] = 32767; ys[f*2+1] = -32768;      // spans no pixel centre
-          continue;
-        }
+      int32_t ylo = sy0 < sy1 ? sy0 : sy1; if (sy2 < ylo) ylo = sy2;
+      int32_t yhi = sy0 > sy1 ? sy0 : sy1; if (sy2 > yhi) yhi = sy2;
+      // Sub-pixel cull, directly on the snapped values the rasteriser will
+      // test: is there a pixel centre (k * 16 + 8) inside the min and max?
+      if (((xlo - 8 + 15) >> 4) > ((xhi - 8) >> 4) ||
+          ((ylo - 8 + 15) >> 4) > ((yhi - 8) >> 4)) {
+        ys[f*2] = 32767; ys[f*2+1] = -32768;        // spans no pixel centre
+        continue;
       }
-      float lo = sy0, hi = lo, sy;
-      sy = sy1; if (sy < lo) lo = sy; else if (sy > hi) hi = sy;
-      sy = sy2; if (sy < lo) lo = sy; else if (sy > hi) hi = sy;
-      int ilo = (int)lo, ihi = (int)hi + 1;         // +1: round the far edge out
-      ys[f*2]   = (int16_t)(ilo < -32768 ? -32768 : (ilo > 32767 ? 32767 : ilo));
-      ys[f*2+1] = (int16_t)(ihi < -32768 ? -32768 : (ihi > 32767 ? 32767 : ihi));
-      if (ys[f*2] < ymin) ymin = ys[f*2];
-      if (ys[f*2+1] > ymax) ymax = ys[f*2+1];
-      // Columns, from the xlo/xhi the offscreen cull already computed. These
-      // are not stored per triangle - the bands select by row - they only
-      // bound the scene so a draw can narrow its clip (and depth clears).
-      int ixlo = (int)xlo, ixhi = (int)xhi + 1;
+      int ilo = ylo / 16, ihi = yhi / 16 + 1;       // +1: round the far edge out
+      ys[f*2]   = (int16_t)ilo;
+      ys[f*2+1] = (int16_t)ihi;
+      if (ilo < ymin) ymin = ilo;
+      if (ihi > ymax) ymax = ihi;
+      // Columns are not stored per triangle - the bands select by row - they
+      // only bound the scene so a draw can narrow its clip (and depth clears).
+      const int ixlo = xlo / 16, ixhi = xhi / 16 + 1;
       if (ixlo < xmin) xmin = ixlo;
       if (ixhi > xmax) xmax = ixhi;
     }
     ymin_out = ymin; ymax_out = ymax;
-    xmin_out = xmin < -32768 ? -32768 : xmin; xmax_out = xmax > 32767 ? 32767 : xmax;
+    xmin_out = xmin; xmax_out = xmax;
     PICO3D_PD_ADD(PICO3D_PD_EXTENTS, pd_ext);
   }
 
@@ -925,12 +917,12 @@ namespace picovector {
       float zmin = 3.4e38f;
       for (uint32_t i = 0; i < mesh->vertex_count; i++) {
         const pico3d_vcache_t &e = vcache_at(vb, vs, i);
-        if (!behind_near(e.sx) && e.z < zmin) zmin = e.z;
+        if (!parked(e.sxq) && e.z < zmin) zmin = e.z;
       }
       if (zmin < 3.4e38f) {
         for (uint32_t i = 0; i < mesh->vertex_count; i++) {
           pico3d_vcache_t &e = const_cast<pico3d_vcache_t &>(vcache_at(vb, vs, i));
-          if (!behind_near(e.sx)) e.z = zmin;
+          if (!parked(e.sxq)) e.z = zmin;
         }
       }
     }

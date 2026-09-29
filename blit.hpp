@@ -104,6 +104,7 @@ namespace picovector {
   inline void _span_blit_to(Src s, image_t *dst, int dx, int dy, int w) {
     uint32_t dst_alpha = dst->alpha();
     if(dst->pixel_format() == RGB565) {
+      pv_fence_565();                                // scan-out may still be reading
       dst_565 d{ (uint16_t *)dst->ptr(dx, dy) };
       if(dst_alpha == 255u) span_over<false>(s, d, w, 255u);
       else                  span_over<true >(s, d, w, dst_alpha);
@@ -136,6 +137,7 @@ namespace picovector {
   inline void span_blit_scale(image_t *src, image_t *dst, blend_func_t bf, fx16_t sx, fx16_t sx_step, fx16_t sy, int dx, int dy, int w, filter_t filter = NEAREST) {
     (void)bf;
     const bool d565 = dst->pixel_format() == RGB565;
+    if(d565) pv_fence_565();                         // scan-out may still be reading
     uint32_t dst_alpha = dst->alpha();
 
     // NEAREST (and palette images, which sample() always resolves nearest): sy

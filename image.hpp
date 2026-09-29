@@ -167,6 +167,13 @@ namespace picovector {
   static const int PV_RGB565_STAGE_PX = 320;
   uint32_t *pv_rgb565_stage();
 
+  // A platform whose display streams the framebuffer out asynchronously
+  // installs a fence here: every path that WRITES an RGB565 image calls it
+  // before touching pixels, so drawing stalls until the scan-out finishes
+  // while everything else (including reads) runs on. Null when unused.
+  extern void (*pv_fb_fence)(void);
+  static inline void pv_fence_565() { if(pv_fb_fence) pv_fb_fence(); }
+
   class mat3_t;
   class font_t;
   class pixel_font_t;

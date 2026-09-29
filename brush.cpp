@@ -83,6 +83,7 @@ namespace picovector {
     if(n <= 0) return;
     if(target->pixel_format() == RGB565) {           // staged: see above
       if(brush->samples_neighbourhood()) return;     // scratch row can't feed it
+      pv_fence_565();                                // scan-out may still be reading
       pixel_t solid;
       if(brush->solid_opaque(target, solid)) {
         // clear() and solid fills: write the packed colour straight to the
@@ -123,6 +124,7 @@ namespace picovector {
     if(n <= 0) return;
     if(target->pixel_format() == RGB565) {           // staged: see above
       if(brush->samples_neighbourhood()) return;     // scratch row can't feed it
+      pv_fence_565();                                // scan-out may still be reading
       _blend_spans_565<pv_masked_span>(target, brush, n, true);
       return;
     }

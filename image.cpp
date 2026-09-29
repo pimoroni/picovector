@@ -31,6 +31,8 @@ namespace picovector {
     _reset_spans();
   }
 
+  void (*pv_fb_fence)(void) = nullptr;
+
   image_t::image_t() {
   }
 

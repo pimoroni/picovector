@@ -333,6 +333,7 @@ namespace picovector {
       // Stage the destination run as RGBA (see brush.cpp): the loops run
       // unchanged on the scratch and the result packs back to 16 bits. A span
       // never exceeds the screen's long side, which is the scratch's size.
+      pv_fence_565();                                // scan-out may still be reading
       if(n > PV_RGB565_STAGE_PX) n = PV_RGB565_STAGE_PX;
       uint32_t *stage = pv_rgb565_stage();
       uint16_t *d = (uint16_t *)target->ptr(p.x, p.y);

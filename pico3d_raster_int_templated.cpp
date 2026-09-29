@@ -294,7 +294,7 @@ namespace picovector {
   // ---- entry points --------------------------------------------------------
 
 #if PICO3D_PROF
-  #define RT_SETUP_END() (pico3d_prof_project_cyc += pico3d_prof_cyc() - ps)   // cull early-outs count as project
+  #define RT_SETUP_END() (pico3d_prof_project_cyc[PICO3D_PC] += pico3d_prof_cyc() - ps)   // cull early-outs count as project
 #else
   #define RT_SETUP_END() ((void)0)
 #endif
@@ -328,7 +328,7 @@ namespace picovector {
     int maxy = min(t->clip_y1 - 1, (int)floorf(maxyf) + 1);
     if (minx > maxx || miny > maxy) { RT_SETUP_END(); return 0; }
 #if PICO3D_PROF
-    uint32_t tp = pico3d_prof_cyc(); pico3d_prof_project_cyc += tp - ps;   // project done
+    uint32_t tp = pico3d_prof_cyc(); pico3d_prof_project_cyc[PICO3D_PC] += tp - ps;   // project done
 #endif
 
     float invD = 1.0f / denomf;
@@ -396,25 +396,38 @@ namespace picovector {
     }
 
 #if PICO3D_PROF
-    uint32_t tpl = pico3d_prof_cyc(); pico3d_prof_planes_cyc += tpl - tp;   // planes done
+    uint32_t tpl = pico3d_prof_cyc(); pico3d_prof_planes_cyc[PICO3D_PC] += tpl - tp;   // planes done
 #endif
-    // coverage: float edge fns at pixel centres -> int (x16)
-    float fA0=(sy[1]-sy[2]), fB0=(sx[2]-sx[1]);
-    float fA1=(sy[2]-sy[0]), fB1=(sx[0]-sx[2]);
-    float fA2=(sy[0]-sy[1]), fB2=(sx[1]-sx[0]);
-    float cpx=(float)minx+0.5f, cpy=(float)miny+0.5f;
-    float fe0=(sx[2]-sx[1])*(cpy-sy[1]) - (sy[2]-sy[1])*(cpx-sx[1]);
-    float fe1=(sx[0]-sx[2])*(cpy-sy[2]) - (sy[0]-sy[2])*(cpx-sx[2]);
-    float fe2=(sx[1]-sx[0])*(cpy-sy[0]) - (sy[1]-sy[0])*(cpx-sx[0]);
-    if (sign < 0) { fA0=-fA0;fB0=-fB0;fe0=-fe0; fA1=-fA1;fB1=-fB1;fe1=-fe1; fA2=-fA2;fB2=-fB2;fe2=-fe2; }
-    // (int) truncation, NOT lroundf: lroundf is a libm CALL (~9/triangle = a big
-    // chunk of setup); (int) is a 1-cyc vcvt. Truncation-toward-zero is symmetric
-    // so shared edges stay exact negations (watertight), and <1 LSB at COV_FX=16
-    // is <0.1px (the edge value changes ~100s/px).
+    // coverage: exact integer edge functions. Each vertex is snapped once to
+    // 28.4 fixed point (1/COV_FX px), and the edge values (1/256 px^2) and their
+    // per-pixel steps are computed from those snapped integers, so a shared edge
+    // evaluates to exact negations in the two triangles either side of it at
+    // every pixel, whichever bounding box each starts from - no pixel centre can
+    // fall between them. (Truncating float edge values and steps separately, per
+    // triangle, left pinhole cracks where a centre sat a few thousandths of a
+    // pixel from a shared edge.) The snap is a plain truncation: it only has to be
+    // the same function of the same float, which a shared vertex always is.
+    //
+    // Each edge value is a difference of products of two coordinate deltas, and
+    // the fill steps them in 32 bits. That holds for vertices within
+    // PICO3D_RASTER_LIMIT_PX of the origin, which the draw stage guarantees by
+    // clipping to a guard band inside it.
     edges_t ed;
-    ed.A0=(int32_t)(fA0*COV_FX); ed.B0=(int32_t)(fB0*COV_FX); ed.e0_row=(int32_t)(fe0*COV_FX);
-    ed.A1=(int32_t)(fA1*COV_FX); ed.B1=(int32_t)(fB1*COV_FX); ed.e1_row=(int32_t)(fe1*COV_FX);
-    ed.A2=(int32_t)(fA2*COV_FX); ed.B2=(int32_t)(fB2*COV_FX); ed.e2_row=(int32_t)(fe2*COV_FX);
+    const int32_t X0 = (int32_t)(sx[0] * (float)COV_FX), Y0 = (int32_t)(sy[0] * (float)COV_FX);
+    const int32_t X1 = (int32_t)(sx[1] * (float)COV_FX), Y1 = (int32_t)(sy[1] * (float)COV_FX);
+    const int32_t X2 = (int32_t)(sx[2] * (float)COV_FX), Y2 = (int32_t)(sy[2] * (float)COV_FX);
+    const int32_t PX = minx * COV_FX + COV_FX / 2, PY = miny * COV_FX + COV_FX / 2;
+    ed.A0 = (Y1 - Y2) * COV_FX; ed.B0 = (X2 - X1) * COV_FX;
+    ed.A1 = (Y2 - Y0) * COV_FX; ed.B1 = (X0 - X2) * COV_FX;
+    ed.A2 = (Y0 - Y1) * COV_FX; ed.B2 = (X1 - X0) * COV_FX;
+    ed.e0_row = (X2 - X1) * (PY - Y1) - (Y2 - Y1) * (PX - X1);
+    ed.e1_row = (X0 - X2) * (PY - Y2) - (Y0 - Y2) * (PX - X2);
+    ed.e2_row = (X1 - X0) * (PY - Y0) - (Y1 - Y0) * (PX - X0);
+    if (sign < 0) {
+      ed.A0 = -ed.A0; ed.B0 = -ed.B0; ed.e0_row = -ed.e0_row;
+      ed.A1 = -ed.A1; ed.B1 = -ed.B1; ed.e1_row = -ed.e1_row;
+      ed.A2 = -ed.A2; ed.B2 = -ed.B2; ed.e2_row = -ed.e2_row;
+    }
 
     shade_t s{};
     s.t = t; s.m = m; s.light = light; s.tx = tx;   // tx = texture, or the matcap sphere-map
@@ -428,8 +441,8 @@ namespace picovector {
     int key = (has_tex ? 1 : 0) | (varying ? 2 : 0) | (nmap ? 4 : 0) | (t->depth ? 8 : 0);
 #if PICO3D_PROF
     uint32_t pf = pico3d_prof_cyc();
-    pico3d_prof_edges_cyc += pf - tpl;         // edges (+shade) done; fill (scanline) follows
-    pico3d_prof_bbox_px += (uint64_t)(maxx - minx + 1) * (maxy - miny + 1);  // px the fill iterates
+    pico3d_prof_edges_cyc[PICO3D_PC] += pf - tpl;         // edges (+shade) done; fill (scanline) follows
+    pico3d_prof_bbox_px[PICO3D_PC] += (uint64_t)(maxx - minx + 1) * (maxy - miny + 1);  // px the fill iterates
 #endif
     int written = 0;
     switch (key) {
@@ -441,7 +454,7 @@ namespace picovector {
 #undef C
     }
 #if PICO3D_PROF
-    pico3d_prof_fill_cyc += pico3d_prof_cyc() - pf;
+    pico3d_prof_fill_cyc[PICO3D_PC] += pico3d_prof_cyc() - pf;
 #endif
     return written;
   }

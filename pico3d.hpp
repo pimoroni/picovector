@@ -211,15 +211,30 @@ namespace picovector {
   // mesh->vertex_count of these to pico3d_draw_mesh so each unique vertex is
   // transformed (and lit, for non-flat) ONCE per frame rather than once per
   // triangle that references it — a big win for complex shared-vertex meshes.
+  //
+  // This is the largest entry. The engine packs entries only as long as a
+  // draw's material needs - 24 bytes for UNLIT/GOURAUD, 36 for FLAT or matcap,
+  // 48 when normal-mapped - so the cache is a run of bytes rather than an array
+  // of these, and the fields every path reads come first. It lives in PSRAM on
+  // device, where each entry is written once and read back per triangle, so
+  // the fewer bytes a vertex touches, the faster the frame.
   struct pico3d_vcache_t {
-    vec4_t   clip;    // clip-space position
     float    sx, sy;  // pre-projected screen position (computed once here, not per triangle)
-    float    z, iw;   // depth (z/w) and 1/w
-    vec3_t   world;   // world-space position (only used by FLAT for face normals)
+    float    nd;      // distance in front of the near plane in clip space (z + w)
     uint32_t rgb;     // per-vertex colour: final for UNLIT/GOURAUD, base for FLAT/normal-mapped
-    vec3_t   nrm_w;   // world normal  (only filled when normal-mapping)
-    vec3_t   tan_w;   // world tangent (only filled when normal-mapping)
+    float    z, w;    // depth (z/w) and clip-space w; 1/w is recomputed from it
+    // Only in the entries whose material needs them:
+    //   FLAT:          ext[0] = world position (face normals)
+    //   matcap:        ext[0] = normal mapped to matcap uv
+    //   normal-mapped: ext[0] = world normal, ext[1] = world tangent
+    vec3_t   ext[2];
   };
+
+  // The rasteriser works its edge functions in exact 32-bit integers, which
+  // holds for screen vertices within this many pixels of the target's origin
+  // (see pico3d_raster_triangle). The draw stage clips anything reaching further
+  // back to a guard band inside it.
+  static constexpr int PICO3D_RASTER_LIMIT_PX = 1023;
 
   // --- API ------------------------------------------------------------------
 
@@ -237,24 +252,55 @@ namespace picovector {
   //   fill      = the scanline rasterise (coverage + per-pixel emit)
   //   bbox_px   = total bbox pixels iterated by fill (vs px = those written)
   //   px        = covered pixels actually written
+  //
+  // Every counter is per core ([0] core0, [1] core1): both cores run the raster,
+  // and a shared counter bumped from both would lose updates.
 #if defined(__arm__)
+  // Which core this is, from the SIO CPUID register.
+  static inline int pico3d_prof_core() { return (int)(*(volatile uint32_t *)0xD0000000u & 1u); }
+  // Each core has its own DWT, so each has to enable its own counter. Out of
+  // line (in flash): it runs once a core, and inlined it would cost SRAM at
+  // every timing point in the SRAM-resident raster.
+  void pico3d_prof_enable(int core);
+  extern bool pico3d_prof_enabled[2];
   static inline uint32_t pico3d_prof_cyc() {
-    static bool en = false;
-    if (!en) {                                            // enable DWT cycle counter once
-      *(volatile uint32_t *)0xE000EDFCu |= (1u << 24);    //   DEMCR.TRCENA
-      *(volatile uint32_t *)0xE0001000u |= 1u;            //   DWT_CTRL.CYCCNTENA
-      en = true;
-    }
+    int core = pico3d_prof_core();
+    if (!pico3d_prof_enabled[core]) pico3d_prof_enable(core);
     return *(volatile uint32_t *)0xE0001004u;             //   DWT_CYCCNT
   }
   #define PICO3D_PROF 1
 #else
+  static inline int pico3d_prof_core() { return 0; }
   static inline uint32_t pico3d_prof_cyc() { return 0; }
   #define PICO3D_PROF 0
 #endif
-  extern uint64_t pico3d_prof_transform_cyc, pico3d_prof_build_cyc,
-                  pico3d_prof_project_cyc, pico3d_prof_planes_cyc, pico3d_prof_edges_cyc,
-                  pico3d_prof_fill_cyc, pico3d_prof_bbox_px, pico3d_prof_px;
+  #define PICO3D_PC pico3d_prof_core()
+  extern uint64_t pico3d_prof_transform_cyc[2], pico3d_prof_build_cyc[2],
+                  pico3d_prof_project_cyc[2], pico3d_prof_planes_cyc[2], pico3d_prof_edges_cyc[2],
+                  pico3d_prof_fill_cyc[2], pico3d_prof_bbox_px[2], pico3d_prof_px[2];
+
+  // The finer breakdown behind engine.profile_detail(), per core. Cycles unless
+  // noted. XFORM is transform_range itself (TRANSFORM above is core0's wall time
+  // for the whole pass, waiting on core1 included); PASS2 is all of draw_pass2,
+  // RASTER the part of it inside pico3d_raster_triangle, so assembly is the
+  // difference; WAIT is core0 idle in a join, waiting for core1 to finish.
+  enum {
+    PICO3D_PD_ADD_WALL, PICO3D_PD_XFORM, PICO3D_PD_EXTENTS,
+    PICO3D_PD_DRAW_WALL, PICO3D_PD_CLEAR, PICO3D_PD_BIN, PICO3D_PD_PASS2,
+    PICO3D_PD_RASTER, PICO3D_PD_WAIT,
+    PICO3D_PD_VERTS, PICO3D_PD_TRIS_IN, PICO3D_PD_TRIS_DRAWN, PICO3D_PD_TRIS_CLIPPED,   // counts
+    PICO3D_PD_COUNT
+  };
+  extern uint32_t pico3d_prof_detail[2][PICO3D_PD_COUNT];   // 32-bit: read every second or so, wraps after 17 s
+#if PICO3D_PROF
+  #define PICO3D_PD_START(t) uint32_t t = pico3d_prof_cyc()
+  #define PICO3D_PD_ADD(id, t) (pico3d_prof_detail[PICO3D_PC][id] += pico3d_prof_cyc() - (t))
+  #define PICO3D_PD_COUNTN(id, n) (pico3d_prof_detail[PICO3D_PC][id] += (uint32_t)(n))
+#else
+  #define PICO3D_PD_START(t) ((void)0)
+  #define PICO3D_PD_ADD(id, t) ((void)0)
+  #define PICO3D_PD_COUNTN(id, n) ((void)0)
+#endif
 
   // Transform, light, near-cull and rasterise an indexed mesh in one call.
   // `model` places the mesh in the world; `view_proj` is camera × projection.
@@ -298,12 +344,14 @@ namespace picovector {
     vec3_t                   L;
     pico3d_shading_t         shading;
     bool                     do_nmap, do_matcap;
-    uint32_t                 vbase;        // its vertices, from here in the arena
+    uint32_t                 vbase;        // its vertices, from this BYTE offset in the arena
+    uint32_t                 vstride;      // bytes a vertex entry takes (see pico3d_vcache_t)
+    mat4_t                   mvp;          // to re-project a triangle the near plane cuts
     uint32_t                 tbase;        // its triangles' screen-Y extents, from here
     // Scratch, refilled for each band: this submission's live triangles, as a
-    // slice of the scene's shared bin. Built once by the dispatching core so
-    // both cores can read the same list rather than each scanning for itself.
-    uint32_t                 boff, bcount;
+    // slice of a bin. [0] is core0's (or the only core's) slice of `bin`, [1]
+    // core1's slice of `bin1` when the two cores draw a band's halves apart.
+    uint32_t                 boff[2], bcount[2];
   };
 
   // Caller-owned storage. Every array is sized by the caller and never grown:
@@ -312,9 +360,19 @@ namespace picovector {
   struct pico3d_scene_t {
     pico3d_sub_t    *subs;   uint32_t sub_cap,  sub_count;
     pico3d_vcache_t *verts;  uint32_t vert_cap, vert_count;
+    uint32_t         vert_bytes;                 // bytes of `verts` used (entries are packed)
     int16_t         *ys;     uint32_t tri_cap,  tri_count;
     uint16_t        *bin;    uint32_t bin_cap;   // scratch: one submission's live triangles
+    // Optional second bin, bin_cap long, for core1. With it, two cores split each
+    // band into a top and a bottom half and each bins, sets up and fills only its
+    // own; without it they share `bin` and fill alternate rows, which sets up
+    // every triangle twice.
+    uint16_t        *bin1;
     float            tw, th;                     // viewport the vertices were projected for
+    // Rows the scene's visible triangles touch, [ymin, ymax], from add(). A
+    // banded draw bands only these, so empty rows above and below cost nothing
+    // and the bands are spread over what is actually there.
+    int32_t          ymin, ymax;
   };
 
   // --- whole-mesh frustum culling -------------------------------------------
@@ -349,7 +407,9 @@ namespace picovector {
   // Rasterise the scene into `t`, `band_rows` rows at a time (<= 0 means one
   // band covering the whole clip). When `t->depth` is only band_rows tall, pass
   // its height as band_rows and this will point depth_y0 at each band in turn
-  // and clear it - so a small, fast depth buffer serves a whole screen.
+  // and clear it - so a small, fast depth buffer serves a whole screen. Banded,
+  // it draws only the rows the scene touches, in as few bands as band_rows
+  // allows, all of about equal height.
   // Returns the number of triangles rasterised.
   int pico3d_scene_draw(pico3d_scene_t *sc, pico3d_target_t *t, int band_rows,
                         uint16_t clear_to = 0xFFFF);
@@ -359,6 +419,10 @@ namespace picovector {
   // the win is on FILL-bound scenes. No-op (always 1 core) on host.
   void pico3d_set_cores(int n);
   int  pico3d_get_cores();
+  // The fewest bands a two-core banded draw cuts the scene into, so the two
+  // cores have work to share out: more balances better but bins more often.
+  void pico3d_set_work_bands(int n);
+  int  pico3d_get_work_bands();
 
   // Rasterise one triangle. Assumes all clip.w > 0 (near-plane handling is the
   // caller's job — see pico3d_draw_mesh). Performs viewport map, back-face cull,

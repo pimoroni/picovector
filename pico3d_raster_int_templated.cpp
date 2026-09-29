@@ -142,13 +142,14 @@ namespace picovector {
 
   template<bool TEX, bool VARYING, bool NMAP, bool DEPTH>
   __attribute__((always_inline)) static inline
-  bool emit(const shade_t &s, int x, int y, const cur_t &c, uint32_t cc) {
+  // cpx / dpx: this pixel's colour and depth, which the span loop walks along
+  // a row rather than this working them out from x and y every pixel.
+  bool emit(const shade_t &s, uint32_t *cpx, uint16_t *dpx, const cur_t &c, uint32_t cc) {
     uint16_t d16 = 0;
-    int didx = (y - s.t->depth_y0) * s.t->depth_stride + x;
     if constexpr (DEPTH) {
       int dd = c.dep >> 8;
       d16 = (uint16_t)(dd < 0 ? 0 : (dd > 65535 ? 65535 : dd));
-      if (d16 >= s.t->depth[didx]) return false;
+      if (d16 >= *dpx) return false;
     }
 
     uint32_t col;
@@ -206,8 +207,8 @@ namespace picovector {
       col = s.white ? (px & 0xffffffu) : pico3d_modulate(col, px);
     }
 
-    s.t->color[y * s.t->color_stride + x] = col | 0xff000000u;
-    if constexpr (DEPTH) s.t->depth[didx] = d16;
+    *cpx = col | 0xff000000u;
+    if constexpr (DEPTH) *dpx = d16;
     return true;
   }
 
@@ -310,8 +311,11 @@ namespace picovector {
                            else        { c.u=u_row+du_dx*k0; c.v=v_row+dv_dx*k0; } }
       if constexpr (NMAP) for (int k=0;k<3;k++){ c.nrm[k]=nrm_row[k]+nrm_dx[k]*k0; c.tan[k]=tan_row[k]+tan_dx[k]*k0; }
 
-      for (int x = minx + k0, xe = minx + k1; x <= xe; x++) {
-        if (emit<TEX,VARYING,NMAP,DEPTH>(s, x, y, c, cc)) written++;
+      uint32_t *cpx = s.t->color + (size_t)y * s.t->color_stride + minx + k0;
+      uint16_t *dpx = DEPTH ? s.t->depth + (size_t)(y - s.t->depth_y0) * s.t->depth_stride + minx + k0 : nullptr;
+      for (int n = k1 - k0; n >= 0; n--, cpx++) {
+        if (emit<TEX,VARYING,NMAP,DEPTH>(s, cpx, dpx, c, cc)) written++;
+        if constexpr (DEPTH) dpx++;
         c.dep += ddep_dx;
         if constexpr (VARYING) { c.r+=dr_dx; c.g+=dg_dx; c.b+=db_dx; }
         if constexpr (UVS) { if (persp) { c.uw+=duwdx; c.vw+=dvwdx; c.iw+=diwdx; }

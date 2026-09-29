@@ -29,6 +29,7 @@ void test_pico3d_draw();
 void test_pico3d_alpha();
 void test_pico3d_clip();
 void test_pico3d_scene();
+void test_pico3d_quant();
 void test_pico3d_fog();
 void test_brush_oracle();
 
@@ -57,6 +58,7 @@ int main() {
   test_pico3d_math();
   test_pico3d_raster();
   test_pico3d_draw();
+  test_pico3d_quant();
   test_pico3d_alpha();
   test_pico3d_clip();
   test_pico3d_scene();

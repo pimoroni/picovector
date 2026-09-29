@@ -142,6 +142,19 @@ namespace picovector {
     return *(const pico3d_vcache_t *)(vb + (size_t)i * vs);
   }
 
+  // The position the transform sees: reconstructed from the quantised form
+  // when there is one, so every consumer (including the clipper) agrees.
+  static inline vec3_t mesh_position(const pico3d_mesh_t *mesh, uint32_t v) {
+    if (mesh->positions_q) {
+      const int16_t *q = mesh->positions_q + (size_t)v * 3;
+      return vec3_t(mesh->q_bias.x + mesh->q_scale.x * (float)q[0],
+                    mesh->q_bias.y + mesh->q_scale.y * (float)q[1],
+                    mesh->q_bias.z + mesh->q_scale.z * (float)q[2]);
+    }
+    const float *pp = mesh->positions + (size_t)v * 3;
+    return vec3_t(pp[0], pp[1], pp[2]);
+  }
+
   // --- guard band ------------------------------------------------------------
   // The rasteriser's edge functions are exact 32-bit integers, which holds for
   // vertices within PICO3D_RASTER_LIMIT_PX of the target's origin. So anything
@@ -239,8 +252,7 @@ namespace picovector {
     // Each plane can add a vertex: 3 + near + 4 guard planes = 8 at most.
     clipvert_t buf[2][8];
     for (int k = 0; k < 3; k++) {
-      const float *pp = j.mesh->positions + (size_t)idx[k] * 3;
-      buf[0][k].clip = j.mvp * vec3_t(pp[0], pp[1], pp[2]);
+      buf[0][k].clip = j.mvp * mesh_position(j.mesh, idx[k]);
       buf[0][k].uv = vuv[k]; buf[0][k].rgb = vrgb[k];
       buf[0][k].n = j.do_nmap ? vn[k] : vec3_t(0, 0, 0);
       buf[0][k].tan = j.do_nmap ? vtan[k] : vec3_t(0, 0, 0);
@@ -486,7 +498,7 @@ namespace picovector {
     auto tan = [&](uint32_t i){ return vec3_t(mesh->tangents[i*3], mesh->tangents[i*3+1], mesh->tangents[i*3+2]); };
     PICO3D_PD_START(pd_x);
     for (uint32_t v = v0; v < v1; v++) {
-      vec3_t p(mesh->positions[v*3], mesh->positions[v*3+1], mesh->positions[v*3+2]);
+      vec3_t p = mesh_position(mesh, v);
       pico3d_vcache_t &o = *(pico3d_vcache_t *)(j.vc + (size_t)v * j.vs);
       vec4_t c = mvp * p;
       float w = inv_w(c.w);                              // pre-project to screen, once
@@ -764,6 +776,26 @@ namespace picovector {
     }
     for (int k = 0; k < 3; k++) { mesh->bmin[k] = lo[k]; mesh->bmax[k] = hi[k]; }
     mesh->has_bounds = 1;
+  }
+
+  void pico3d_mesh_quantise(pico3d_mesh_t *mesh, int16_t *out) {
+    if (!mesh->has_bounds) pico3d_mesh_bounds(mesh);
+    if (!mesh->has_bounds) return;
+    float centre[3], half[3];
+    for (int k = 0; k < 3; k++) {
+      centre[k] = 0.5f * (mesh->bmin[k] + mesh->bmax[k]);
+      half[k] = 0.5f * (mesh->bmax[k] - mesh->bmin[k]);
+      if (half[k] < 1e-6f) half[k] = 1e-6f;       // a flat axis still divides
+    }
+    const float *pp = mesh->positions;
+    for (uint32_t v = 0; v < mesh->vertex_count; v++)
+      for (int k = 0; k < 3; k++) {
+        float q = (pp[v*3 + k] - centre[k]) * (32767.0f / half[k]);
+        out[v*3 + k] = (int16_t)(q < 0.0f ? q - 0.5f : q + 0.5f);
+      }
+    mesh->positions_q = out;
+    mesh->q_scale = vec3_t(half[0] / 32767.0f, half[1] / 32767.0f, half[2] / 32767.0f);
+    mesh->q_bias  = vec3_t(centre[0], centre[1], centre[2]);
   }
 
   bool pico3d_cull_mesh(const pico3d_mesh_t *mesh, const mat4_t *m) {

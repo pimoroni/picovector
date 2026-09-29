@@ -560,7 +560,8 @@ namespace picovector {
 
   // Triangles [f0, f1), reporting the rows the visible ones touch.
   static void __not_in_flash_func(extents_range)(const extents_job_t &j, uint32_t f0, uint32_t f1,
-                                                 int32_t &ymin_out, int32_t &ymax_out) {
+                                                 int32_t &ymin_out, int32_t &ymax_out,
+                                                 int32_t &xmin_out, int32_t &xmax_out) {
     PICO3D_PD_START(pd_ext);
     auto V = [&](uint32_t i) -> const pico3d_vcache_t & { return vcache_at(j.vb, j.vs, i); };
     const uint16_t *ind = j.ind;
@@ -568,6 +569,7 @@ namespace picovector {
     const bool cull_back = j.cull_back;
     const float tw = j.tw;
     int32_t ymin = INT32_MAX, ymax = INT32_MIN;
+    int32_t xmin = INT32_MAX, xmax = INT32_MIN;
     for (uint32_t f = f0; f < f1; f++) {
       uint16_t a = ind[f*3], b = ind[f*3+1], c = ind[f*3+2];
       if (behind_near(V(a).sx) || behind_near(V(b).sx) || behind_near(V(c).sx)) {
@@ -576,6 +578,7 @@ namespace picovector {
         // let each one clip it.
         ys[f*2] = -32768; ys[f*2+1] = 32767;
         ymin = -32768; ymax = 32767;
+        xmin = -32768; xmax = 32767;
         continue;
       }
       const pico3d_vcache_t &va = V(a), &vb_ = V(b), &vc_ = V(c);
@@ -618,8 +621,15 @@ namespace picovector {
       ys[f*2+1] = (int16_t)(ihi < -32768 ? -32768 : (ihi > 32767 ? 32767 : ihi));
       if (ys[f*2] < ymin) ymin = ys[f*2];
       if (ys[f*2+1] > ymax) ymax = ys[f*2+1];
+      // Columns, from the xlo/xhi the offscreen cull already computed. These
+      // are not stored per triangle - the bands select by row - they only
+      // bound the scene so a draw can narrow its clip (and depth clears).
+      int ixlo = (int)xlo, ixhi = (int)xhi + 1;
+      if (ixlo < xmin) xmin = ixlo;
+      if (ixhi > xmax) xmax = ixhi;
     }
     ymin_out = ymin; ymax_out = ymax;
+    xmin_out = xmin < -32768 ? -32768 : xmin; xmax_out = xmax > 32767 ? 32767 : xmax;
     PICO3D_PD_ADD(PICO3D_PD_EXTENTS, pd_ext);
   }
 
@@ -627,10 +637,11 @@ namespace picovector {
   static const extents_job_t * volatile g_ej;           // extents job for core1
   static volatile uint32_t g_ef0, g_ef1;                 // core1's triangle range
   static volatile int32_t g_eymin, g_eymax;              // and the rows it found
+  static volatile int32_t g_exmin, g_exmax;              // ... and the columns
   static void __not_in_flash_func(pico3d_core1_extents)() {
-    int32_t lo, hi;
-    extents_range(*g_ej, g_ef0, g_ef1, lo, hi);
-    g_eymin = lo; g_eymax = hi;
+    int32_t lo, hi, xlo, xhi;
+    extents_range(*g_ej, g_ef0, g_ef1, lo, hi, xlo, xhi);
+    g_eymin = lo; g_eymax = hi; g_exmin = xlo; g_exmax = xhi;
   }
 #endif
 
@@ -811,13 +822,15 @@ namespace picovector {
     sc->tri_count = 0;
     sc->ymin = INT32_MAX;                       // empty: no rows touched
     sc->ymax = INT32_MIN;
+    sc->xmin = INT32_MAX;
+    sc->xmax = INT32_MIN;
   }
 
   bool pico3d_scene_add(pico3d_scene_t *sc, const pico3d_target_t *t,
                         const pico3d_mesh_t *mesh, const mat4_t *model,
                         const mat4_t *view_proj, const pico3d_material_t *material,
                         pico3d_shading_t shading, const pico3d_light_t *light,
-                        const mat4_t *view, const char **why) {
+                        const mat4_t *view, const char **why, bool flat_depth) {
     if (why) *why = nullptr;
     // Cull FIRST, before even the capacity checks: a mesh outside the frustum
     // takes no room in the scene, so a full scene should still swallow one
@@ -904,6 +917,23 @@ namespace picovector {
     } else
 #endif
       transform_range(xj, 0, mesh->vertex_count);
+    if (flat_depth) {
+      // The whole submission takes its nearest vertex's depth: every triangle
+      // then lies on one depth plane, so meshes layer like cutouts instead of
+      // interpenetrating (a motion-trail's silhouettes, a backdrop). Entries
+      // behind the near plane keep their sentinel and are clipped as usual.
+      float zmin = 3.4e38f;
+      for (uint32_t i = 0; i < mesh->vertex_count; i++) {
+        const pico3d_vcache_t &e = vcache_at(vb, vs, i);
+        if (!behind_near(e.sx) && e.z < zmin) zmin = e.z;
+      }
+      if (zmin < 3.4e38f) {
+        for (uint32_t i = 0; i < mesh->vertex_count; i++) {
+          pico3d_vcache_t &e = const_cast<pico3d_vcache_t &>(vcache_at(vb, vs, i));
+          if (!behind_near(e.sx)) e.z = zmin;
+        }
+      }
+    }
 #if PICO3D_PROF
     pico3d_prof_transform_cyc[PICO3D_PC] += pico3d_prof_cyc() - c0;
 #endif
@@ -920,21 +950,25 @@ namespace picovector {
     ej.cull_back = !material->double_sided;
     ej.tw = (float)t->width;
     const uint32_t T = mesh->triangle_count;
-    int32_t ymin, ymax;
+    int32_t ymin, ymax, xmin, xmax;
 #if PICO3D_MULTICORE
     if (g_cores == 2 && T >= 64) {
       g_ej = &ej; g_ef0 = T >> 1; g_ef1 = T;
       __sync_synchronize();
       ::pv_core1_run(pico3d_core1_extents);
-      extents_range(ej, 0, T >> 1, ymin, ymax);
+      extents_range(ej, 0, T >> 1, ymin, ymax, xmin, xmax);
       { PICO3D_PD_START(pd_w); ::pv_core1_join(); PICO3D_PD_ADD(PICO3D_PD_WAIT, pd_w); }
       if (g_eymin < ymin) ymin = g_eymin;
       if (g_eymax > ymax) ymax = g_eymax;
+      if (g_exmin < xmin) xmin = g_exmin;
+      if (g_exmax > xmax) xmax = g_exmax;
     } else
 #endif
-      extents_range(ej, 0, T, ymin, ymax);
+      extents_range(ej, 0, T, ymin, ymax, xmin, xmax);
     if (ymin < sc->ymin) sc->ymin = ymin;
     if (ymax > sc->ymax) sc->ymax = ymax;
+    if (xmin < sc->xmin) sc->xmin = xmin;
+    if (xmax > sc->xmax) sc->xmax = xmax;
     pico3d_sub_t *sub = &sc->subs[sc->sub_count++];
     sub->mesh = mesh;             sub->material = material;   sub->light = light;
     sub->rlight = p.rlight;       sub->raster_lit = p.raster_lit;
@@ -1066,6 +1100,12 @@ namespace picovector {
     int y0 = t->clip_y0 < 0 ? 0 : t->clip_y0;
     int y1 = t->clip_y1 > t->height ? t->height : t->clip_y1;
     if (y1 <= y0) return 0;
+    // The scene knows which columns anything touches: narrow the clip to
+    // them (on top of whatever the caller clipped), so the raster and every
+    // band's depth clear cover only the used part of each row.
+    if (sc->xmin > t->clip_x0) t->clip_x0 = sc->xmin;
+    if (sc->xmax + 1 < t->clip_x1) t->clip_x1 = sc->xmax + 1;
+    if (t->clip_x1 <= t->clip_x0) return 0;
     const int rows = y1 - y0;
     // Only take charge of depth_y0 when actually banding. One band that covers
     // the clip leaves it as the caller set it, so a full-surface depth buffer

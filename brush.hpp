@@ -39,6 +39,11 @@ namespace picovector {
     // methods fill the span buffer and call _blend_spans/_blend_masked_spans.
     virtual void blend_spans(image_t *target, int i0, int i1, int step) = 0;
     virtual void blend_masked_spans(image_t *target, int i0, int i1, int step) = 0;
+    // True for a brush that reads target pixels outside the span it is blending
+    // (backdrop blur, pixelate, glitch, chromatic, oilpaint). The RGB565
+    // staging shim only re-creates the span itself, so it skips these brushes
+    // rather than let them read past the scratch row.
+    virtual bool samples_neighbourhood() const { return false; }
 
     // Fold the shape's transform into the brush's own coordinate space, so a
     // brush with geometry (e.g. a gradient) moves with the shape it fills.
@@ -120,6 +125,7 @@ namespace picovector {
   // an integer block grid (top-left of each `size`x`size` block).
   class pixelate_brush_t : public brush_t {
   public:
+    bool samples_neighbourhood() const override { return true; }
     int size;
 
     pixelate_brush_t(int size);
@@ -133,6 +139,7 @@ namespace picovector {
   // already-written pixels (mild vertical softening); keep radius small.
   class blur_brush_t : public brush_t {
   public:
+    bool samples_neighbourhood() const override { return true; }
     int radius;
 
     blur_brush_t(int radius);
@@ -265,6 +272,7 @@ namespace picovector {
   // channels for a torn-signal look.
   class glitch_brush_t : public brush_t {
   public:
+    bool samples_neighbourhood() const override { return true; }
     int amount;
     uint32_t t;   // PV_TICKS captured at construction (animation phase)
     glitch_brush_t(int amount);
@@ -278,6 +286,7 @@ namespace picovector {
   // neighbourhood - reads the target, so chunk-buffered like the blur brush.
   class oilpaint_brush_t : public brush_t {
   public:
+    bool samples_neighbourhood() const override { return true; }
     int radius, strength, sstep;
     oilpaint_brush_t(int radius, int strength);
     void blend_spans(image_t *target, int i0, int i1, int step) override;
@@ -329,6 +338,7 @@ namespace picovector {
   // so chunk-buffered.
   class chromatic_brush_t : public brush_t {
   public:
+    bool samples_neighbourhood() const override { return true; }
     int offset;
     chromatic_brush_t(int offset);
     void blend_spans(image_t *target, int i0, int i1, int step) override;

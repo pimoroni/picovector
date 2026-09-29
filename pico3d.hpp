@@ -28,6 +28,14 @@ namespace picovector {
     return (uint32_t)r | ((uint32_t)g << 8) | ((uint32_t)b << 16);
   }
 
+  // Pack 0x00BBGGRR to RGB565 by truncation - bit-identical to picovector's
+  // pv_8888_to_565 (image.hpp) and to the display scan-out conversion, which is
+  // what makes a 565 render byte-comparable to a quantised RGBA one. Duplicated
+  // here because this header stays free of the 2D library.
+  static inline uint16_t pico3d_pack_565(uint32_t c) {
+    return (uint16_t)(((c & 0xf8u) << 8) | ((c & 0xfc00u) >> 5) | ((c & 0xf80000u) >> 19));
+  }
+
   // exact x/255 for x in [0, 65025] (a product of two bytes), with no integer
   // divide: (x + (x>>8) + 1) >> 8. Host-verified equal to x/255 over that range.
   static inline uint32_t pico3d_div255(uint32_t x) { return (x + (x >> 8) + 1) >> 8; }
@@ -46,6 +54,11 @@ namespace picovector {
   // strides in elements (not bytes). depth == nullptr disables depth testing.
   struct pico3d_target_t {
     uint32_t *color;
+    // The colour buffer is RGB565 (uint16 rows through the same pointer): the
+    // platform framebuffer. The engine's interpolation is unchanged; only the
+    // final store packs. Depth, clip and strides mean what they always did
+    // (color_stride stays in PIXELS).
+    bool color565;
     uint16_t *depth;       // 0x0000 = near, 0xFFFF = far; nullptr to disable
     int width, height;     // full surface size
     int color_stride;      // elements per row in `color`

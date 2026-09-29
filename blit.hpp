@@ -21,6 +21,28 @@ namespace picovector {
     const uint32_t *pal;
     inline __attribute__((always_inline)) uint32_t operator[](int i) const { return pal[base[i]]; }
   };
+  // A 16-bit (RGB565) source - the platform framebuffer. Its pixels are opaque,
+  // so the unpacked texel is already premultiplied.
+  struct src_565 {
+    const uint16_t *base;
+    inline __attribute__((always_inline)) uint32_t operator[](int i) const { return pv_565_to_8888(base[i]); }
+  };
+
+  // --- destination policies ----------------------------------------------------
+  // The span cores below read-blend-write through one of these, so an RGB565
+  // destination (the platform framebuffer) costs an unpack and a pack per pixel
+  // instead of a whole staged row, and the RGBA path compiles to what it always
+  // was.
+  struct dst_rgba {
+    uint32_t *base;
+    inline __attribute__((always_inline)) uint32_t get(int i) const { return base[i]; }
+    inline __attribute__((always_inline)) void put(int i, uint32_t c) const { base[i] = c; }
+  };
+  struct dst_565 {
+    uint16_t *base;
+    inline __attribute__((always_inline)) uint32_t get(int i) const { return pv_565_to_8888(base[i]); }
+    inline __attribute__((always_inline)) void put(int i, uint32_t c) const { base[i] = pv_8888_to_565(c); }
+  };
 
   // --- templated span cores --------------------------------------------------
   // ApplyAlpha folds the target's global alpha into each source texel. When the
@@ -28,19 +50,19 @@ namespace picovector {
   // and the whole _premul_mul_alpha step compiles away — the invariant alpha
   // test is hoisted out of the per-pixel loop entirely. blend_over_premul is
   // always_inline, so there is no per-pixel indirect blend_func_t call.
-  template<bool ApplyAlpha, typename Src>
+  template<bool ApplyAlpha, typename Src, typename Dst>
   static inline __attribute__((always_inline))
-  void span_over(Src src, uint32_t *pd, int w, uint32_t alpha) {
+  void span_over(Src src, Dst pd, int w, uint32_t alpha) {
     for(int i = 0; i < w; i++) {
       uint32_t c = src[i];
       if(ApplyAlpha) c = _premul_mul_alpha(c, alpha);
-      pd[i] = blend_over_premul(pd[i], c);
+      pd.put(i, blend_over_premul(pd.get(i), c));
     }
   }
 
-  template<bool ApplyAlpha, typename Src>
+  template<bool ApplyAlpha, typename Src, typename Dst>
   static inline __attribute__((always_inline))
-  void span_scale_over(Src src, uint32_t *pd, int w, fx16_t sx, fx16_t sx_step, int sw, uint32_t alpha) {
+  void span_scale_over(Src src, Dst pd, int w, fx16_t sx, fx16_t sx_step, int sw, uint32_t alpha) {
     // ix = sx>>16 is monotonic in i (the step is fixed), so if both span
     // endpoints land in [0, sw) then every pixel does. The caller clips the
     // source rect to the source bounds, so that is the common case: when it holds
@@ -55,7 +77,7 @@ namespace picovector {
       for(int i = 0; i < w; i++) {
         uint32_t c = src[sx >> 16];
         if(ApplyAlpha) c = _premul_mul_alpha(c, alpha);
-        pd[i] = blend_over_premul(pd[i], c);
+        pd.put(i, blend_over_premul(pd.get(i), c));
         sx += sx_step;
       }
     } else {
@@ -64,7 +86,7 @@ namespace picovector {
         if(ix < 0) ix = 0; else if(ix >= sw) ix = sw - 1;
         uint32_t c = src[ix];
         if(ApplyAlpha) c = _premul_mul_alpha(c, alpha);
-        pd[i] = blend_over_premul(pd[i], c);
+        pd.put(i, blend_over_premul(pd.get(i), c));
         sx += sx_step;
       }
     }
@@ -75,30 +97,45 @@ namespace picovector {
   // blend mode is "over", inlined via blend_over_premul. Reintroduce a dispatch
   // here if additional blend modes are ever added.
 
+  // One row of a plain blit, dispatched over the source and destination pixel
+  // policies. The generic core takes any src/dst pairing; the RGBA/RGBA case
+  // compiles to exactly the loop this always was.
+  template<typename Src>
+  inline void _span_blit_to(Src s, image_t *dst, int dx, int dy, int w) {
+    uint32_t dst_alpha = dst->alpha();
+    if(dst->pixel_format() == RGB565) {
+      dst_565 d{ (uint16_t *)dst->ptr(dx, dy) };
+      if(dst_alpha == 255u) span_over<false>(s, d, w, 255u);
+      else                  span_over<true >(s, d, w, dst_alpha);
+    } else {
+      dst_rgba d{ (uint32_t *)dst->ptr(dx, dy) };
+      if(dst_alpha == 255u) span_over<false>(s, d, w, 255u);
+      else                  span_over<true >(s, d, w, dst_alpha);
+    }
+  }
+
   inline void span_blit(image_t *src, image_t *dst, blend_func_t bf, int sx, int sy, int dx, int dy, int w) {
     (void)bf;
-    uint32_t *ps = (uint32_t *)src->ptr(sx, sy);
-    uint32_t *pd = (uint32_t *)dst->ptr(dx, dy);
-    uint32_t dst_alpha = dst->alpha();
-
-    if(dst_alpha == 255u) span_over<false>(src_rgba{ps}, pd, w, 255u);
-    else                  span_over<true >(src_rgba{ps}, pd, w, dst_alpha);
+    if(src->pixel_format() == RGB565)
+      _span_blit_to(src_565{ (uint16_t *)src->ptr(sx, sy) }, dst, dx, dy, w);
+    else
+      _span_blit_to(src_rgba{ (uint32_t *)src->ptr(sx, sy) }, dst, dx, dy, w);
   }
 
   inline void span_blit(image_t *src, image_t *dst, blend_func_t bf, int sx, int sy, int dx, int dy, int w, const uint32_t *palette) {
     (void)bf;
-    uint8_t  *ps  = (uint8_t *)src->ptr(sx, sy);
-    uint32_t *pd  = (uint32_t *)dst->ptr(dx, dy);
-    const uint32_t *pal = palette;
-    uint32_t dst_alpha = dst->alpha();
+    _span_blit_to(src_pal{ (uint8_t *)src->ptr(sx, sy), palette }, dst, dx, dy, w);
+  }
 
-    if(dst_alpha == 255u) span_over<false>(src_pal{ps, pal}, pd, w, 255u);
-    else                  span_over<true >(src_pal{ps, pal}, pd, w, dst_alpha);
+  template<typename Src, typename Dst>
+  inline void _span_scale_to(Src s, Dst d, uint32_t dst_alpha, int w, fx16_t sx, fx16_t sx_step, int sw) {
+    if(dst_alpha == 255u) span_scale_over<false>(s, d, w, sx, sx_step, sw, 255u);
+    else                  span_scale_over<true >(s, d, w, sx, sx_step, sw, dst_alpha);
   }
 
   inline void span_blit_scale(image_t *src, image_t *dst, blend_func_t bf, fx16_t sx, fx16_t sx_step, fx16_t sy, int dx, int dy, int w, filter_t filter = NEAREST) {
     (void)bf;
-    uint32_t *pd = (uint32_t *)dst->ptr(dx, dy);
+    const bool d565 = dst->pixel_format() == RGB565;
     uint32_t dst_alpha = dst->alpha();
 
     // NEAREST (and palette images, which sample() always resolves nearest): sy
@@ -113,25 +150,33 @@ namespace picovector {
       int iy = sy >> 16;
       if(iy < 0) iy = 0; else if(iy >= sh) iy = sh - 1;
 
+      dst_565  dh{ d565 ? (uint16_t *)dst->ptr(dx, dy) : nullptr };
+      dst_rgba dw{ d565 ? nullptr : (uint32_t *)dst->ptr(dx, dy) };
       if(src->has_palette()) {
         src_pal s{ (uint8_t *)src->ptr(0, iy), src->palette_data() };
-        if(dst_alpha == 255u) span_scale_over<false>(s, pd, w, sx, sx_step, sw, 255u);
-        else                  span_scale_over<true >(s, pd, w, sx, sx_step, sw, dst_alpha);
+        if(d565) _span_scale_to(s, dh, dst_alpha, w, sx, sx_step, sw);
+        else     _span_scale_to(s, dw, dst_alpha, w, sx, sx_step, sw);
+      } else if(src->pixel_format() == RGB565) {
+        src_565 s{ (uint16_t *)src->ptr(0, iy) };
+        if(d565) _span_scale_to(s, dh, dst_alpha, w, sx, sx_step, sw);
+        else     _span_scale_to(s, dw, dst_alpha, w, sx, sx_step, sw);
       } else {
         src_rgba s{ (uint32_t *)src->ptr(0, iy) };
-        if(dst_alpha == 255u) span_scale_over<false>(s, pd, w, sx, sx_step, sw, 255u);
-        else                  span_scale_over<true >(s, pd, w, sx, sx_step, sw, dst_alpha);
+        if(d565) _span_scale_to(s, dh, dst_alpha, w, sx, sx_step, sw);
+        else     _span_scale_to(s, dw, dst_alpha, w, sx, sx_step, sw);
       }
       return;
     }
 
     // filtered (BILINEAR/BICUBIC) path: sample() does the interpolation, so we
     // can't fold the fetch into a raw row index.
+    uint16_t *ph = d565 ? (uint16_t *)dst->ptr(dx, dy) : nullptr;
+    uint32_t *pd = d565 ? nullptr : (uint32_t *)dst->ptr(dx, dy);
     while(w--) {
       uint32_t c = src->sample(sx, sy, filter);
       if(dst_alpha != 255u) c = _premul_mul_alpha(c, dst_alpha);
-      *pd = blend_over_premul(*pd, c);
-      pd++;
+      if(d565) { *ph = pv_8888_to_565(blend_over_premul(pv_565_to_8888(*ph), c)); ph++; }
+      else     { *pd = blend_over_premul(*pd, c); pd++; }
       sx += sx_step;
     }
   }

@@ -17,6 +17,9 @@ namespace picovector {
   // texel, which is cheaper. Samples the original from a scratch copy.
 
   void image_t::wave(int horizontal, int vertical, float strength, bool bilinear) {
+    // Whole-image filters work in raw 4-byte pixels; a 16-bit framebuffer is
+    // skipped rather than corrupted. See RGB565 in image.hpp.
+    if(_pixel_format != RGBA8888) return;
     // An indexed image is one byte a pixel; this writes four. See brush.cpp.
     if(_has_palette) return;
     rect_t bd = bounds(); int W = (int)bd.w, H = (int)bd.h;

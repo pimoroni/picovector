@@ -140,11 +140,13 @@ namespace picovector {
 
   // ---- specialised pixel + scanline ---------------------------------------
 
-  template<bool TEX, bool VARYING, bool NMAP, bool DEPTH>
+  template<bool TEX, bool VARYING, bool NMAP, bool DEPTH, bool FB565>
   __attribute__((always_inline)) static inline
   // cpx / dpx: this pixel's colour and depth, which the span loop walks along
-  // a row rather than this working them out from x and y every pixel.
-  bool emit(const shade_t &s, uint32_t *cpx, uint16_t *dpx, const cur_t &c, uint32_t cc) {
+  // a row rather than this working them out from x and y every pixel. FB565
+  // packs the final store to 16 bits (the platform framebuffer); everything up
+  // to the store is the same maths on the same values.
+  bool emit(const shade_t &s, void *cpx, uint16_t *dpx, const cur_t &c, uint32_t cc) {
     uint16_t d16 = 0;
     if constexpr (DEPTH) {
       int dd = c.dep >> 8;
@@ -207,7 +209,8 @@ namespace picovector {
       col = s.white ? (px & 0xffffffu) : pico3d_modulate(col, px);
     }
 
-    *cpx = col | 0xff000000u;
+    if constexpr (FB565) *(uint16_t *)cpx = pico3d_pack_565(col);
+    else                 *(uint32_t *)cpx = col | 0xff000000u;
     if constexpr (DEPTH) *dpx = d16;
     return true;
   }
@@ -248,7 +251,7 @@ namespace picovector {
     return true;
   }
 
-  template<bool TEX, bool VARYING, bool NMAP, bool DEPTH>
+  template<bool TEX, bool VARYING, bool NMAP, bool DEPTH, bool FB565>
   __attribute__((always_inline)) static inline
   int raster_fill(const shade_t &s, const attrs_t &at, uint32_t cc,
                   int minx, int maxx, int miny, int maxy, edges_t ed,
@@ -318,10 +321,11 @@ namespace picovector {
                            else        { c.u=u_row+du_dx*k0; c.v=v_row+dv_dx*k0; } }
       if constexpr (NMAP) for (int k=0;k<3;k++){ c.nrm[k]=nrm_row[k]+nrm_dx[k]*k0; c.tan[k]=tan_row[k]+tan_dx[k]*k0; }
 
-      uint32_t *cpx = s.t->color + (size_t)y * s.t->color_stride + minx + k0;
+      constexpr size_t CBPP = FB565 ? 2 : 4;
+      uint8_t *cpx = (uint8_t *)s.t->color + ((size_t)y * s.t->color_stride + minx + k0) * CBPP;
       uint16_t *dpx = DEPTH ? s.t->depth + (size_t)(y - s.t->depth_y0) * s.t->depth_stride + minx + k0 : nullptr;
-      for (int n = k1 - k0; n >= 0; n--, cpx++) {
-        if (emit<TEX,VARYING,NMAP,DEPTH>(s, cpx, dpx, c, cc)) written++;
+      for (int n = k1 - k0; n >= 0; n--, cpx += CBPP) {
+        if (emit<TEX,VARYING,NMAP,DEPTH,FB565>(s, cpx, dpx, c, cc)) written++;
         if constexpr (DEPTH) dpx++;
         c.dep += ddep_dx;
         if constexpr (VARYING) { c.r+=dr_dx; c.g+=dg_dx; c.b+=db_dx; }
@@ -344,23 +348,23 @@ namespace picovector {
   #define RT_SETUP_END() ((void)0)
 #endif
 
-  template<bool VARYING, bool DEPTH>
+  template<bool VARYING, bool DEPTH, bool FB565>
   __attribute__((noinline)) static
   int raster_fill_tex(const shade_t &s, const attrs_t &at, uint32_t cc,
                       int minx, int maxx, int miny, int maxy, edges_t ed,
                       int y_first, int y_last) {
-    return raster_fill<true, VARYING, false, DEPTH>(s, at, cc, minx, maxx, miny, maxy, ed, y_first, y_last);
+    return raster_fill<true, VARYING, false, DEPTH, FB565>(s, at, cc, minx, maxx, miny, maxy, ed, y_first, y_last);
   }
 
   // The per-pixel-lit (normal-mapped / specular) fills, out of line in flash.
   // They are float-heavy per pixel whatever memory they run from, and inlined
   // into pico3d_raster_triangle with the rest they would take half its SRAM.
-  template<bool TEX, bool VARYING, bool DEPTH>
+  template<bool TEX, bool VARYING, bool DEPTH, bool FB565>
   __attribute__((noinline)) static
   int raster_fill_nmap(const shade_t &s, const attrs_t &at, uint32_t cc,
                        int minx, int maxx, int miny, int maxy, edges_t ed,
                        int y_first, int y_last) {
-    return raster_fill<TEX, VARYING, true, DEPTH>(s, at, cc, minx, maxx, miny, maxy, ed, y_first, y_last);
+    return raster_fill<TEX, VARYING, true, DEPTH, FB565>(s, at, cc, minx, maxx, miny, maxy, ed, y_first, y_last);
   }
 
   int __not_in_flash_func(pico3d_raster_triangle)(pico3d_target_t *t, const pico3d_tri_t *tri,
@@ -543,15 +547,22 @@ namespace picovector {
 #endif
     int written = 0;
     PICO3D_PD_COUNTN(PICO3D_PD_FILLS, 1);                 // XP
+    // bit 16 of the key picks the framebuffer format, so each combination is a
+    // dedicated branch-free loop; the plain 565 fills share SRAM with the RGBA
+    // ones, the textured / per-pixel-lit ones live in flash like their RGBA kin
+    if (t->color565) key |= 16;
     switch (key) {
-#define C(k,T,V,N,D) case k: written = raster_fill<T,V,N,D>(s, at, cc, minx, maxx, miny, maxy, ed, y_first, y_last); break;
+#define C(k,T,V,N,D) case k: written = raster_fill<T,V,N,D,false>(s, at, cc, minx, maxx, miny, maxy, ed, y_first, y_last); break; \
+                     case (k)|16: written = raster_fill<T,V,N,D,true>(s, at, cc, minx, maxx, miny, maxy, ed, y_first, y_last); break;
       C(0,false,false,false,false) C(2,false,true,false,false)
       C(8,false,false,false,true)  C(10,false,true,false,true)
       // XP: the textured fills, also out of line in flash, to test the SRAM budget
-#define CT(k,V,D) case k: written = raster_fill_tex<V,D>(s, at, cc, minx, maxx, miny, maxy, ed, y_first, y_last); break;
+#define CT(k,V,D) case k: written = raster_fill_tex<V,D,false>(s, at, cc, minx, maxx, miny, maxy, ed, y_first, y_last); break; \
+                  case (k)|16: written = raster_fill_tex<V,D,true>(s, at, cc, minx, maxx, miny, maxy, ed, y_first, y_last); break;
       CT(1,false,false) CT(3,true,false) CT(9,false,true) CT(11,true,true)
 #undef CT
-#define CN(k,T,V,D) case k: written = raster_fill_nmap<T,V,D>(s, at, cc, minx, maxx, miny, maxy, ed, y_first, y_last); break;
+#define CN(k,T,V,D) case k: written = raster_fill_nmap<T,V,D,false>(s, at, cc, minx, maxx, miny, maxy, ed, y_first, y_last); break; \
+                    case (k)|16: written = raster_fill_nmap<T,V,D,true>(s, at, cc, minx, maxx, miny, maxy, ed, y_first, y_last); break;
       CN(4,false,false,false)  CN(5,true,false,false)  CN(6,false,true,false)  CN(7,true,true,false)
       CN(12,false,false,true)  CN(13,true,false,true)  CN(14,false,true,true)  CN(15,true,true,true)
 #undef CN

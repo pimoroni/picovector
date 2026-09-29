@@ -155,6 +155,9 @@ namespace picovector {
 #endif
 
   void image_t::blur(float radius, float strength) {
+    // Whole-image filters work in raw 4-byte pixels; a 16-bit framebuffer is
+    // skipped rather than corrupted. See RGB565 in image.hpp.
+    if(_pixel_format != RGBA8888) return;
     // An indexed image is one byte a pixel; this writes four. See brush.cpp.
     if(_has_palette) return;
     radius *= strength;

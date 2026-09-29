@@ -272,11 +272,10 @@ namespace picovector {
     uint32_t tw = int(this->_bounds.w - 1);
     uint32_t th = int(this->_bounds.h - 1);
 
-    // one pixel across a row, or one row (stride) down a column
-    int dst_step = vertical ? (target->_row_stride >> 2) : 1;
-
-    uint32_t *dst = (uint32_t *)target->ptr(p.x, p.y);
-
+    // one pixel across a row, or one row (stride) down a column. The pixel
+    // loops run over (dst, dst_step) so a 565 target can point them at the
+    // RGBA staging row instead of the framebuffer.
+    auto run = [&](uint32_t *dst, int dst_step) {
     // Palette images always resolve NEAREST (indices can't be interpolated).
     if(filter == NEAREST || this->_has_palette) {
       // NEAREST fast path: fetch the nearest texel inline via get_unsafe,
@@ -328,6 +327,22 @@ namespace picovector {
         dst += dst_step;
       }
     }
+    };
+
+    if(target->pixel_format() == RGB565) {
+      // Stage the destination run as RGBA (see brush.cpp): the loops run
+      // unchanged on the scratch and the result packs back to 16 bits. A span
+      // never exceeds the screen's long side, which is the scratch's size.
+      if(n > PV_RGB565_STAGE_PX) n = PV_RGB565_STAGE_PX;
+      uint32_t *stage = pv_rgb565_stage();
+      uint16_t *d = (uint16_t *)target->ptr(p.x, p.y);
+      const size_t step = vertical ? target->_row_stride / sizeof(uint16_t) : 1;
+      for(int k = 0; k < n; k++) stage[k] = pv_565_to_8888(d[k * step]);
+      run(stage, 1);
+      for(int k = 0; k < n; k++) d[k * step] = pv_8888_to_565(stage[k]);
+      return;
+    }
+    run((uint32_t *)target->ptr(p.x, p.y), vertical ? (int)(target->_row_stride >> 2) : 1);
   }
 
   void image_t::blit_hspan(image_t *target, vec2_t p, float len, vec2_t uv0, vec2_t uv1, filter_t filter) {
@@ -397,11 +412,14 @@ namespace picovector {
     for(int j = 0; j < 4; j++) {
       int y = iy - 1 + j;
       if(y < 0) y = 0; else if(y >= h) y = h - 1;
-      const uint32_t *row = (const uint32_t *)ptr(0, y);
+      // raw row indexing only fits a 4-byte format; a 565 source (the platform
+      // framebuffer) fetches through get_unsafe instead
+      const bool wide = _pixel_format != RGB565;
+      const uint32_t *row = wide ? (const uint32_t *)ptr(0, y) : nullptr;
 
       int hr = 0, hg = 0, hb = 0, ha = 0;  // horizontal sums, Q12
       for(int i = 0; i < 4; i++) {
-        uint32_t c = row[xs[i]];
+        uint32_t c = wide ? row[xs[i]] : get_unsafe(xs[i], y);
         int wi = wx[i];
         hr += wi * (int)(c & 0xff);
         hg += wi * (int)((c >> 8) & 0xff);

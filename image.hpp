@@ -106,6 +106,12 @@ namespace picovector {
 
   typedef enum pixel_format_t {
     RGBA8888 = 1,
+    // A 16-bit framebuffer format (5:6:5, red in the top bits), for a platform
+    // whose screen stores no alpha - it exists so a display can halve its SRAM,
+    // not as a general image format. Only the screen is one: drawing routes
+    // through the RGBA staging shim in _blend_spans/blit_span, with native
+    // paths where hot. It cannot hold a palette, and filters skip it.
+    RGB565 = 2,
     RGBA4444 = 2,
   } pixel_format_t;
 
@@ -141,6 +147,25 @@ namespace picovector {
     ELLIPSES = 1  // truncate the last visible line with a trailing "..."
   } text_overflow_t;
 
+
+  // RGB565 <-> 0xAABBGGRR. The pack is bit-identical to the display scan-out
+  // conversion (truncation), so a 565 framebuffer holds exactly the quantised
+  // form of what an RGBA one would; the unpack replicates top bits into the
+  // low bits so pack(unpack(p)) == p.
+  static inline uint16_t pv_8888_to_565(uint32_t c) {
+    return (uint16_t)(((c & 0xf8u) << 8) | ((c & 0xfc00u) >> 5) | ((c & 0xf80000u) >> 19));
+  }
+  static inline uint32_t pv_565_to_8888(uint16_t p) {
+    uint32_t r5 = (p >> 11) & 0x1fu, g6 = (p >> 5) & 0x3fu, b5 = p & 0x1fu;
+    return 0xff000000u | (((b5 << 3) | (b5 >> 2)) << 16)
+                       | (((g6 << 2) | (g6 >> 4)) << 8)
+                       |  ((r5 << 3) | (r5 >> 2));
+  }
+
+  // The RGB565 staging scratch (defined in brush.cpp): one RGBA row the shims
+  // unpack a 565 destination run into. Sized to the platform screen's long side.
+  static const int PV_RGB565_STAGE_PX = 320;
+  uint32_t *pv_rgb565_stage();
 
   class mat3_t;
   class font_t;
@@ -206,6 +231,9 @@ namespace picovector {
       size_t bytes_per_pixel();
       void window(image_t *source, rect_t viewport);
       image_t window(rect_t r);
+      // Internal: repoint the pixel storage. Only the RGB565 staging shims use
+      // it, to slide a scratch row under an existing image's coordinates.
+      inline void rebase_buffer(void *b) { _buffer = b; }
       inline void* ptr(int x, int y) const {
         return (uint8_t *)(this->_buffer) + (x * this->_bytes_per_pixel) + (y * this->_row_stride);
       }
@@ -304,6 +332,7 @@ namespace picovector {
       // per-pixel call; ptr() and _palette[] are already inline.
       inline uint32_t get_unsafe(int x, int y) const {
         if(this->_has_palette) return this->_palette[*((uint8_t *)ptr(x, y))];
+        if(this->_pixel_format == RGB565) return pv_565_to_8888(*((uint16_t *)ptr(x, y)));
         return *((uint32_t *)ptr(x, y));
       }
 

@@ -59,7 +59,8 @@ namespace picovector {
     _pixel_format = pixel_format;
     _has_palette = has_palette;
     _managed_buffer = true;
-    _bytes_per_pixel = this->_has_palette ? sizeof(uint8_t) : sizeof(uint32_t);
+    _bytes_per_pixel = this->_has_palette ? sizeof(uint8_t)
+                     : (_pixel_format == RGB565 ? sizeof(uint16_t) : sizeof(uint32_t));
     _row_stride = w * _bytes_per_pixel;
     _buffer = PV_MALLOC_NO_SCAN(this->buffer_size());
     alloc_palette(palette_entries);
@@ -89,7 +90,8 @@ namespace picovector {
     _has_palette = has_palette;
     _buffer = buffer;
     _managed_buffer = false;
-    _bytes_per_pixel = this->_has_palette ? sizeof(uint8_t) : sizeof(uint32_t);
+    _bytes_per_pixel = this->_has_palette ? sizeof(uint8_t)
+                     : (_pixel_format == RGB565 ? sizeof(uint16_t) : sizeof(uint32_t));
     _row_stride = w * _bytes_per_pixel;
     alloc_palette(palette_entries);
   }

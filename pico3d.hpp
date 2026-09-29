@@ -293,6 +293,7 @@ namespace picovector {
     PICO3D_PD_DRAW_WALL, PICO3D_PD_CLEAR, PICO3D_PD_BIN, PICO3D_PD_PASS2,
     PICO3D_PD_RASTER, PICO3D_PD_WAIT,
     PICO3D_PD_VERTS, PICO3D_PD_TRIS_IN, PICO3D_PD_TRIS_DRAWN, PICO3D_PD_TRIS_CLIPPED,   // counts
+    PICO3D_PD_ROWS, PICO3D_PD_ROWS_EMPTY, PICO3D_PD_FILLS,                          // XP counts
     PICO3D_PD_COUNT
   };
   extern uint32_t pico3d_prof_detail[2][PICO3D_PD_COUNT];   // 32-bit: read every second or so, wraps after 17 s

@@ -225,6 +225,7 @@ namespace picovector {
   static bool __not_in_flash_func(row_span)(int32_t e0, int32_t e1, int32_t e2,
                                             int32_t A0, int32_t A1, int32_t A2,
                                             int kmax, int &k0_out, int &k1_out) {
+    PICO3D_PD_COUNTN(PICO3D_PD_ROWS, 1);                  // XP
     int k0 = 0, k1 = kmax;
     const int32_t e[3] = { e0, e1, e2 }, A[3] = { A0, A1, A2 };
     for (int i = 0; i < 3; i++) {
@@ -241,7 +242,7 @@ namespace picovector {
         return false;
       }
     }
-    if (k0 > k1) return false;
+    if (k0 > k1) { PICO3D_PD_COUNTN(PICO3D_PD_ROWS_EMPTY, 1); return false; }   // XP
     k0_out = k0; k1_out = k1;
     return true;
   }
@@ -249,7 +250,8 @@ namespace picovector {
   template<bool TEX, bool VARYING, bool NMAP, bool DEPTH>
   __attribute__((always_inline)) static inline
   int raster_fill(const shade_t &s, const attrs_t &at, uint32_t cc,
-                  int minx, int maxx, int miny, int maxy, edges_t ed) {
+                  int minx, int maxx, int miny, int maxy, edges_t ed,
+                  int y_first, int y_last) {
     constexpr bool UVS = TEX || NMAP;
     const bool persp = s.persp;
 
@@ -294,9 +296,13 @@ namespace picovector {
     // is one branch a row.
     const int ystep = s.t->row_step > 1 ? s.t->row_step : 1;
     int pending = ystep > 1 ? ((s.t->row_phase - miny) % ystep + ystep) % ystep : 0;
-    for (int y = miny; y <= maxy; y++) {
+    // The plane and edge values start at miny; rows before y_first cannot hold a
+    // covered pixel centre, so they are only stepped past, and rows after
+    // y_last are not visited at all.
+    for (int y = miny; y <= y_last; y++) {
       if (pending) { pending--; PV_ROW_ADVANCE(); continue; }
       pending = ystep - 1;
+      if (y < y_first) { PV_ROW_ADVANCE(); continue; }
       // Only the covered span, with every value set up at its first pixel:
       // no coverage test, and nothing stepped across the empty part of the
       // box, which for small triangles is most of it.
@@ -336,6 +342,25 @@ namespace picovector {
 #else
   #define RT_SETUP_END() ((void)0)
 #endif
+
+  template<bool VARYING, bool DEPTH>
+  __attribute__((noinline)) static
+  int raster_fill_tex(const shade_t &s, const attrs_t &at, uint32_t cc,
+                      int minx, int maxx, int miny, int maxy, edges_t ed,
+                      int y_first, int y_last) {
+    return raster_fill<true, VARYING, false, DEPTH>(s, at, cc, minx, maxx, miny, maxy, ed, y_first, y_last);
+  }
+
+  // The per-pixel-lit (normal-mapped / specular) fills, out of line in flash.
+  // They are float-heavy per pixel whatever memory they run from, and inlined
+  // into pico3d_raster_triangle with the rest they would take half its SRAM.
+  template<bool TEX, bool VARYING, bool DEPTH>
+  __attribute__((noinline)) static
+  int raster_fill_nmap(const shade_t &s, const attrs_t &at, uint32_t cc,
+                       int minx, int maxx, int miny, int maxy, edges_t ed,
+                       int y_first, int y_last) {
+    return raster_fill<TEX, VARYING, true, DEPTH>(s, at, cc, minx, maxx, miny, maxy, ed, y_first, y_last);
+  }
 
   int __not_in_flash_func(pico3d_raster_triangle)(pico3d_target_t *t, const pico3d_tri_t *tri,
                              const pico3d_material_t *m, const pico3d_light_t *light) {
@@ -461,6 +486,31 @@ namespace picovector {
     ed.e0_row = (X2 - X1) * (PY - Y1) - (Y2 - Y1) * (PX - X1);
     ed.e1_row = (X0 - X2) * (PY - Y2) - (Y0 - Y2) * (PX - X2);
     ed.e2_row = (X1 - X0) * (PY - Y0) - (Y1 - Y0) * (PX - X0);
+    // Snapping can collapse a sliver to zero area, or turn it over. Either way it
+    // covers nothing: with collinear vertices every edge value is zero along the
+    // whole line through them, so the >= 0 test would draw that line across the
+    // box, and a flipped one would be drawn inside out. Its neighbours share its
+    // snapped vertices, so they still meet exactly without it. (64-bit: each
+    // product can reach 2^30 inside the guard band.)
+    const int64_t area2 = (int64_t)(X1 - X0) * (Y2 - Y0) - (int64_t)(Y1 - Y0) * (X2 - X0);
+    if (area2 == 0 || (area2 < 0) != (sign < 0)) {
+#if PICO3D_PROF
+      pico3d_prof_edges_cyc[PICO3D_PC] += pico3d_prof_cyc() - tpl;
+#endif
+      return 0;
+    }
+    // The rows whose pixel centres (y * COV_FX + COV_FX / 2) fall within the
+    // snapped triangle's vertical extent: the only ones that can be covered.
+    // The float bounding box is looser - up to a row each end, which for small
+    // triangles is a third of the rows visited. The box stays the origin of
+    // every plane and edge value, so nothing else about the setup moves.
+    const int32_t Ylo = Y0 < Y1 ? (Y0 < Y2 ? Y0 : Y2) : (Y1 < Y2 ? Y1 : Y2);
+    const int32_t Yhi = Y0 > Y1 ? (Y0 > Y2 ? Y0 : Y2) : (Y1 > Y2 ? Y1 : Y2);
+    int y_first = (Ylo - COV_FX / 2 + COV_FX - 1) >> 4;   // ceil((Ylo - 8) / 16)
+    int y_last  = (Yhi - COV_FX / 2) >> 4;                // floor((Yhi - 8) / 16)
+    static_assert(COV_FX == 16, "the row bounds shift by log2(COV_FX)");
+    if (y_first < miny) y_first = miny;
+    if (y_last > maxy) y_last = maxy;
     if (sign < 0) {
       ed.A0 = -ed.A0; ed.B0 = -ed.B0; ed.e0_row = -ed.e0_row;
       ed.A1 = -ed.A1; ed.B1 = -ed.B1; ed.e1_row = -ed.e1_row;
@@ -483,12 +533,19 @@ namespace picovector {
     pico3d_prof_bbox_px[PICO3D_PC] += (uint64_t)(maxx - minx + 1) * (maxy - miny + 1);  // px the fill iterates
 #endif
     int written = 0;
+    PICO3D_PD_COUNTN(PICO3D_PD_FILLS, 1);                 // XP
     switch (key) {
-#define C(k,T,V,N,D) case k: written = raster_fill<T,V,N,D>(s, at, cc, minx, maxx, miny, maxy, ed); break;
-      C(0,false,false,false,false) C(1,true,false,false,false) C(2,false,true,false,false) C(3,true,true,false,false)
-      C(4,false,false,true,false)  C(5,true,false,true,false)  C(6,false,true,true,false)  C(7,true,true,true,false)
-      C(8,false,false,false,true)  C(9,true,false,false,true)  C(10,false,true,false,true) C(11,true,true,false,true)
-      C(12,false,false,true,true)  C(13,true,false,true,true)  C(14,false,true,true,true)  C(15,true,true,true,true)
+#define C(k,T,V,N,D) case k: written = raster_fill<T,V,N,D>(s, at, cc, minx, maxx, miny, maxy, ed, y_first, y_last); break;
+      C(0,false,false,false,false) C(2,false,true,false,false)
+      C(8,false,false,false,true)  C(10,false,true,false,true)
+      // XP: the textured fills, also out of line in flash, to test the SRAM budget
+#define CT(k,V,D) case k: written = raster_fill_tex<V,D>(s, at, cc, minx, maxx, miny, maxy, ed, y_first, y_last); break;
+      CT(1,false,false) CT(3,true,false) CT(9,false,true) CT(11,true,true)
+#undef CT
+#define CN(k,T,V,D) case k: written = raster_fill_nmap<T,V,D>(s, at, cc, minx, maxx, miny, maxy, ed, y_first, y_last); break;
+      CN(4,false,false,false)  CN(5,true,false,false)  CN(6,false,true,false)  CN(7,true,true,false)
+      CN(12,false,false,true)  CN(13,true,false,true)  CN(14,false,true,true)  CN(15,true,true,true)
+#undef CN
 #undef C
     }
 #if PICO3D_PROF

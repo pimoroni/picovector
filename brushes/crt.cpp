@@ -7,16 +7,43 @@ namespace picovector {
   // like a curved tube. Position-dependent (scanlines follow y; the falloff is
   // keyed on distance from the image centre).
 
-  // rounded corner/edge darkening factor 0..255 for pixel (x,y) in a W x H image
-  static inline int tube(int x, int y, int W, int H) {
-    int dx = 2 * x - W; if(dx < 0) dx = -dx;              // 0 centre .. W edge
-    int dy = 2 * y - H; if(dy < 0) dy = -dy;
-    int nx = W ? (int)((long)dx * 255 / W) : 0;
-    int ny = H ? (int)((long)dy * 255 / H) : 0;
-    int corner = (nx * nx + ny * ny) >> 8;                // 0 .. ~510
-    if(corner <= 210) return 255;
-    int f = 255 - (corner - 210);                          // darken past the edge
-    return f < 40 ? 40 : f;
+  struct tube_walk {
+    int W, nysq, d, q, r;
+
+    tube_walk(int x, int y, int W, int H) : W(W) {
+      int dy = 2 * y - H; if(dy < 0) dy = -dy;
+      int ny = H ? (int)((long)dy * 255 / H) : 0;
+      nysq = ny * ny;
+      d = 2 * x - W;
+      long scaled = (long)(d < 0 ? -d : d) * 255;
+      q = W ? (int)(scaled / W) : 0;
+      r = W ? (int)(scaled % W) : 0;
+    }
+
+    inline int corner() const { return (q * q + nysq) >> 8; }
+
+    inline void step() {
+      int was = d;
+      d += 2;
+      if(!W) return;
+      if(was >= 0) {
+        r += 510;
+        while(r >= W) { r -= W; q++; }
+      } else if(d <= 0) {
+        r -= 510;
+        while(r < 0) { r += W; q--; }
+      }
+    }
+  };
+
+  static inline int crt_factor(int line, int corner, int str) {
+    int t = 255;
+    if(corner > 210) {
+      t = 255 - (corner - 210);
+      if(t < 40) t = 40;
+    }
+    int f = line * t / 255;
+    return 255 - (((255 - f) * str) >> 8);
   }
 
   crt_brush_t::crt_brush_t(int spacing, int darkness, int str)
@@ -30,14 +57,16 @@ namespace picovector {
     for(int i = i0; i < i1; i += step) {
       int x = spans[i].x, y = spans[i].y;
       int line = (y % spacing) == 0 ? sl : 255;
+      int flat = crt_factor(line, 0, str);
+      tube_walk tube(x, y, W, H);
       uint8_t *p = (uint8_t*)target->ptr(x, y);
       for(int w = spans[i].w; w; w--) {
-        int f = line * tube(x, y, W, H) / 255;
-        f = 255 - (((255 - f) * str) >> 8);              // scale the darkening by strength
+        int corner = tube.corner();
+        int f = corner > 210 ? crt_factor(line, corner, str) : flat;
         p[0] = (uint8_t)((p[0] * f) >> 8);
         p[1] = (uint8_t)((p[1] * f) >> 8);
         p[2] = (uint8_t)((p[2] * f) >> 8);
-        p += 4; x++;
+        p += 4; tube.step();
       }
     }
   }
@@ -49,19 +78,21 @@ namespace picovector {
     for(int i = i0; i < i1; i += step) {
       int x = spans[i].x, y = spans[i].y;
       int line = (y % spacing) == 0 ? sl : 255;
+      int flat = crt_factor(line, 0, str);
+      tube_walk tube(x, y, W, H);
       uint8_t *p = (uint8_t*)target->ptr(x, y);
       const uint8_t *mask = spans[i].mask;
       // ease each channel toward the darkened value by coverage (leave alpha)
       for(int w = spans[i].w; w; w--) {
         int m = *mask++;
-        if(!m) { p += 4; x++; continue; }
-        int f = line * tube(x, y, W, H) / 255;
-        f = 255 - (((255 - f) * str) >> 8);              // scale the darkening by strength
+        if(!m) { p += 4; tube.step(); continue; }
+        int corner = tube.corner();
+        int f = corner > 210 ? crt_factor(line, corner, str) : flat;
         int n0 = (p[0] * f) >> 8, n1 = (p[1] * f) >> 8, n2 = (p[2] * f) >> 8;
         p[0] = (uint8_t)(p[0] + (((n0 - p[0]) * m) >> 8));
         p[1] = (uint8_t)(p[1] + (((n1 - p[1]) * m) >> 8));
         p[2] = (uint8_t)(p[2] + (((n2 - p[2]) * m) >> 8));
-        p += 4; x++;
+        p += 4; tube.step();
       }
     }
   }

@@ -420,6 +420,8 @@ namespace picovector {
 
     void blend_spans(image_t *target, int i0, int i1, int step) override;
     void blend_masked_spans(image_t *target, int i0, int i1, int step) override;
+    bool blends_565() const override { return type == GRADIENT_LINEAR; }
+    void blend_spans_565(image_t *target, int i0, int i1, int step) override;
     void set_render_transform(mat3_t *transform) override;
     gradient_brush_t *as_gradient() override { return this; }
 

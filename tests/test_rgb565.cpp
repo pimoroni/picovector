@@ -134,6 +134,17 @@ void test_rgb565() {
     CHECK(diff_exact(a, fb) == 0);
   }
 
+  printf("rgb565: native linear gradient over noise matches exactly\n");
+  {
+    image_t a(64, 48), fb(64, 48, RGB565);
+    noise_pair(a, fb);
+    float positions[3] = { 0.0f, 0.5f, 1.0f };
+    color_t stops[3] = { rgb_color_t(255, 0, 0, 255), rgb_color_t(0, 200, 60, 90), rgb_color_t(20, 40, 250, 255) };
+    gradient_brush_t br(GRADIENT_LINEAR, 0, 0, 64, 48, positions, stops, 3, nullptr);
+    brush_pair(a, fb, &br);
+    CHECK(diff_exact(a, fb) == 0);
+  }
+
   printf("rgb565: AA circle over a clean background matches exactly\n");
   {
     image_t a(64, 64), fb(64, 64, RGB565);

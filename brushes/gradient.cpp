@@ -7,6 +7,7 @@ namespace picovector {
   // Per-span samplers, shared by the solid and masked batches: mask == nullptr is
   // the solid path, mask != nullptr folds per-pixel coverage into the colour.
   static void gradient_linear_span(image_t *target, gradient_brush_t *p, const pixel_t *lut, int x, int y, int w, const uint8_t *mask);
+  static void gradient_linear_span_565(image_t *target, gradient_brush_t *p, const pixel_t *lut, const uint16_t *packed, int x, int y, int w);
   static void gradient_radial_span(image_t *target, gradient_brush_t *p, const pixel_t *lut, int x, int y, int w, const uint8_t *mask);
   static void gradient_conical_span(image_t *target, gradient_brush_t *p, const pixel_t *lut, int x, int y, int w, const uint8_t *mask);
 
@@ -92,6 +93,15 @@ namespace picovector {
     }
   }
 
+  void gradient_brush_t::blend_spans_565(image_t *target, int i0, int i1, int step) {
+    const pixel_t *ramp = ramp_for(target);
+    if(!ramp) return;
+    uint16_t packed[256];
+    for(int i = 0; i < 256; i++) packed[i] = pv_8888_to_565(ramp[i]);
+    const pv_span *spans = _spans();
+    for(int i = i0; i < i1; i += step) gradient_linear_span_565(target, this, ramp, packed, spans[i].x, spans[i].y, spans[i].w);
+  }
+
   void gradient_brush_t::blend_masked_spans(image_t *target, int i0, int i1, int step) {
     gradient_brush_t *p = this;
     const pixel_t *ramp = ramp_for(target);
@@ -117,9 +127,7 @@ namespace picovector {
 
   // --- linear ---------------------------------------------------------------
 
-  static void gradient_linear_span(image_t *target, gradient_brush_t *p, const pixel_t *lut, int x, int y, int w, const uint8_t *mask) {
-    uint32_t *dst = (uint32_t*)target->ptr(x, y);
-
+  static void linear_axis(gradient_brush_t *p, int x, int y, float &t, float &dt) {
     // pixel -> gradient space, plus the per-pixel step for a one-pixel screen step
     vec2_t pt = vec2_t((float)x, (float)y).transform(&p->inverse_transform);
     float dpx = p->inverse_transform.v00;
@@ -130,8 +138,29 @@ namespace picovector {
     float inv_len2 = 1.0f / (dx * dx + dy * dy + 1e-12f);
 
     // offset along the gradient axis is linear across the span, so step it
-    float t  = ((pt.x - p->p1.x) * dx + (pt.y - p->p1.y) * dy) * inv_len2;
-    float dt = (dpx * dx + dpy * dy) * inv_len2;
+    t  = ((pt.x - p->p1.x) * dx + (pt.y - p->p1.y) * dy) * inv_len2;
+    dt = (dpx * dx + dpy * dy) * inv_len2;
+  }
+
+  static void gradient_linear_span_565(image_t *target, gradient_brush_t *p, const pixel_t *lut, const uint16_t *packed, int x, int y, int w) {
+    uint16_t *dst = (uint16_t *)target->ptr(x, y);
+    float t, dt;
+    linear_axis(p, x, y, t, dt);
+    while(w--) {
+      int idx = (int)(t * 255.0f + 0.5f);
+      if(idx < 0) idx = 0; else if(idx > 255) idx = 255;
+      pixel_t c = lut[idx];
+      if((c >> 24) == 255u) *dst = packed[idx];
+      else                  *dst = pv_8888_to_565(blend_over_premul(pv_565_to_8888(*dst), c));
+      dst++;
+      t += dt;
+    }
+  }
+
+  static void gradient_linear_span(image_t *target, gradient_brush_t *p, const pixel_t *lut, int x, int y, int w, const uint8_t *mask) {
+    uint32_t *dst = (uint32_t*)target->ptr(x, y);
+    float t, dt;
+    linear_axis(p, x, y, t, dt);
 
     while(w--) {
       uint32_t m = mask ? *mask++ : 255u;

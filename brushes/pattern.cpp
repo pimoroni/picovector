@@ -77,6 +77,24 @@ namespace picovector {
     }
   }
 
+  void pattern_brush_t::blend_spans_565(image_t *target, int i0, int i1, int step) {
+    pixel_t c1 = fold_target_alpha(target, this->c1);
+    pixel_t c2 = fold_target_alpha(target, this->c2);
+    pv_565_lut on, off;
+    pv_565_lut_build(on, [c1](uint32_t d) { return blend_over_premul(d, c1); });
+    pv_565_lut_build(off, [c2](uint32_t d) { return blend_over_premul(d, c2); });
+    const pv_span *spans = _spans();
+    for(int i = i0; i < i1; i += step) {
+      int x = spans[i].x, y = spans[i].y;
+      uint8_t row = this->p[y & 0b111];
+      uint16_t *d = (uint16_t *)target->ptr(x, y);
+      for(int w = spans[i].w; w; w--, d++, x++) {
+        bool set = row & (1 << (7 - (x & 0b111)));
+        *d = (set ? on : off).map(*d);
+      }
+    }
+  }
+
   void pattern_brush_t::blend_masked_spans(image_t *target, int i0, int i1, int step) {
     pattern_brush_t *p = this;
     const pv_masked_span *spans = _masked_spans();

@@ -109,6 +109,8 @@ namespace picovector {
     pattern_brush_t(const color_t& c1, const color_t& c2, uint8_t *pattern);
     void blend_spans(image_t *target, int i0, int i1, int step) override;
     void blend_masked_spans(image_t *target, int i0, int i1, int step) override;
+    bool blends_565() const override { return true; }
+    void blend_spans_565(image_t *target, int i0, int i1, int step) override;
   };
 
   // The widest of the small brushes, and the one that would spill first: it holds

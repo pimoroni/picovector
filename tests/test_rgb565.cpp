@@ -125,6 +125,15 @@ void test_rgb565() {
     CHECK(diff_exact(a, fb) == 0);
   }
 
+  printf("rgb565: native pattern over noise matches exactly\n");
+  {
+    image_t a(64, 48), fb(64, 48, RGB565);
+    noise_pair(a, fb);
+    pattern_brush_t br(rgb_color_t(200, 90, 30, 255), rgb_color_t(20, 160, 220, 140), (uint8_t)8);
+    brush_pair(a, fb, &br);
+    CHECK(diff_exact(a, fb) == 0);
+  }
+
   printf("rgb565: AA circle over a clean background matches exactly\n");
   {
     image_t a(64, 64), fb(64, 64, RGB565);

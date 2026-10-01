@@ -33,21 +33,21 @@ namespace picovector {
 
   // ---- RGB565 staging --------------------------------------------------------
   // A 565 target (the platform framebuffer) is composited through an RGBA
-  // scratch row: unpack the span's pixels, run the brush's own batch method
+  // scratch row per core: unpack the span's pixels, run the brush's own batch method
   // against a stand-in RGBA image whose ptr(span.x, span.y) lands on the
   // scratch, pack the result back. Every brush - and anything it reads from
   // the span buffers - works unchanged and never learns the format exists.
   // Chunked to the scratch width, adjusting the span in place and restoring it.
-  static uint32_t _stage565[PV_RGB565_STAGE_PX];
-  uint32_t *pv_rgb565_stage() { return _stage565; }
+  static uint32_t _stage565[2][PV_RGB565_STAGE_PX];
+  uint32_t *pv_rgb565_stage() { return _stage565[0]; }
 
   template <typename SPAN>
-  static void _blend_spans_565(image_t *target, brush_t *brush, int n, bool masked) {
+  static void _blend_spans_565(image_t *target, brush_t *brush, int i0, int i1, int step, bool masked, uint32_t *scratch) {
     SPAN *sp = (SPAN *)_span_buf;
-    image_t stage(_stage565, (int)target->bounds().w, (int)target->bounds().h);
+    image_t stage(scratch, (int)target->bounds().w, (int)target->bounds().h);
     stage.alpha(target->alpha());
     const size_t bpp = 4;
-    for(int i = 0; i < n; i++) {
+    for(int i = i0; i < i1; i += step) {
       SPAN &s = sp[i];
       const SPAN saved = s;
       while(s.w > 0) {
@@ -55,12 +55,12 @@ namespace picovector {
         uint16_t rest = s.w - chunk;
         s.w = chunk;
         uint16_t *d = (uint16_t *)target->ptr(s.x, s.y);
-        for(int k = 0; k < chunk; k++) _stage565[k] = pv_565_to_8888(d[k]);
-        // slide the scratch under (s.x, s.y): stage.ptr(s.x, s.y) == _stage565
-        stage.rebase_buffer((uint8_t *)_stage565 - (size_t)s.y * stage.row_stride() - (size_t)s.x * bpp);
+        for(int k = 0; k < chunk; k++) scratch[k] = pv_565_to_8888(d[k]);
+        // slide the scratch under (s.x, s.y): stage.ptr(s.x, s.y) == scratch
+        stage.rebase_buffer((uint8_t *)scratch - (size_t)s.y * stage.row_stride() - (size_t)s.x * bpp);
         if(masked) brush->blend_masked_spans(&stage, i, i + 1, 1);
         else       brush->blend_spans(&stage, i, i + 1, 1);
-        for(int k = 0; k < chunk; k++) d[k] = pv_8888_to_565(_stage565[k]);
+        for(int k = 0; k < chunk; k++) d[k] = pv_8888_to_565(scratch[k]);
         if(!rest) break;
         s.x += chunk;
         s.w = rest;
@@ -68,6 +68,32 @@ namespace picovector {
       }
       s = saved;
     }
+  }
+
+  template <typename SPAN>
+  static void _blend_565_range(image_t *target, brush_t *brush, int i0, int i1, int step, bool masked) {
+    _blend_spans_565<SPAN>(target, brush, i0, i1, step, masked, _stage565[i0 & 1]);
+  }
+
+#if PV_DUAL_CORE
+  static void _blend_565_row_worker(void *ctx, int i0, int i1, int step) {
+    _blend_ctx *c = (_blend_ctx *)ctx;
+    if(c->masked) _blend_565_range<pv_masked_span>(c->target, c->brush, i0, i1, step, true);
+    else          _blend_565_range<pv_span>(c->target, c->brush, i0, i1, step, false);
+  }
+#endif
+
+  template <typename SPAN>
+  static void _blend_565(image_t *target, brush_t *brush, int n, bool masked) {
+#if PV_DUAL_CORE
+    int px = masked ? _masked_span_pixels(n) : _solid_span_pixels(n);
+    if(n >= 2 && px >= PV_DUAL_CORE_BLEND_MIN_PX) {
+      _blend_ctx c = { target, brush, masked };
+      pv_parallel_rows(_blend_565_row_worker, &c, 0, n);
+      return;
+    }
+#endif
+    _blend_565_range<SPAN>(target, brush, 0, n, 1, masked);
   }
 
   // Blend the shared span buffer with `brush` in one call - dispatches to the
@@ -102,7 +128,7 @@ namespace picovector {
         }
         return;
       }
-      _blend_spans_565<pv_span>(target, brush, n, false);
+      _blend_565<pv_span>(target, brush, n, false);
       return;
     }
 #if PV_DUAL_CORE
@@ -126,7 +152,7 @@ namespace picovector {
     if(target->pixel_format() == RGB565) {           // staged: see above
       if(brush->samples_neighbourhood()) return;     // scratch row can't feed it
       pv_fence_565();                                // scan-out may still be reading
-      _blend_spans_565<pv_masked_span>(target, brush, n, true);
+      _blend_565<pv_masked_span>(target, brush, n, true);
       return;
     }
 #if PV_DUAL_CORE

@@ -45,6 +45,7 @@ namespace picovector {
   static void _blend_spans_565(image_t *target, brush_t *brush, int n, bool masked) {
     SPAN *sp = (SPAN *)_span_buf;
     image_t stage(_stage565, (int)target->bounds().w, (int)target->bounds().h);
+    stage.alpha(target->alpha());
     const size_t bpp = 4;
     for(int i = 0; i < n; i++) {
       SPAN &s = sp[i];

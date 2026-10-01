@@ -72,6 +72,15 @@ void test_rgb565() {
     CHECK(diff_exact(a, fb) == 0);
   }
 
+  printf("rgb565: a fill at reduced image alpha matches exactly\n");
+  {
+    image_t a(64, 48), fb(64, 48, RGB565);
+    fill_pair(a, fb, BG);
+    a.alpha(128); fb.alpha(128);
+    fill_pair(a, fb, INK);
+    CHECK(diff_exact(a, fb) == 0);
+  }
+
   printf("rgb565: AA circle over a clean background matches exactly\n");
   {
     image_t a(64, 64), fb(64, 64, RGB565);

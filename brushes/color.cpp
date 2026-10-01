@@ -70,6 +70,13 @@ namespace picovector {
 
   // ── helpers ─────────────────────────────────────────────────────────────────
   // the target's global alpha, folded into the premultiplied pen colour once
+  void color_brush_t::blend_spans_565(image_t *target, int i0, int i1, int step) {
+    pixel_t src = color_src(target, this);
+    pv_565_lut lut;
+    pv_565_lut_build(lut, [src](uint32_t d) { return blend_over_premul(d, src); });
+    pv_565_lut_spans(target, lut, i0, i1, step);
+  }
+
   static pixel_t color_src(image_t *target, brush_t *brush) {
     return fold_target_alpha(target, ((color_brush_t*)brush)->c);
   }

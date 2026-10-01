@@ -32,6 +32,25 @@ namespace picovector {
     }
   }
 
+  void duotone_brush_t::blend_spans_565(image_t *target, int i0, int i1, int step) {
+    uint16_t red[32], green[64], blue[32], out[256];
+    for(int i = 0; i < 32; i++) {
+      uint8_t r = (uint8_t)((i << 3) | (i >> 2));
+      red[i] = (uint16_t)(77 * r);
+      blue[i] = (uint16_t)(29 * r);
+    }
+    for(int i = 0; i < 64; i++) green[i] = (uint16_t)(150 * ((i << 2) | (i >> 4)));
+    for(int i = 0; i < 256; i++) out[i] = pv_8888_to_565(lut[i]);
+    const pv_span *spans = _spans();
+    for(int i = i0; i < i1; i += step) {
+      uint16_t *d = (uint16_t *)target->ptr(spans[i].x, spans[i].y);
+      for(int w = spans[i].w; w; w--, d++) {
+        uint16_t p = *d;
+        *d = out[(red[p >> 11] + green[(p >> 5) & 0x3fu] + blue[p & 0x1fu]) >> 8];
+      }
+    }
+  }
+
   void duotone_brush_t::blend_masked_spans(image_t *target, int i0, int i1, int step) {
     const pv_masked_span *spans = _masked_spans();
     for(int i = i0; i < i1; i += step) {

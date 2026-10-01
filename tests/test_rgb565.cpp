@@ -52,6 +52,23 @@ static int diff_tol(image_t &rgba, image_t &fb, int tol) {
   return bad;
 }
 
+static void noise_pair(image_t &a, image_t &fb) {
+  uint32_t seed = 12345;
+  int w = (int)fb.bounds().w, h = (int)fb.bounds().h;
+  for(int y = 0; y < h; y++)
+    for(int x = 0; x < w; x++) {
+      seed = seed * 1664525u + 1013904223u;
+      uint16_t p = (uint16_t)(seed >> 16);
+      *(uint16_t *)fb.ptr(x, y) = p;
+      *(uint32_t *)a.ptr(x, y) = pv_565_to_8888(p);
+    }
+}
+
+static void brush_pair(image_t &a, image_t &fb, brush_t *br) {
+  a.brush(br); a.rectangle(a.bounds()); a.brush(nullptr);
+  fb.brush(br); fb.rectangle(fb.bounds()); fb.brush(nullptr);
+}
+
 void test_rgb565() {
   const uint32_t BG = clean(32, 48, 64), INK = clean(248, 128, 64);
 
@@ -78,6 +95,33 @@ void test_rgb565() {
     fill_pair(a, fb, BG);
     a.alpha(128); fb.alpha(128);
     fill_pair(a, fb, INK);
+    CHECK(diff_exact(a, fb) == 0);
+  }
+
+  printf("rgb565: native translucent fill over noise matches exactly\n");
+  {
+    image_t a(64, 48), fb(64, 48, RGB565);
+    noise_pair(a, fb);
+    color_brush_t br(rgb_color_t(200, 90, 30, 170));
+    brush_pair(a, fb, &br);
+    CHECK(diff_exact(a, fb) == 0);
+  }
+
+  printf("rgb565: native crt over noise matches exactly\n");
+  {
+    image_t a(96, 72), fb(96, 72, RGB565);
+    noise_pair(a, fb);
+    crt_brush_t br(3, 70, 200);
+    brush_pair(a, fb, &br);
+    CHECK(diff_exact(a, fb) == 0);
+  }
+
+  printf("rgb565: native duotone over noise matches exactly\n");
+  {
+    image_t a(64, 48), fb(64, 48, RGB565);
+    noise_pair(a, fb);
+    duotone_brush_t br(rgb_color_t(2, 12, 6, 255), rgb_color_t(150, 255, 170, 255));
+    brush_pair(a, fb, &br);
     CHECK(diff_exact(a, fb) == 0);
   }
 

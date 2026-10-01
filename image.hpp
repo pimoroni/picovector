@@ -162,6 +162,18 @@ namespace picovector {
                        |  ((r5 << 3) | (r5 >> 2));
   }
 
+  struct pv_565_lut {
+    uint16_t r[32], g[64], b[32];
+    inline uint16_t map(uint16_t p) const { return r[p >> 11] | g[(p >> 5) & 0x3fu] | b[p & 0x1fu]; }
+  };
+
+  template <typename F>
+  static inline void pv_565_lut_build(pv_565_lut &lut, F f) {
+    for(uint32_t i = 0; i < 32; i++) lut.r[i] = pv_8888_to_565(f(pv_565_to_8888((uint16_t)(i << 11)))) & 0xf800u;
+    for(uint32_t i = 0; i < 64; i++) lut.g[i] = pv_8888_to_565(f(pv_565_to_8888((uint16_t)(i << 5)))) & 0x07e0u;
+    for(uint32_t i = 0; i < 32; i++) lut.b[i] = pv_8888_to_565(f(pv_565_to_8888((uint16_t)i))) & 0x001fu;
+  }
+
   // The RGB565 staging scratch (defined in brush.cpp): one RGBA row the shims
   // unpack a 565 destination run into. Sized to the platform screen's long side.
   static const int PV_RGB565_STAGE_PX = 320;

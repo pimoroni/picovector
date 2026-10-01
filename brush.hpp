@@ -48,6 +48,8 @@ namespace picovector {
     // target reports it here, so a 16-bit framebuffer can take the packed-fill
     // fast path (clear() and solid fills) instead of staging every span.
     virtual bool solid_opaque(image_t *target, pixel_t &out) const { (void)target; (void)out; return false; }
+    virtual bool blends_565() const { return false; }
+    virtual void blend_spans_565(image_t *target, int i0, int i1, int step) { (void)target; (void)i0; (void)i1; (void)step; }
 
     // Fold the shape's transform into the brush's own coordinate space, so a
     // brush with geometry (e.g. a gradient) moves with the shape it fills.
@@ -60,6 +62,14 @@ namespace picovector {
     virtual fractal_brush_t *as_fractal() { return nullptr; }
   };
 
+  static inline void pv_565_lut_spans(image_t *target, const pv_565_lut &lut, int i0, int i1, int step) {
+    const pv_span *spans = _spans();
+    for(int i = i0; i < i1; i += step) {
+      uint16_t *d = (uint16_t *)target->ptr(spans[i].x, spans[i].y);
+      for(int w = spans[i].w; w; w--, d++) *d = lut.map(*d);
+    }
+  }
+
   class color_brush_t : public brush_t {
   public:
     pixel_t c;
@@ -68,6 +78,8 @@ namespace picovector {
     void blend_spans(image_t *target, int i0, int i1, int step) override;
     void blend_masked_spans(image_t *target, int i0, int i1, int step) override;
     bool solid_opaque(image_t *target, pixel_t &out) const override;
+    bool blends_565() const override { return true; }
+    void blend_spans_565(image_t *target, int i0, int i1, int step) override;
   };
 
   // Window / erase brush: lerps the destination toward a premultiplied target
@@ -231,6 +243,8 @@ namespace picovector {
     duotone_brush_t(const color_t &shadow, const color_t &highlight);
     void blend_spans(image_t *target, int i0, int i1, int step) override;
     void blend_masked_spans(image_t *target, int i0, int i1, int step) override;
+    bool blends_565() const override { return true; }
+    void blend_spans_565(image_t *target, int i0, int i1, int step) override;
   };
 
   // CRT tube: darken every `spacing`-th row by `darkness` (0..255) plus a rounded
@@ -241,6 +255,8 @@ namespace picovector {
     crt_brush_t(int spacing, int darkness, int str = 256);
     void blend_spans(image_t *target, int i0, int i1, int step) override;
     void blend_masked_spans(image_t *target, int i0, int i1, int step) override;
+    bool blends_565() const override { return true; }
+    void blend_spans_565(image_t *target, int i0, int i1, int step) override;
   };
 
   // Gentle pixel grid: darken every `spacing`-th row and column by `darkness`.

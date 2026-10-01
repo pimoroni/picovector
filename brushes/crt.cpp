@@ -46,6 +46,13 @@ namespace picovector {
     return 255 - (((255 - f) * str) >> 8);
   }
 
+  static inline uint32_t crt_scale(uint32_t c, int f) {
+    uint32_t r = ((c & 0xffu) * f) >> 8;
+    uint32_t g = (((c >> 8) & 0xffu) * f) >> 8;
+    uint32_t b = (((c >> 16) & 0xffu) * f) >> 8;
+    return (c & 0xff000000u) | (b << 16) | (g << 8) | r;
+  }
+
   crt_brush_t::crt_brush_t(int spacing, int darkness, int str)
     : spacing(spacing < 1 ? 1 : spacing), darkness(darkness),
       str(str < 0 ? 0 : (str > 256 ? 256 : str)) {}
@@ -67,6 +74,29 @@ namespace picovector {
         p[1] = (uint8_t)((p[1] * f) >> 8);
         p[2] = (uint8_t)((p[2] * f) >> 8);
         p += 4; tube.step();
+      }
+    }
+  }
+
+  void crt_brush_t::blend_spans_565(image_t *target, int i0, int i1, int step) {
+    const pv_span *spans = _spans();
+    rect_t bnd = target->bounds(); int W = (int)bnd.w, H = (int)bnd.h;
+    int sl = 255 - darkness;
+    int plain_f = crt_factor(255, 0, str), lined_f = crt_factor(sl, 0, str);
+    pv_565_lut plain, lined;
+    pv_565_lut_build(plain, [plain_f](uint32_t c) { return crt_scale(c, plain_f); });
+    pv_565_lut_build(lined, [lined_f](uint32_t c) { return crt_scale(c, lined_f); });
+    for(int i = i0; i < i1; i += step) {
+      int x = spans[i].x, y = spans[i].y;
+      int line = (y % spacing) == 0 ? sl : 255;
+      const pv_565_lut &lut = line == 255 ? plain : lined;
+      tube_walk tube(x, y, W, H);
+      uint16_t *d = (uint16_t *)target->ptr(x, y);
+      for(int w = spans[i].w; w; w--, d++) {
+        int corner = tube.corner();
+        if(corner > 210) *d = pv_8888_to_565(crt_scale(pv_565_to_8888(*d), crt_factor(line, corner, str)));
+        else             *d = lut.map(*d);
+        tube.step();
       }
     }
   }

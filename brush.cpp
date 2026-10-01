@@ -83,6 +83,24 @@ namespace picovector {
   }
 #endif
 
+#if PV_DUAL_CORE
+  static void _native_565_row_worker(void *ctx, int i0, int i1, int step) {
+    _blend_ctx *c = (_blend_ctx *)ctx;
+    c->brush->blend_spans_565(c->target, i0, i1, step);
+  }
+#endif
+
+  static void _blend_native_565(image_t *target, brush_t *brush, int n) {
+#if PV_DUAL_CORE
+    if(n >= 2 && _solid_span_pixels(n) >= PV_DUAL_CORE_BLEND_MIN_PX) {
+      _blend_ctx c = { target, brush, false };
+      pv_parallel_rows(_native_565_row_worker, &c, 0, n);
+      return;
+    }
+#endif
+    brush->blend_spans_565(target, 0, n, 1);
+  }
+
   template <typename SPAN>
   static void _blend_565(image_t *target, brush_t *brush, int n, bool masked) {
 #if PV_DUAL_CORE
@@ -128,7 +146,8 @@ namespace picovector {
         }
         return;
       }
-      _blend_565<pv_span>(target, brush, n, false);
+      if(brush->blends_565()) _blend_native_565(target, brush, n);
+      else                    _blend_565<pv_span>(target, brush, n, false);
       return;
     }
 #if PV_DUAL_CORE

@@ -9,13 +9,6 @@ namespace picovector {
     return (uint8_t)v;
   }
 
-  static inline pixel_t premultiply(uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
-    uint8_t rp = (r * a) / 255;
-    uint8_t gp = (g * a) / 255;
-    uint8_t bp = (b * a) / 255;
-    return __builtin_bswap32((rp << 24) | (gp << 16) | (bp << 8) | a);
-  }
-
   static void hsv_to_srgb(uint8_t h, uint8_t s, uint8_t v, uint8_t &r, uint8_t &g, uint8_t &b) {
     int hs = h * 6;             // six hue regions of 256
     int region = hs >> 8;       // 0..5, since 255 * 6 = 1530

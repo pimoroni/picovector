@@ -12,6 +12,19 @@ namespace picovector {
   // confuse. Channel order matches blend.hpp's _r/_g/_b/_a extractors.
   typedef uint32_t pixel_t;
 
+  // A straight colour as the premultiplied word an RGBA8888 image stores.
+  static inline pixel_t premultiply(uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
+    uint8_t rp = (r * a) / 255;
+    uint8_t gp = (g * a) / 255;
+    uint8_t bp = (b * a) / 255;
+    return __builtin_bswap32((rp << 24) | (gp << 16) | (bp << 8) | a);
+  }
+
+  // The same word for a fully opaque colour, where premultiplying changes nothing.
+  static inline pixel_t opaque(uint8_t r, uint8_t g, uint8_t b) {
+    return 0xff000000u | (b << 16) | (g << 8) | r;
+  }
+
   // How a colour was authored. Its components are kept in this space and read
   // back unchanged; the resolved sRGB is derived from them.
   enum color_space_t : uint8_t {

@@ -92,6 +92,41 @@ namespace picovector {
     }
   }
 
+  // BILINEAR along one span. sy is constant across the span, so the two source
+  // rows and the vertical fraction are resolved once by the caller. As in
+  // span_scale_over, when both span endpoints keep x and x + 1 inside the source
+  // no texel needs clamping; otherwise the clamped loop matches sample()'s edge
+  // handling.
+  template<bool ApplyAlpha, typename Src, typename Dst>
+  static inline __attribute__((always_inline))
+  void span_bilinear_over(Src r0, Src r1, Dst pd, int w, fx16_t sx, fx16_t sx_step, int sw, uint32_t fy, uint32_t alpha) {
+    int64_t ex = (int64_t)sx + (int64_t)(w - 1) * sx_step; // Q16 end coordinate
+    int xa = sx >> 16;
+    int64_t xb = ex >> 16;
+    if(xa >= 0 && xb >= 0 && xa + 1 < sw && xb + 1 < sw) {
+      for(int i = 0; i < w; i++) {
+        int x = sx >> 16;
+        uint32_t fx = (sx >> 8) & 0xffu;
+        uint32_t c = _lerp_premul(_lerp_premul(r0[x], r0[x + 1], fx), _lerp_premul(r1[x], r1[x + 1], fx), fy);
+        if(ApplyAlpha) c = _premul_mul_alpha(c, alpha);
+        pd.put(i, blend_over_premul(pd.get(i), c));
+        sx += sx_step;
+      }
+    } else {
+      for(int i = 0; i < w; i++) {
+        int ix = sx >> 16;
+        uint32_t fx = (sx >> 8) & 0xffu;
+        int x0 = ix, x1 = ix + 1;
+        if(x0 < 0) x0 = 0; else if(x0 >= sw) x0 = sw - 1;
+        if(x1 < 0) x1 = 0; else if(x1 >= sw) x1 = sw - 1;
+        uint32_t c = _lerp_premul(_lerp_premul(r0[x0], r0[x1], fx), _lerp_premul(r1[x0], r1[x1], fx), fy);
+        if(ApplyAlpha) c = _premul_mul_alpha(c, alpha);
+        pd.put(i, blend_over_premul(pd.get(i), c));
+        sx += sx_step;
+      }
+    }
+  }
+
   // --- public entry points ---------------------------------------------------
   // bf is retained for call-site/signature stability but is now unused: the only
   // blend mode is "over", inlined via blend_over_premul. Reintroduce a dispatch
@@ -134,6 +169,12 @@ namespace picovector {
     else                  span_scale_over<true >(s, d, w, sx, sx_step, sw, dst_alpha);
   }
 
+  template<typename Src, typename Dst>
+  inline void _span_bilinear_to(Src r0, Src r1, Dst d, uint32_t dst_alpha, int w, fx16_t sx, fx16_t sx_step, int sw, uint32_t fy) {
+    if(dst_alpha == 255u) span_bilinear_over<false>(r0, r1, d, w, sx, sx_step, sw, fy, 255u);
+    else                  span_bilinear_over<true >(r0, r1, d, w, sx, sx_step, sw, fy, dst_alpha);
+  }
+
   inline void span_blit_scale(image_t *src, image_t *dst, blend_func_t bf, fx16_t sx, fx16_t sx_step, fx16_t sy, int dx, int dy, int w, filter_t filter = NEAREST) {
     (void)bf;
     const bool d565 = dst->pixel_format() == RGB565;
@@ -170,8 +211,36 @@ namespace picovector {
       return;
     }
 
-    // filtered (BILINEAR/BICUBIC) path: sample() does the interpolation, so we
-    // can't fold the fetch into a raw row index.
+    // BILINEAR: like NEAREST, sy is constant across the span, so resolve both
+    // source rows and the vertical fraction once and index them directly.
+    if(filter == BILINEAR) {
+      rect_t b = src->bounds();
+      int sw = (int)b.w;
+      int sh = (int)b.h;
+      int iy = sy >> 16;
+      uint32_t fy = (sy >> 8) & 0xffu;
+      int y0 = iy, y1 = iy + 1;
+      if(y0 < 0) y0 = 0; else if(y0 >= sh) y0 = sh - 1;
+      if(y1 < 0) y1 = 0; else if(y1 >= sh) y1 = sh - 1;
+
+      dst_565  dh{ d565 ? (uint16_t *)dst->ptr(dx, dy) : nullptr };
+      dst_rgba dw{ d565 ? nullptr : (uint32_t *)dst->ptr(dx, dy) };
+      if(src->pixel_format() == RGB565) {
+        src_565 r0{ (uint16_t *)src->ptr(0, y0) };
+        src_565 r1{ (uint16_t *)src->ptr(0, y1) };
+        if(d565) _span_bilinear_to(r0, r1, dh, dst_alpha, w, sx, sx_step, sw, fy);
+        else     _span_bilinear_to(r0, r1, dw, dst_alpha, w, sx, sx_step, sw, fy);
+      } else {
+        src_rgba r0{ (uint32_t *)src->ptr(0, y0) };
+        src_rgba r1{ (uint32_t *)src->ptr(0, y1) };
+        if(d565) _span_bilinear_to(r0, r1, dh, dst_alpha, w, sx, sx_step, sw, fy);
+        else     _span_bilinear_to(r0, r1, dw, dst_alpha, w, sx, sx_step, sw, fy);
+      }
+      return;
+    }
+
+    // BICUBIC: sample() does the interpolation, so we can't fold the fetch into
+    // a raw row index.
     uint16_t *ph = d565 ? (uint16_t *)dst->ptr(dx, dy) : nullptr;
     uint32_t *pd = d565 ? nullptr : (uint32_t *)dst->ptr(dx, dy);
     while(w--) {

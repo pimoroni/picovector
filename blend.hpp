@@ -49,6 +49,19 @@ pixel_t blend_over_premul(pixel_t d, pixel_t c) {
        | ((((c >> 8) & 0x00ff00ffu) + dga) << 8);
 }
 
+// Lerp two premultiplied packed texels by f (0..255). a + ((b - a) * f >> 8)
+// equals (a * (256 - f) + b * f) >> 8, whose terms are never negative, so two
+// channels share each multiply (a channel sum is <= 255 * 256 and never
+// carries into its neighbour) and the result matches image_t::sample()'s
+// per-channel BILINEAR bit for bit.
+static inline __attribute__((always_inline))
+uint32_t _lerp_premul(uint32_t a, uint32_t b, uint32_t f) {
+  uint32_t inv = 256u - f;
+  uint32_t rb = ((( a       & 0x00ff00ffu) * inv + ( b       & 0x00ff00ffu) * f) >> 8) & 0x00ff00ffu;
+  uint32_t ga = ((((a >> 8) & 0x00ff00ffu) * inv + ((b >> 8) & 0x00ff00ffu) * f) >> 8) & 0x00ff00ffu;
+  return rb | (ga << 8);
+}
+
 static inline __attribute__((always_inline))
 uint32_t _premul_mul_alpha_channel(uint32_t c, uint32_t a) {
   return (c * a + 128) >> 8;

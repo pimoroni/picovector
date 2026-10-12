@@ -37,8 +37,9 @@ namespace picovector {
   //
   // sx and sy are already reduced into [0, tw << 16) and [0, th << 16) by the
   // caller's walk, so every tap is within a texel or two of the range and wraps
-  // by compare rather than by division.
-  static inline uint32_t _sample_wrapped(image_t *src, fx16_t sx, fx16_t sy, int tw, int th, filter_t filter) {
+  // by compare rather than by division. raw says the source is plain RGBA, so
+  // BILINEAR can read its rows directly.
+  static inline uint32_t _sample_wrapped(image_t *src, fx16_t sx, fx16_t sy, int tw, int th, filter_t filter, bool raw) {
     int ix = sx >> 16;
     int iy = sy >> 16;
 
@@ -49,18 +50,17 @@ namespace picovector {
       int x0 = ix, y0 = iy;
       int x1 = x0 + 1 == tw ? 0 : x0 + 1;
       int y1 = y0 + 1 == th ? 0 : y0 + 1;
-      uint32_t c00 = src->get_unsafe(x0, y0), c10 = src->get_unsafe(x1, y0);
-      uint32_t c01 = src->get_unsafe(x0, y1), c11 = src->get_unsafe(x1, y1);
-      uint32_t out = 0;
-      for(int s = 0; s < 32; s += 8) {
-        int a = (c00 >> s) & 0xff, b = (c10 >> s) & 0xff;
-        int c = (c01 >> s) & 0xff, d = (c11 >> s) & 0xff;
-        int top = a + (((b - a) * (int)fx) >> 8);
-        int bot = c + (((d - c) * (int)fx) >> 8);
-        int val = top + (((bot - top) * (int)fy) >> 8);
-        out |= ((uint32_t)val) << s;
+      uint32_t c00, c10, c01, c11;
+      if(raw) {
+        const uint32_t *r0 = (const uint32_t *)src->ptr(0, y0);
+        const uint32_t *r1 = (const uint32_t *)src->ptr(0, y1);
+        c00 = r0[x0]; c10 = r0[x1];
+        c01 = r1[x0]; c11 = r1[x1];
+      } else {
+        c00 = src->get_unsafe(x0, y0); c10 = src->get_unsafe(x1, y0);
+        c01 = src->get_unsafe(x0, y1); c11 = src->get_unsafe(x1, y1);
       }
-      return out;
+      return _lerp_premul(_lerp_premul(c00, c10, fx), _lerp_premul(c01, c11, fx), fy);
     }
 
     // BICUBIC: separable 4x4 Catmull-Rom over premultiplied channels, matching
@@ -118,6 +118,7 @@ namespace picovector {
     const int tw = int(b.w), th = int(b.h);
     if(tw <= 0 || th <= 0) return;
     const int32_t limx = (int32_t)tw << 16, limy = (int32_t)th << 16;
+    const bool raw = !p->src->has_palette() && p->src->pixel_format() != RGB565;
     for(int i = i0; i < i1; i += step) {
       int x = spans[i].x, y = spans[i].y, w = spans[i].w;
       uint32_t *dst = (uint32_t*)target->ptr(x, y);
@@ -150,7 +151,7 @@ namespace picovector {
         for(int j = 0; j < w; j++) {
           sx += dx; if(sx >= (uint32_t)limx) sx -= (uint32_t)limx;
           sy += dy; if(sy >= (uint32_t)limy) sy -= (uint32_t)limy;
-          uint32_t c = _sample_wrapped(p->src, (fx16_t)sx, (fx16_t)sy, tw, th, p->filter);
+          uint32_t c = _sample_wrapped(p->src, (fx16_t)sx, (fx16_t)sy, tw, th, p->filter, raw);
           if(alpha != 255u) c = _premul_mul_alpha(c, alpha);
           *dst = blend_over_premul(*dst, c);
           dst++;
@@ -167,6 +168,7 @@ namespace picovector {
     const int tw = int(b.w), th = int(b.h);
     if(tw <= 0 || th <= 0) return;
     const int32_t limx = (int32_t)tw << 16, limy = (int32_t)th << 16;
+    const bool raw = !p->src->has_palette() && p->src->pixel_format() != RGB565;
     for(int i = i0; i < i1; i += step) {
       int x = spans[i].x, y = spans[i].y, w = spans[i].w;
       uint8_t *mask = (uint8_t*)spans[i].mask;
@@ -203,7 +205,7 @@ namespace picovector {
           sy += dy; if(sy >= (uint32_t)limy) sy -= (uint32_t)limy;
           uint32_t m = *mask++;
           if(m) {
-            uint32_t c = _sample_wrapped(p->src, (fx16_t)sx, (fx16_t)sy, tw, th, p->filter);
+            uint32_t c = _sample_wrapped(p->src, (fx16_t)sx, (fx16_t)sy, tw, th, p->filter, raw);
             if(alpha != 255u) c = _premul_mul_alpha(c, alpha);
             blend_masked_over_premul(dst, c, m);
           }

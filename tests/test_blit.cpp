@@ -237,6 +237,43 @@ void test_blit() {
     CHECK(dst.at(15, 0) == PAL_RED);
   }
 
+  printf("blit: an integer upscale gives every texel the same number of pixels\n");
+  {
+    const int texels = 29;
+    const int scale = 3;
+    const int size = texels * scale;
+    const uint32_t DARK = rgb_color_t(0, 0, 0, 255)._p;
+    const uint32_t LIGHT = rgb_color_t(255, 255, 255, 255)._p;
+
+    image_t indexed(texels, texels, RGBA8888, true, 2);
+    indexed.palette(0, DARK);
+    indexed.palette(1, LIGHT);
+    image_t rgba(texels, texels);
+    for(int y = 0; y < texels; y++) {
+      for(int x = 0; x < texels; x++) {
+        const bool light = (x + y) & 1;
+        *((uint8_t *)indexed.ptr(x, y)) = light ? 1 : 0;
+        *((uint32_t *)rgba.ptr(x, y)) = light ? LIGHT : DARK;
+      }
+    }
+
+    for(image_t *checker : { &indexed, &rgba }) {
+      for(bool flip : { false, true }) {
+        canvas_t dst(size, size);
+        checker->blit(&dst.img, rect_t(0, 0, texels, texels), rect_t(0, 0, flip ? -size : size, size));
+        int wrong = 0;
+        for(int y = 0; y < size; y++) {
+          for(int x = 0; x < size; x++) {
+            const int tx = flip ? texels - 1 - x / scale : x / scale;
+            const uint32_t expected = ((tx + y / scale) & 1) ? LIGHT : DARK;
+            if(dst.at(x, y) != expected) wrong++;
+          }
+        }
+        CHECK_MSG(wrong == 0, "an integer upscale sampled the wrong texel");
+      }
+    }
+  }
+
   printf("blit: an indexed source stays inside the buffer\n");
   {
     guarded_image_t g(32, 32);

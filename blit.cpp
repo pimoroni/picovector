@@ -168,14 +168,20 @@ namespace picovector {
     int srcx = sr.x * 65536.0f;
     int srcy = sr.y * 65536.0f;
 
+    const bool nearest = filter == NEAREST || has_palette();
+
     if(flip_h) {
       srcstepx = -srcstepx;
-      srcx = ((_bounds.w - sr.x) * 65536.0f) + srcstepx;
+      srcx = ((_bounds.w - sr.x) * 65536.0f) + (nearest ? srcstepx / 2 : srcstepx);
+    } else if(nearest) {
+      srcx += srcstepx / 2;
     }
 
     if(flip_v) {
       srcstepy = -srcstepy;
-      srcy = ((_bounds.h - sr.y) * 65536.0f) + srcstepy;
+      srcy = ((_bounds.h - sr.y) * 65536.0f) + (nearest ? srcstepy / 2 : srcstepy);
+    } else if(nearest) {
+      srcy += srcstepy / 2;
     }
 
 #if PV_DUAL_CORE

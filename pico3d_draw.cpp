@@ -20,7 +20,7 @@
 // contend) and enable the dual-core split. No-ops on host (no pico-sdk).
 #if __has_include("pico/multicore.h")
 #include "pico.h"               // __not_in_flash_func
-#if PV_DUAL_CORE
+#if PV_DUAL_CORE || PICO3D_EXTERNAL_CORE1
 #define PICO3D_MULTICORE 1
 #endif
 // core1 is owned by picovector — it launches it correctly (gating MicroPython's FIFO

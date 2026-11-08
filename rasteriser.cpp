@@ -387,19 +387,29 @@ namespace picovector {
       float d = dy * dir;
       int16_t *ln = &sa_acc[yi * w];
       uint32_t *bits = &sa_bits[yi * SA_BITS_STRIDE];
+      // The row's whole deposit in Q11, its top and bottom each rounded on their
+      // own. A neighbouring edge rounds their shared end the same way, so a closed
+      // contour's deposits on a row cancel exactly. Truncating each column's share
+      // alone can leave a remainder, and the prefix sum carries it to the end of
+      // the row as a faint span.
+      int whole = ((int)floorf(fminf((float)(yi + 1), y1) * SA_SCALEF + 0.5f) -
+                   (int)floorf(fmaxf((float)yi, y0) * SA_SCALEF + 0.5f)) * (int)dir;
+      int placed = 0;
       // Deposit v at column i, and mark the column so the scan knows to stop
       // there. Off-left columns (i<0) fold into column 0: the per-row prefix sum
       // starts there, so that column is the backdrop and must carry the full
       // winding from everything to its left (a shape running off the left edge).
       // Off-right columns (i>=w) have no pixels and no carry, so drop.
-      auto dep = [&](int i, float v) {
+      auto dep_q = [&](int i, int q) {
         if(i < 0) i = 0;
-        if(i < w) { ln[i] += (int16_t)(v * SA_SCALEF); bits[i >> 5] |= 1u << (i & 31); }
+        placed += q;
+        if(i < w) { ln[i] += (int16_t)q; bits[i >> 5] |= 1u << (i & 31); }
       };
+      auto dep = [&](int i, float v) { dep_q(i, (int)(v * SA_SCALEF)); };
 
       float xa = x, xb = xnext;
       if(xa > xb) { float t = xa; xa = xb; xb = t; }
-      if(xb <= 0.0f) { ln[0] += (int16_t)(d * SA_SCALEF); bits[0] |= 1u; x = xnext; continue; } // wholly left
+      if(xb <= 0.0f) { dep_q(0, whole); x = xnext; continue; } // wholly left
       if(xa >= (float)w) { x = xnext; continue; }           // wholly right
 
       float x0floor = floorf(xa);
@@ -409,6 +419,7 @@ namespace picovector {
         float xmf = 0.5f * (x + xnext) - x0floor;
         dep(x0i,     d * (1.0f - xmf));
         dep(x0i + 1, d * xmf);
+        dep_q(x0i + 1, whole - placed);          // the rounding remainder, so the row sums exactly
       } else {
         float s = 1.0f / (xb - xa);
         float x0f = xa - x0floor;
@@ -427,6 +438,7 @@ namespace picovector {
           dep(x1i - 1, d * (1.0f - a2 - tail));
         }
         dep(x1i, d * tail);
+        dep_q(x1i, whole - placed);              // the rounding remainder, so the row sums exactly
       }
       x = xnext;
     }

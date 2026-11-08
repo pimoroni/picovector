@@ -152,6 +152,48 @@ void test_raster() {
     CHECK((big.at(160, 120 - 95) & 0xff) > 0);
   }
 
+  printf("raster: an antialiased stroke draws nothing past itself\n");
+  {
+    // A curving open stroke, a length of spiral at angles round a circle. Each
+    // column's deposit was once rounded on its own, so a row could fail to cancel
+    // and leave a faint span running on to the right of the shape.
+    const float outer = 105, inner = 40, turns = 0.8f * 2 * (float)PV_PI;
+    const float shrink = logf(outer / inner) / turns;
+    int stray = 0;
+    for(float width : {11.0f, 2.0f}) {
+      for(int step = 0; step < 24; step++) {
+        float spun = 2 * (float)PV_PI * step / 24, c = cosf(spun), s = sinf(spun);
+        path_t p;
+        std::vector<vec2_t> along;
+        for(int k = 0; k <= 6; k++) {
+          float a = turns * k / 30, r = outer * expf(-shrink * a);
+          vec2_t v(160 + r * cosf(a) * c - r * sinf(a) * s, 120 + r * cosf(a) * s + r * sinf(a) * c);
+          along.push_back(v);
+          p.add_point(v.x, v.y);
+        }
+        p.stroke(width, ALIGN_CENTER | PATH_OPEN);
+        shape_t shape;
+        shape.add_path(p);
+        ink_canvas_t cv(320, 240, X4);
+        cv.draw(&shape);
+        // Drawn further from the path than half the stroke and its fringe
+        for(int y = 0; y < 240; y++)
+          for(int x = 0; x < 320; x++) {
+            if(!(cv.at(x, y) & 0xff)) continue;
+            float px = x + 0.5f, py = y + 0.5f, nearest = 1e30f;
+            for(size_t i = 0; i + 1 < along.size(); i++) {
+              float ax = along[i].x, ay = along[i].y;
+              float dx = along[i + 1].x - ax, dy = along[i + 1].y - ay;
+              float t = fmaxf(0, fminf(1, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)));
+              nearest = fminf(nearest, hypotf(px - ax - t * dx, py - ay - t * dy));
+            }
+            if(nearest > width / 2 + 2) stray++;
+          }
+      }
+    }
+    CHECK_MSG(stray == 0, "pixels drawn past the stroke");
+  }
+
   printf("raster: drawing twice\n");
   {
     ink_canvas_t once(64, 64, OFF), twice(64, 64, OFF);

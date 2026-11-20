@@ -37,7 +37,9 @@ namespace picovector {
     }
   }
 
-  void glitch_brush_t::blend_spans(image_t *target, int i0, int i1, int step) {
+  template <typename PX>
+  static void glitch_spans(image_t *target, uint32_t t, int amount, int i0, int i1, int step) {
+    typedef typename PX::raw raw;
     rect_t bnd = target->bounds(); int W = (int)bnd.w;
     const pv_span *spans = _spans();
     uint32_t tmp[CH];
@@ -47,12 +49,14 @@ namespace picovector {
       row_params(t, amount, y, &line, &line_col, &shift, &ca);
       if(line) {
         int lr = line_col & 0xff, lg = (line_col >> 8) & 0xff, lb = (line_col >> 16) & 0xff;
-        uint8_t *p = (uint8_t*)target->ptr(x, y);
+        raw *d = (raw*)target->ptr(x, y);
         for(int k = 0; k < w; k++) {   // 50% opaque line over the content
+          uint32_t v = PX::unpack(d[k]);
+          uint8_t *p = (uint8_t*)&v;
           p[0] = (uint8_t)(p[0] + (((lr - p[0]) * 128) >> 8));
           p[1] = (uint8_t)(p[1] + (((lg - p[1]) * 128) >> 8));
           p[2] = (uint8_t)(p[2] + (((lb - p[2]) * 128) >> 8));
-          p += 4;
+          d[k] = PX::pack(v);
         }
         continue;
       }
@@ -64,19 +68,21 @@ namespace picovector {
           if(xr < 0) xr = 0; else if(xr >= W) xr = W - 1;
           if(xg < 0) xg = 0; else if(xg >= W) xg = W - 1;
           if(xb < 0) xb = 0; else if(xb >= W) xb = W - 1;
-          uint8_t *pr = (uint8_t*)target->ptr(xr, y);
-          uint8_t *pg = (uint8_t*)target->ptr(xg, y);
-          uint8_t *pb = (uint8_t*)target->ptr(xb, y);
-          tmp[k] = (uint32_t)(pr[0] | (pg[1] << 8) | (pb[2] << 16) | (pg[3] << 24));
+          uint32_t pr = PX::unpack(*(raw*)target->ptr(xr, y));
+          uint32_t pg = PX::unpack(*(raw*)target->ptr(xg, y));
+          uint32_t pb = PX::unpack(*(raw*)target->ptr(xb, y));
+          tmp[k] = (pr & 0xffu) | (pg & 0xff00ff00u) | (pb & 0xff0000u);
         }
-        uint8_t *p = (uint8_t*)target->ptr(x, y);
-        for(int k = 0; k < n; k++) { *(uint32_t*)p = tmp[k]; p += 4; }
+        raw *d = (raw*)target->ptr(x, y);
+        for(int k = 0; k < n; k++) d[k] = PX::pack(tmp[k]);
         x += n; w -= n;
       }
     }
   }
 
-  void glitch_brush_t::blend_masked_spans(image_t *target, int i0, int i1, int step) {
+  template <typename PX>
+  static void glitch_masked_spans(image_t *target, uint32_t t, int amount, int i0, int i1, int step) {
+    typedef typename PX::raw raw;
     rect_t bnd = target->bounds(); int W = (int)bnd.w;
     const pv_masked_span *spans = _masked_spans();
     for(int i = i0; i < i1; i += step) {
@@ -84,12 +90,14 @@ namespace picovector {
       const uint8_t *mask = spans[i].mask;
       bool line; uint32_t line_col = 0; int shift = 0, ca = 0;
       row_params(t, amount, y, &line, &line_col, &shift, &ca);
-      uint8_t *p = (uint8_t*)target->ptr(x, y);
+      raw *d = (raw*)target->ptr(x, y);
       int lr = line_col & 0xff, lg = (line_col >> 8) & 0xff, lb = (line_col >> 16) & 0xff;
       // ease each channel toward the glitched value by coverage so AA edges feather in
       for(int w = spans[i].w; w; w--) {
         int m = *mask++, nr, ng, nb;
-        if(!m) { p += 4; x++; continue; }
+        if(!m) { d++; x++; continue; }
+        uint32_t v = PX::unpack(*d);
+        uint8_t *p = (uint8_t*)&v;
         if(line) {   // 50% opaque line, then feathered by coverage
           nr = p[0] + (((lr - p[0]) * 128) >> 8);
           ng = p[1] + (((lg - p[1]) * 128) >> 8);
@@ -99,16 +107,27 @@ namespace picovector {
           if(xr < 0) xr = 0; else if(xr >= W) xr = W - 1;
           if(xb < 0) xb = 0; else if(xb >= W) xb = W - 1;
           int xg = sx < 0 ? 0 : (sx >= W ? W - 1 : sx);
-          nr = ((uint8_t*)target->ptr(xr, y))[0];
-          ng = ((uint8_t*)target->ptr(xg, y))[1];
-          nb = ((uint8_t*)target->ptr(xb, y))[2];
+          nr = PX::unpack(*(raw*)target->ptr(xr, y)) & 0xff;
+          ng = (PX::unpack(*(raw*)target->ptr(xg, y)) >> 8) & 0xff;
+          nb = (PX::unpack(*(raw*)target->ptr(xb, y)) >> 16) & 0xff;
         }
         p[0] = (uint8_t)(p[0] + (((nr - p[0]) * m) >> 8));
         p[1] = (uint8_t)(p[1] + (((ng - p[1]) * m) >> 8));
         p[2] = (uint8_t)(p[2] + (((nb - p[2]) * m) >> 8));
-        p += 4; x++;
+        *d++ = PX::pack(v);
+        x++;
       }
     }
+  }
+
+  void glitch_brush_t::blend_spans(image_t *target, int i0, int i1, int step) {
+    if(target->pixel_format() == RGB565) glitch_spans<pv_565_px>(target, t, amount, i0, i1, step);
+    else                                 glitch_spans<pv_rgba_px>(target, t, amount, i0, i1, step);
+  }
+
+  void glitch_brush_t::blend_masked_spans(image_t *target, int i0, int i1, int step) {
+    if(target->pixel_format() == RGB565) glitch_masked_spans<pv_565_px>(target, t, amount, i0, i1, step);
+    else                                 glitch_masked_spans<pv_rgba_px>(target, t, amount, i0, i1, step);
   }
 
 }

@@ -110,7 +110,8 @@ namespace picovector {
     // whose screen stores no alpha - it exists so a display can halve its SRAM,
     // not as a general image format. Only the screen is one: drawing routes
     // through the RGBA staging shim in _blend_spans/blit_span, with native
-    // paths where hot. It cannot hold a palette, and filters skip it.
+    // paths where hot. Filters, and brushes that read around their span, read
+    // and write it through pv_565_px. It cannot hold a palette.
     RGB565 = 2,
     RGBA4444 = 2,
   } pixel_format_t;
@@ -173,6 +174,22 @@ namespace picovector {
     for(uint32_t i = 0; i < 64; i++) lut.g[i] = pv_8888_to_565(f(pv_565_to_8888((uint16_t)(i << 5)))) & 0x07e0u;
     for(uint32_t i = 0; i < 32; i++) lut.b[i] = pv_8888_to_565(f(pv_565_to_8888((uint16_t)i))) & 0x001fu;
   }
+
+  // Pixel access for code that reads the target around the pixel it writes
+  // (whole-image filters, and brushes that sample a neighbourhood), so one
+  // loop serves both formats: `raw` is what a row holds, and pixels travel as
+  // 0xAABBGGRR. The 565 unpack is exact for 565-clean colours, so the same
+  // arithmetic on either target differs only by the final pack.
+  struct pv_rgba_px {
+    typedef uint32_t raw;
+    static inline uint32_t unpack(raw p) { return p; }
+    static inline raw pack(uint32_t c) { return c; }
+  };
+  struct pv_565_px {
+    typedef uint16_t raw;
+    static inline uint32_t unpack(raw p) { return pv_565_to_8888(p); }
+    static inline raw pack(uint32_t c) { return pv_8888_to_565(c); }
+  };
 
   // The RGB565 staging scratch (defined in brush.cpp): one RGBA row the shims
   // unpack a 565 destination run into. Sized to the platform screen's long side.

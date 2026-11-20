@@ -41,8 +41,8 @@ namespace picovector {
     virtual void blend_masked_spans(image_t *target, int i0, int i1, int step) = 0;
     // True for a brush that reads target pixels outside the span it is blending
     // (backdrop blur, pixelate, glitch, chromatic, oilpaint). The RGB565
-    // staging shim only re-creates the span itself, so it skips these brushes
-    // rather than let them read past the scratch row.
+    // staging shim only re-creates the span itself, so these are handed the
+    // 565 target directly and read and write it through pv_565_px.
     virtual bool samples_neighbourhood() const { return false; }
     // A brush that would write one opaque colour to every covered pixel of this
     // target reports it here, so a 16-bit framebuffer can take the packed-fill

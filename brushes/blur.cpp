@@ -16,6 +16,7 @@ namespace picovector {
   }
 
   // (2*radius+1)^2 box average of the target around (px, py), clamped to bounds
+  template <typename PX>
   static inline uint32_t box_average(image_t *target, int px, int py, int r, int W, int H) {
     int x0 = px - r < 0 ? 0 : px - r;
     int x1 = px + r >= W ? W - 1 : px + r;
@@ -24,10 +25,10 @@ namespace picovector {
 
     uint32_t sr = 0, sg = 0, sb = 0, sa = 0, n = 0;
     for(int yy = y0; yy <= y1; yy++) {
-      uint8_t *row = (uint8_t*)target->ptr(x0, yy);
+      const typename PX::raw *row = (const typename PX::raw *)target->ptr(x0, yy);
       for(int xx = x0; xx <= x1; xx++) {
-        sr += row[0]; sg += row[1]; sb += row[2]; sa += row[3];
-        row += 4;
+        uint32_t v = PX::unpack(*row++);
+        sr += v & 0xff; sg += (v >> 8) & 0xff; sb += (v >> 16) & 0xff; sa += v >> 24;
         n++;
       }
     }
@@ -54,6 +55,7 @@ namespace picovector {
   // O(n·r) instead of box_average's O(n·r²), and byte-identical to it (it sums the
   // same clamped box, column-first). Requires r <= BLUR_MAX_R. Reads target only,
   // so it stays safe to run per-span across both cores.
+  template <typename PX>
   static void blur_row_averages(image_t *target, int x, int y, int n, int r, int W, int H, uint32_t *out) {
     int y0 = y - r < 0 ? 0 : y - r;
     int y1 = y + r >= H ? H - 1 : y + r;
@@ -69,8 +71,8 @@ namespace picovector {
       if(c < 0 || c >= W) { csr[j] = csg[j] = csb[j] = csa[j] = 0; continue; }
       uint32_t sr = 0, sg = 0, sb = 0, sa = 0;
       for(int yy = y0; yy <= y1; yy++) {
-        uint8_t *px = (uint8_t*)target->ptr(c, yy);
-        sr += px[0]; sg += px[1]; sb += px[2]; sa += px[3];
+        uint32_t v = PX::unpack(*(const typename PX::raw *)target->ptr(c, yy));
+        sr += v & 0xff; sg += (v >> 8) & 0xff; sb += (v >> 16) & 0xff; sa += v >> 24;
       }
       csr[j] = sr; csg[j] = sg; csb[j] = sb; csa[j] = sa;
     }
@@ -95,31 +97,45 @@ namespace picovector {
   }
 
   // Fill out[0..n) with box averages for a span row, fast path when it fits.
+  template <typename PX>
   static inline void blur_row(image_t *target, int x, int y, int n, int r, int W, int H, uint32_t *out) {
-    if(r <= BLUR_MAX_R) blur_row_averages(target, x, y, n, r, W, H, out);
-    else for(int i = 0; i < n; i++) out[i] = box_average(target, x + i, y, r, W, H);
+    if(r <= BLUR_MAX_R) blur_row_averages<PX>(target, x, y, n, r, W, H, out);
+    else for(int i = 0; i < n; i++) out[i] = box_average<PX>(target, x + i, y, r, W, H);
   }
 
   // Per-span sampler, shared by the solid and masked batches: mask == nullptr is
   // the solid path, mask != nullptr lerps the blur into dst by per-pixel coverage.
+  template <typename PX>
   static void blur_span(image_t *target, blur_brush_t *p, int x, int y, int w, const uint8_t *mask);
 
   blur_brush_t::blur_brush_t(int radius) : radius(radius) {}
 
-  void blur_brush_t::blend_spans(image_t *target, int i0, int i1, int step) {
-    blur_brush_t *p = this;
+  template <typename PX>
+  static void blur_spans(image_t *target, blur_brush_t *p, int i0, int i1, int step) {
     const pv_span *spans = _spans();
-    for(int i = i0; i < i1; i += step) blur_span(target, p, spans[i].x, spans[i].y, spans[i].w, nullptr);
+    for(int i = i0; i < i1; i += step) blur_span<PX>(target, p, spans[i].x, spans[i].y, spans[i].w, nullptr);
+  }
+
+  template <typename PX>
+  static void blur_masked_spans(image_t *target, blur_brush_t *p, int i0, int i1, int step) {
+    const pv_masked_span *spans = _masked_spans();
+    for(int i = i0; i < i1; i += step)
+      blur_span<PX>(target, p, spans[i].x, spans[i].y, spans[i].w, (const uint8_t*)spans[i].mask);
+  }
+
+  void blur_brush_t::blend_spans(image_t *target, int i0, int i1, int step) {
+    if(target->pixel_format() == RGB565) blur_spans<pv_565_px>(target, this, i0, i1, step);
+    else                                 blur_spans<pv_rgba_px>(target, this, i0, i1, step);
   }
 
   void blur_brush_t::blend_masked_spans(image_t *target, int i0, int i1, int step) {
-    const pv_masked_span *spans = _masked_spans();
-    for(int i = i0; i < i1; i += step)
-      blur_span(target, this, spans[i].x, spans[i].y, spans[i].w, (const uint8_t*)spans[i].mask);
+    if(target->pixel_format() == RGB565) blur_masked_spans<pv_565_px>(target, this, i0, i1, step);
+    else                                 blur_masked_spans<pv_rgba_px>(target, this, i0, i1, step);
   }
 
   // ── helpers ─────────────────────────────────────────────────────────────────
 
+  template <typename PX>
   static void blur_span(image_t *target, blur_brush_t *p, int x, int y, int w, const uint8_t *mask) {
     int r = p->radius < 1 ? 1 : p->radius;
     rect_t b = target->bounds();
@@ -134,12 +150,12 @@ namespace picovector {
         for(int i = 0; i < n && !covered; i++) covered = mask[i] != 0;
       }
       if(covered) {
-        blur_row(target, x, y, n, r, W, H, tmp);
-        uint32_t *dst = (uint32_t*)target->ptr(x, y);
+        blur_row<PX>(target, x, y, n, r, W, H, tmp);
+        typename PX::raw *dst = (typename PX::raw *)target->ptr(x, y);
         if(mask) {
-          for(int i = 0; i < n; i++) if(mask[i]) dst[i] = blur_mask_lerp(dst[i], tmp[i], mask[i]);
+          for(int i = 0; i < n; i++) if(mask[i]) dst[i] = PX::pack(blur_mask_lerp(PX::unpack(dst[i]), tmp[i], mask[i]));
         } else {
-          for(int i = 0; i < n; i++) dst[i] = tmp[i];
+          for(int i = 0; i < n; i++) dst[i] = PX::pack(tmp[i]);
         }
       }
       x += n;

@@ -18,13 +18,15 @@ namespace picovector {
 
   #define CH 64
 
+  template <typename PX>
   static inline uint32_t oil_at(image_t *target, int x, int y, int radius, int sstep, int W, int H) {
     int cnt[8] = {0}; long sr[8] = {0}, sg[8] = {0}, sb[8] = {0};
     for(int yy = y - radius; yy <= y + radius; yy += sstep) {
       int cy = yy < 0 ? 0 : (yy >= H ? H - 1 : yy);
       for(int xx = x - radius; xx <= x + radius; xx += sstep) {
         int cxx = xx < 0 ? 0 : (xx >= W ? W - 1 : xx);
-        uint8_t *q = (uint8_t*)target->ptr(cxx, cy);
+        uint32_t v = PX::unpack(*(typename PX::raw*)target->ptr(cxx, cy));
+        uint8_t *q = (uint8_t*)&v;
         int lum = luminance(q); int bkt = lum >> 5; // 0..7
         cnt[bkt]++; sr[bkt] += q[0]; sg[bkt] += q[1]; sb[bkt] += q[2];
       }
@@ -34,8 +36,11 @@ namespace picovector {
     return (uint32_t)(r | (g << 8) | (b << 16) | (255 << 24));
   }
 
-  void oilpaint_brush_t::blend_spans(image_t *target, int i0, int i1, int step) {
+  template <typename PX>
+  static void oilpaint_spans(image_t *target, const oilpaint_brush_t *brush, int i0, int i1, int step) {
+    typedef typename PX::raw raw;
     rect_t bnd = target->bounds(); int W = (int)bnd.w, H = (int)bnd.h;
+    int radius = brush->radius, sstep = brush->sstep, strength = brush->strength;
     const pv_span *spans = _spans();
     uint32_t tmp[CH];
     for(int i = i0; i < i1; i += step) {
@@ -43,22 +48,26 @@ namespace picovector {
       while(w > 0) {
         int n = w < CH ? w : CH;
         for(int k = 0; k < n; k++) {
-          uint32_t o = oil_at(target, x + k, y, radius, sstep, W, H);
-          uint8_t *c = (uint8_t*)target->ptr(x + k, y);          // original centre
+          uint32_t o = oil_at<PX>(target, x + k, y, radius, sstep, W, H);
+          uint32_t cv = PX::unpack(*(raw*)target->ptr(x + k, y));   // original centre
+          uint8_t *c = (uint8_t*)&cv;
           int r = c[0] + (((int)(o & 0xff)        - c[0]) * strength >> 8);
           int g = c[1] + (((int)((o >> 8) & 0xff)  - c[1]) * strength >> 8);
           int b = c[2] + (((int)((o >> 16) & 0xff) - c[2]) * strength >> 8);
           tmp[k] = (uint32_t)(r | (g << 8) | (b << 16) | (c[3] << 24));
         }
-        uint8_t *p = (uint8_t*)target->ptr(x, y);
-        for(int k = 0; k < n; k++) { *(uint32_t*)p = tmp[k]; p += 4; }
+        raw *d = (raw*)target->ptr(x, y);
+        for(int k = 0; k < n; k++) d[k] = PX::pack(tmp[k]);
         x += n; w -= n;
       }
     }
   }
 
-  void oilpaint_brush_t::blend_masked_spans(image_t *target, int i0, int i1, int step) {
+  template <typename PX>
+  static void oilpaint_masked_spans(image_t *target, const oilpaint_brush_t *brush, int i0, int i1, int step) {
+    typedef typename PX::raw raw;
     rect_t bnd = target->bounds(); int W = (int)bnd.w, H = (int)bnd.h;
+    int radius = brush->radius, sstep = brush->sstep, strength = brush->strength;
     const pv_masked_span *spans = _masked_spans();
     uint32_t tmp[CH];
     for(int i = i0; i < i1; i += step) {
@@ -66,12 +75,14 @@ namespace picovector {
       const uint8_t *mask = spans[i].mask;
       while(w > 0) {
         int n = w < CH ? w : CH;
-        for(int k = 0; k < n; k++) if(mask[k]) tmp[k] = oil_at(target, x + k, y, radius, sstep, W, H);
-        uint8_t *p = (uint8_t*)target->ptr(x, y);
+        for(int k = 0; k < n; k++) if(mask[k]) tmp[k] = oil_at<PX>(target, x + k, y, radius, sstep, W, H);
+        raw *d = (raw*)target->ptr(x, y);
         // ease toward the (strength-scaled) dominant colour by coverage so AA edges feather in
         for(int k = 0; k < n; k++) {
           int m = *mask++;
-          if(!m) { p += 4; continue; }
+          if(!m) continue;
+          uint32_t v = PX::unpack(d[k]);
+          uint8_t *p = (uint8_t*)&v;
           int pr = (int)(tmp[k] & 0xff), pg = (int)((tmp[k] >> 8) & 0xff), pb = (int)((tmp[k] >> 16) & 0xff);
           int nr = p[0] + ((pr - p[0]) * strength >> 8);
           int ng = p[1] + ((pg - p[1]) * strength >> 8);
@@ -79,11 +90,21 @@ namespace picovector {
           p[0] = (uint8_t)(p[0] + ((nr - p[0]) * m >> 8));
           p[1] = (uint8_t)(p[1] + ((ng - p[1]) * m >> 8));
           p[2] = (uint8_t)(p[2] + ((nb - p[2]) * m >> 8));
-          p += 4; // alpha kept
+          d[k] = PX::pack(v); // alpha kept
         }
         x += n; w -= n;
       }
     }
+  }
+
+  void oilpaint_brush_t::blend_spans(image_t *target, int i0, int i1, int step) {
+    if(target->pixel_format() == RGB565) oilpaint_spans<pv_565_px>(target, this, i0, i1, step);
+    else                                 oilpaint_spans<pv_rgba_px>(target, this, i0, i1, step);
+  }
+
+  void oilpaint_brush_t::blend_masked_spans(image_t *target, int i0, int i1, int step) {
+    if(target->pixel_format() == RGB565) oilpaint_masked_spans<pv_565_px>(target, this, i0, i1, step);
+    else                                 oilpaint_masked_spans<pv_rgba_px>(target, this, i0, i1, step);
   }
 
 }

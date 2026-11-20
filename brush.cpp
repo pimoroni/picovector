@@ -114,6 +114,21 @@ namespace picovector {
     _blend_565_range<SPAN>(target, brush, 0, n, 1, masked);
   }
 
+  // The brush's own batch method straight on the target, split across both
+  // cores when the batch is large enough.
+  static void _blend_direct(image_t *target, brush_t *brush, int n, bool masked) {
+#if PV_DUAL_CORE
+    int px = masked ? _masked_span_pixels(n) : _solid_span_pixels(n);
+    if(n >= 2 && px >= PV_DUAL_CORE_BLEND_MIN_PX) {
+      _blend_ctx c = { target, brush, masked };
+      pv_parallel_rows(_blend_row_worker, &c, 0, n);
+      return;
+    }
+#endif
+    if(masked) brush->blend_masked_spans(target, 0, n, 1);
+    else       brush->blend_spans(target, 0, n, 1);
+  }
+
   // Blend the shared span buffer with `brush` in one call - dispatches to the
   // brush's batch func. Draw methods call this after filling the buffer. When
   // core1 is available and the batch is large enough, the span list is split
@@ -127,8 +142,10 @@ namespace picovector {
     int n = _num_spans();
     if(n <= 0) return;
     if(target->pixel_format() == RGB565) {           // staged: see above
-      if(brush->samples_neighbourhood()) return;     // scratch row can't feed it
       pv_fence_565();                                // scan-out may still be reading
+      // a scratch row can't feed a brush that reads around its span, so it
+      // reads and writes the 565 pixels itself
+      if(brush->samples_neighbourhood()) { _blend_direct(target, brush, n, false); return; }
       pixel_t solid;
       if(brush->solid_opaque(target, solid)) {
         // clear() and solid fills: write the packed colour straight to the
@@ -150,14 +167,7 @@ namespace picovector {
       else                    _blend_565<pv_span>(target, brush, n, false);
       return;
     }
-#if PV_DUAL_CORE
-    if(n >= 2 && _solid_span_pixels(n) >= PV_DUAL_CORE_BLEND_MIN_PX) {
-      _blend_ctx c = { target, brush, false };
-      pv_parallel_rows(_blend_row_worker, &c, 0, n);
-      return;
-    }
-#endif
-    brush->blend_spans(target, 0, n, 1);
+    _blend_direct(target, brush, n, false);
   }
 
   void _blend_masked_spans(image_t *target, brush_t *brush) {
@@ -169,19 +179,12 @@ namespace picovector {
     int n = _num_spans();
     if(n <= 0) return;
     if(target->pixel_format() == RGB565) {           // staged: see above
-      if(brush->samples_neighbourhood()) return;     // scratch row can't feed it
       pv_fence_565();                                // scan-out may still be reading
+      if(brush->samples_neighbourhood()) { _blend_direct(target, brush, n, true); return; }
       _blend_565<pv_masked_span>(target, brush, n, true);
       return;
     }
-#if PV_DUAL_CORE
-    if(n >= 2 && _masked_span_pixels(n) >= PV_DUAL_CORE_BLEND_MIN_PX) {
-      _blend_ctx c = { target, brush, true };
-      pv_parallel_rows(_blend_row_worker, &c, 0, n);
-      return;
-    }
-#endif
-    brush->blend_masked_spans(target, 0, n, 1);
+    _blend_direct(target, brush, n, true);
   }
 
 }

@@ -33,6 +33,7 @@ void test_pico3d_quant();
 void test_pico3d_fog();
 void test_brush_oracle();
 void test_rgb565();
+void test_rgb565_filters();
 
 int main() {
   test_geometry();
@@ -66,5 +67,6 @@ int main() {
   test_pico3d_fog();
   test_brush_oracle();
   test_rgb565();
+  test_rgb565_filters();
   return pvtest::summary();
 }

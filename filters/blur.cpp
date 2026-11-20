@@ -141,23 +141,161 @@ namespace picovector {
 
 #endif
 
+  // ---- RGB565 ----
+  // The same two passes, run in place on the 16-bit pixels. Each pass writes
+  // 8-bit channels that the next step reads back, so the bits the 565 pack
+  // drops (3 red, 2 green, 3 blue) are kept in a byte a pixel beside them:
+  // every step then sees exactly the value the RGBA blur would, and the result
+  // is the packed RGBA blur. Alpha is always opaque on a 565 image, so only
+  // the three colour channels are stepped.
+
+#if PV_BLUR_INTERP
+  static inline void iir565_setup(uint32_t k) { interp_iir_setup(k >> 8); }
+  static inline uint32_t iir565_step(uint32_t y, uint32_t x, uint32_t k) {
+    interp0->base[0] = y; interp0->base[1] = x; return interp0->peek[1];
+  }
+#else
+  static inline void iir565_setup(uint32_t k) { (void)k; }
+  static inline uint32_t iir565_step(uint32_t y, uint32_t x, uint32_t k) {
+    return (uint32_t)iir_step_q16((int)y, (int)x, k);
+  }
+#endif
+
+  // the 565 pixel plus its dropped low bits -> 8-bit channels, and back
+  static inline void res565_get(uint16_t p, uint8_t q, uint32_t &r, uint32_t &g, uint32_t &b) {
+    r = ((p >> 8) & 0xf8u) | (q & 0x07u);
+    g = ((p >> 3) & 0xfcu) | ((q >> 3) & 0x03u);
+    b = ((p << 3) & 0xf8u) | (q >> 5);
+  }
+  static inline void res565_put(uint16_t &p, uint8_t &q, uint32_t r, uint32_t g, uint32_t b) {
+    p = (uint16_t)(((r & 0xf8u) << 8) | ((g & 0xfcu) << 3) | (b >> 3));
+    q = (uint8_t)((r & 0x07u) | ((g & 0x03u) << 3) | ((b & 0x07u) << 5));
+  }
+
+  // The image's pixels and the low-bit map, which covers only the clip
+  // (origin rx, ry).
+  struct blur565_t {
+    uint16_t *fb; size_t stride;
+    uint8_t *res; size_t res_stride; int rx, ry;
+    uint32_t k;
+    inline uint16_t *px(int x, int y) const { return fb + (size_t)y * stride + x; }
+    inline uint8_t *lo(int x, int y) const { return res + (size_t)(y - ry) * res_stride + (x - rx); }
+  };
+
+  // Seeded from the first pixel as it unpacks, like the RGBA pass, then the
+  // backward sweep starts from the forward state, which is the last pixel.
+  static void blur565_hpass(const blur565_t &j, int x0, int x1, int y0, int y1) {
+    iir565_setup(j.k);
+    for (int y = y0; y < y1; ++y) {
+      uint16_t *p = j.px(0, y);
+      uint8_t *q = j.lo(0, y);
+      uint32_t c = pv_565_to_8888(p[x0]);
+      uint32_t r = c & 0xff, g = (c >> 8) & 0xff, b = (c >> 16) & 0xff;
+      res565_put(p[x0], q[x0], r, g, b);
+      for (int x = x0 + 1; x < x1; ++x) {
+        c = pv_565_to_8888(p[x]);
+        r = iir565_step(r, c & 0xff, j.k);
+        g = iir565_step(g, (c >> 8) & 0xff, j.k);
+        b = iir565_step(b, (c >> 16) & 0xff, j.k);
+        res565_put(p[x], q[x], r, g, b);
+      }
+      for (int x = x1 - 2; x >= x0; --x) {
+        uint32_t cr, cg, cb;
+        res565_get(p[x], q[x], cr, cg, cb);
+        r = iir565_step(r, cr, j.k); g = iir565_step(g, cg, j.k); b = iir565_step(b, cb, j.k);
+        res565_put(p[x], q[x], r, g, b);
+      }
+    }
+  }
+
+  // Walked a row at a time rather than a column: each column's state is the
+  // row before it (forward) or after it (backward), already stored at full
+  // precision, so no state array is needed and rows stay sequential in memory.
+  static void blur565_vpass(const blur565_t &j, int x0, int x1, int y0, int y1) {
+    iir565_setup(j.k);
+    for (int y = y0 + 1; y < y1; ++y) {
+      uint16_t *sp = j.px(0, y - 1), *p = j.px(0, y);
+      uint8_t *sq = j.lo(0, y - 1), *q = j.lo(0, y);
+      for (int x = x0; x < x1; ++x) {
+        uint32_t r, g, b, cr, cg, cb;
+        res565_get(sp[x], sq[x], r, g, b);
+        res565_get(p[x], q[x], cr, cg, cb);
+        res565_put(p[x], q[x], iir565_step(r, cr, j.k), iir565_step(g, cg, j.k), iir565_step(b, cb, j.k));
+      }
+    }
+    for (int y = y1 - 2; y >= y0; --y) {
+      uint16_t *sp = j.px(0, y + 1), *p = j.px(0, y);
+      uint8_t *sq = j.lo(0, y + 1), *q = j.lo(0, y);
+      for (int x = x0; x < x1; ++x) {
+        uint32_t r, g, b, cr, cg, cb;
+        res565_get(sp[x], sq[x], r, g, b);
+        res565_get(p[x], q[x], cr, cg, cb);
+        res565_put(p[x], q[x], iir565_step(r, cr, j.k), iir565_step(g, cg, j.k), iir565_step(b, cb, j.k));
+      }
+    }
+  }
+
 #if PV_BLUR_DUAL_CORE
   namespace {
-    struct blur_band_t { uint8_t *buf; size_t stride; uint32_t k; int x0, x1, y0, y1; bool vertical; };
+    struct blur_band_t { uint8_t *buf; size_t stride; uint32_t k; int x0, x1, y0, y1; bool vertical; const blur565_t *fb565; };
     blur_band_t g_blur_band;
     void blur_core1_band() {
       blur_band_t j = g_blur_band;
-      if (j.vertical) blur_vpass(j.buf, j.stride, j.k, j.x0, j.x1, j.y0, j.y1);
-      else            blur_hpass(j.buf, j.stride, j.k, j.x0, j.x1, j.y0, j.y1);
+      if (j.fb565) {
+        if (j.vertical) blur565_vpass(*j.fb565, j.x0, j.x1, j.y0, j.y1);
+        else            blur565_hpass(*j.fb565, j.x0, j.x1, j.y0, j.y1);
+      }
+      else if (j.vertical) blur_vpass(j.buf, j.stride, j.k, j.x0, j.x1, j.y0, j.y1);
+      else                 blur_hpass(j.buf, j.stride, j.k, j.x0, j.x1, j.y0, j.y1);
     }
   }
   static const int PV_BLUR_MIN_SPLIT = 64;
 #endif
 
+  // Both passes over the clip on a 565 image, split across the cores the same
+  // way as the RGBA blur. The low-bit map is the clip's width * height bytes
+  // (75KB for 320x240): the working buffer when it fits, the heap otherwise.
+  static void blur565(image_t *img, uint32_t k, int x0, int x1, int y0, int y1) {
+    size_t rw = (size_t)(x1 - x0), bytes = rw * (size_t)(y1 - y0);
+    bool borrowed = bytes <= working_buffer_size;
+    uint8_t *res = borrowed ? (uint8_t *)PicoVector_working_buffer : (uint8_t *)PV_MALLOC_NO_SCAN(bytes);
+    if (!res) return;
+    const blur565_t j = { (uint16_t *)img->ptr(0, 0), img->row_stride() / sizeof(uint16_t), res, rw, x0, y0, k };
+
+#if PV_BLUR_DUAL_CORE
+    if (y1 - y0 >= PV_BLUR_MIN_SPLIT) {
+      int ymid = y0 + (y1 - y0) / 2;
+      g_blur_band = { nullptr, 0, k, x0, x1, ymid, y1, false, &j };
+      pv_core1_run(blur_core1_band);
+      blur565_hpass(j, x0, x1, y0, ymid);
+      pv_core1_join();
+    } else {
+      blur565_hpass(j, x0, x1, y0, y1);
+    }
+    if (x1 - x0 >= PV_BLUR_MIN_SPLIT) {
+      int xmid = x0 + (x1 - x0) / 2;
+      g_blur_band = { nullptr, 0, k, xmid, x1, y0, y1, true, &j };
+      pv_core1_run(blur_core1_band);
+      blur565_vpass(j, x0, xmid, y0, y1);
+      pv_core1_join();
+    } else {
+      blur565_vpass(j, x0, x1, y0, y1);
+    }
+#else
+    blur565_hpass(j, x0, x1, y0, y1);
+    blur565_vpass(j, x0, x1, y0, y1);
+#endif
+
+    if (!borrowed) {
+#if MICROPY_MALLOC_USES_ALLOCATED_SIZE
+      PV_FREE(res, bytes);
+#else
+      PV_FREE(res);
+#endif
+    }
+  }
+
   void image_t::blur(float radius, float strength) {
-    // Whole-image filters work in raw 4-byte pixels; a 16-bit framebuffer is
-    // skipped rather than corrupted. See RGB565 in image.hpp.
-    if(_pixel_format != RGBA8888) return;
     // An indexed image is one byte a pixel; this writes four. See brush.cpp.
     if(_has_palette) return;
     radius *= strength;
@@ -173,6 +311,12 @@ namespace picovector {
     int x1 = int(cr.x + cr.w);   if (x1 > width) x1 = width;
     int y1 = int(cr.y + cr.h);   if (y1 > height) y1 = height;
     if (x1 - x0 < 1 || y1 - y0 < 1) return;
+
+    if (_pixel_format == RGB565) {
+      pv_fence_565();
+      blur565(this, k, x0, x1, y0, y1);
+      return;
+    }
 
     uint8_t *buf = (uint8_t *)_buffer;
     size_t stride = _row_stride;

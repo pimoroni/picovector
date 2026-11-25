@@ -125,5 +125,46 @@ void test_font() {
     CHECK(parse(zero_em.out, &f) == FONT_BAD_HEADER);
   }
 
+  printf("font: a mapped narrow font uses its points in place\n");
+  {
+    af_builder_t b(false);
+    font_t copied, mapped;
+    uint8_t *buf = nullptr;
+    size_t copied_size = 0, mapped_size = 0;
+    CHECK(parse_vector_font(b.out.data(), b.out.size(), &copied, &buf, &copied_size) == FONT_OK);
+    parsed_blocks.push_back(buf);
+    CHECK(parse_vector_font_mapped(b.out.data(), b.out.size(), &mapped, &buf, &mapped_size) == FONT_OK);
+    parsed_blocks.push_back(buf);
+    CHECK(mapped_size == copied_size - 4 * sizeof(glyph_path_point_t));
+    const uint8_t *points = (const uint8_t *)mapped.glyphs[0].paths[0].points;
+    CHECK(points == b.out.data() + b.out.size() - 8);
+    glyph_path_point_t *p = (glyph_path_point_t *)mapped.glyphs[0].paths[0].points;
+    CHECK(p[2].x == 30 && p[2].y == 40);
+  }
+
+  printf("font: a mapped wide font still copies its points\n");
+  {
+    af_builder_t b(true, 1024);
+    font_t f;
+    uint8_t *buf = nullptr;
+    size_t n = 0;
+    CHECK(parse_vector_font_mapped(b.out.data(), b.out.size(), &f, &buf, &n) == FONT_OK);
+    parsed_blocks.push_back(buf);
+    const uint8_t *points = (const uint8_t *)f.glyphs[0].paths[0].points;
+    CHECK(points < b.out.data() || points >= b.out.data() + b.out.size());
+    glyph_path_point16_t *p = (glyph_path_point16_t *)f.glyphs[0].paths[0].points;
+    CHECK(p[2].x == 30 && p[2].y == 40);
+  }
+
+  printf("font: a mapped font cut short in its points is truncated\n");
+  {
+    af_builder_t b(false);
+    font_t f;
+    uint8_t *buf = nullptr;
+    size_t n = 0;
+    CHECK(parse_vector_font_mapped(b.out.data(), b.out.size() - 1, &f, &buf, &n) == FONT_TRUNCATED);
+    CHECK(buf == nullptr);
+  }
+
   free_parsed_blocks();
 }

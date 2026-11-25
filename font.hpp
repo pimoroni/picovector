@@ -101,5 +101,10 @@ namespace picovector {
                                   uint8_t **buffer, size_t *buffer_size);
   font_status_t parse_vector_font(const uint8_t *data, size_t size, font_t *font,
                                   uint8_t **buffer, size_t *buffer_size);
+  // As above, for a font held in memory that outlives `font`, such as a
+  // memory-mapped file. A narrow font's points are used where they are, so only
+  // the glyph and path tables are allocated.
+  font_status_t parse_vector_font_mapped(const uint8_t *data, size_t size, font_t *font,
+                                         uint8_t **buffer, size_t *buffer_size);
 
 }

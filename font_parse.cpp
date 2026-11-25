@@ -64,8 +64,12 @@ namespace picovector {
 
   }
 
-  font_status_t parse_vector_font(font_reader_t reader, font_t *font,
-                                  uint8_t **buffer, size_t *buffer_size) {
+  // `mapped` is the whole file when it is held in memory that outlives the font,
+  // or null. A narrow font's points are stored as the int8 x, y pairs
+  // glyph_path_point_t holds, so with `mapped` they are used where they are
+  // instead of being copied into the block.
+  static font_status_t parse(font_reader_t reader, const uint8_t *mapped, size_t mapped_size,
+                             font_t *font, uint8_t **buffer, size_t *buffer_size) {
     af_reader_t r = { reader, false };
 
     char marker[4];
@@ -87,10 +91,19 @@ namespace picovector {
     }
     if(r.truncated) return FONT_TRUNCATED;   // nothing allocated yet
 
+    bool points_in_place = mapped && !wide;
+    const uint8_t *mapped_points = nullptr;
+    if(points_in_place) {
+      size_t length_size = (flags & AF_FLAG_16BIT_POINT_COUNT) ? 2 : 1;
+      size_t points_offset = 4 + 8 + (size_t)glyph_count * 8 + (size_t)path_count * length_size;
+      if(points_offset + (size_t)point_count * sizeof(glyph_path_point_t) > mapped_size) return FONT_TRUNCATED;
+      mapped_points = mapped + points_offset;
+    }
+
     size_t glyph_buffer_size = sizeof(glyph_t) * glyph_count;
     size_t path_buffer_size  = sizeof(glyph_path_t) * path_count;
-    size_t point_buffer_size = (wide ? sizeof(glyph_path_point16_t)
-                                     : sizeof(glyph_path_point_t)) * point_count;
+    size_t point_buffer_size = points_in_place ? 0 : (wide ? sizeof(glyph_path_point16_t)
+                                                           : sizeof(glyph_path_point_t)) * point_count;
 
     // The point table is carved out after two tables of pointer-bearing structs,
     // so it inherits their alignment; nothing here needs padding between them.
@@ -117,7 +130,7 @@ namespace picovector {
 
     glyph_t *glyphs = (glyph_t *)block;
     glyph_path_t *paths = (glyph_path_t *)(block + glyph_buffer_size);
-    uint8_t *points = block + glyph_buffer_size + path_buffer_size;
+    uint8_t *points = points_in_place ? (uint8_t *)mapped_points : block + glyph_buffer_size + path_buffer_size;
 
     // Each pass hands out slices of the tables the header sized, so the totals
     // the glyphs actually claim are checked before the pass that writes through
@@ -154,7 +167,7 @@ namespace picovector {
     }
     if(claimed_points > point_count) return reject(FONT_BAD_HEADER);
 
-    for(int i = 0; i < glyph_count; i++) {
+    for(int i = 0; i < glyph_count && !points_in_place; i++) {
       glyph_t *glyph = &glyphs[i];
       for(int j = 0; j < glyph->path_count; j++) {
         glyph_path_t *path = &glyph->paths[j];
@@ -183,11 +196,23 @@ namespace picovector {
     return FONT_OK;
   }
 
+  font_status_t parse_vector_font(font_reader_t reader, font_t *font,
+                                  uint8_t **buffer, size_t *buffer_size) {
+    return parse(reader, nullptr, 0, font, buffer, buffer_size);
+  }
+
   font_status_t parse_vector_font(const uint8_t *data, size_t size, font_t *font,
                                   uint8_t **buffer, size_t *buffer_size) {
     memory_source_t source = { data, size, 0 };
     font_reader_t reader = { memory_read, &source };
-    return parse_vector_font(reader, font, buffer, buffer_size);
+    return parse(reader, nullptr, 0, font, buffer, buffer_size);
+  }
+
+  font_status_t parse_vector_font_mapped(const uint8_t *data, size_t size, font_t *font,
+                                         uint8_t **buffer, size_t *buffer_size) {
+    memory_source_t source = { data, size, 0 };
+    font_reader_t reader = { memory_read, &source };
+    return parse(reader, data, size, font, buffer, buffer_size);
   }
 
 }

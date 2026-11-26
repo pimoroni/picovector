@@ -30,6 +30,7 @@ namespace picovector {
 
   class gradient_brush_t;
   class fractal_brush_t;
+  class color_brush_t;
 
   class brush_t {
   public:
@@ -49,6 +50,12 @@ namespace picovector {
     // geometry without RTTI. Costs one vtable entry and nothing per object.
     virtual gradient_brush_t *as_gradient() { return nullptr; }
     virtual fractal_brush_t *as_fractal() { return nullptr; }
+    virtual color_brush_t *as_color() { return nullptr; }
+
+    // True for a brush that reads target pixels other than the one it is
+    // writing. A target that isn't RGBA8888 is drawn a converted row at a
+    // time, with no neighbours to read, so these brushes don't draw there.
+    virtual bool reads_neighbours() { return false; }
   };
 
   class color_brush_t : public brush_t {
@@ -58,6 +65,7 @@ namespace picovector {
     color_brush_t(const color_t& c);
     void blend_spans(image_t *target, int i0, int i1, int step) override;
     void blend_masked_spans(image_t *target, int i0, int i1, int step) override;
+    color_brush_t *as_color() override { return this; }
   };
 
   // Window / erase brush: lerps the destination toward a premultiplied target
@@ -125,6 +133,7 @@ namespace picovector {
     pixelate_brush_t(int size);
     void blend_spans(image_t *target, int i0, int i1, int step) override;
     void blend_masked_spans(image_t *target, int i0, int i1, int step) override;
+    bool reads_neighbours() override { return true; }
   };
 
 
@@ -138,6 +147,7 @@ namespace picovector {
     blur_brush_t(int radius);
     void blend_spans(image_t *target, int i0, int i1, int step) override;
     void blend_masked_spans(image_t *target, int i0, int i1, int step) override;
+    bool reads_neighbours() override { return true; }
   };
 
 
@@ -270,6 +280,7 @@ namespace picovector {
     glitch_brush_t(int amount);
     void blend_spans(image_t *target, int i0, int i1, int step) override;
     void blend_masked_spans(image_t *target, int i0, int i1, int step) override;
+    bool reads_neighbours() override { return true; }
   };
 
   // ── artwork / painterly ─────────────────────────────────────────────────────
@@ -282,6 +293,7 @@ namespace picovector {
     oilpaint_brush_t(int radius, int strength);
     void blend_spans(image_t *target, int i0, int i1, int step) override;
     void blend_masked_spans(image_t *target, int i0, int i1, int step) override;
+    bool reads_neighbours() override { return true; }
   };
 
   // ── retro computing ─────────────────────────────────────────────────────────
@@ -333,6 +345,7 @@ namespace picovector {
     chromatic_brush_t(int offset);
     void blend_spans(image_t *target, int i0, int i1, int step) override;
     void blend_masked_spans(image_t *target, int i0, int i1, int step) override;
+    bool reads_neighbours() override { return true; }
   };
 
 

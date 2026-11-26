@@ -584,7 +584,7 @@ void test_robustness() {
 void test_palette() {
   printf("palette: an indexed image is one byte a pixel\n");
   {
-    image_t img(64, 64, RGBA8888, true, 16);
+    image_t img(64, 64, PAL8, 16);
     CHECK(img.has_palette());
     CHECK(img.palette_size() == 16);
     CHECK(img.buffer_size() == 64 * 64);            // not 64*64*4
@@ -593,18 +593,18 @@ void test_palette() {
   printf("palette: the table is sized to what was asked for\n");
   {
     for(auto n : {2, 4, 16, 256}) {
-      image_t img(8, 8, RGBA8888, true, n);
+      image_t img(8, 8, PAL8, n);
       CHECK(img.palette_size() == n);
     }
-    image_t clamped(8, 8, RGBA8888, true, 4000);
+    image_t clamped(8, 8, PAL8, 4000);
     CHECK(clamped.palette_size() == 256);           // a byte index reaches no further
-    image_t none(8, 8, RGBA8888, false, 256);
+    image_t none(8, 8, RGBA8888, 256);
     CHECK(none.palette_size() == 0);                // no table when not indexed
   }
 
   printf("palette: an out-of-range index is ignored, not written\n");
   {
-    image_t img(8, 8, RGBA8888, true, 4);
+    image_t img(8, 8, PAL8, 4);
     img.palette(0, 0xff112233u);
     img.palette(200, 0xffaabbccu);                  // past the end of a 4-entry table
     CHECK(img.palette(0) == 0xff112233u);
@@ -613,7 +613,7 @@ void test_palette() {
 
   printf("palette: sub-views share the table rather than copying it\n");
   {
-    image_t sheet(64, 64, RGBA8888, true, 16);
+    image_t sheet(64, 64, PAL8, 16);
     sheet.palette(3, 0xff445566u);
     image_t sprite = sheet.window(rect_t(16, 16, 16, 16));
     CHECK(sprite.has_palette());
@@ -636,7 +636,7 @@ void test_palette() {
     std::vector<uint32_t> arena(pad * 2 + (size_t)w * h, guard);
     uint8_t *pixels = (uint8_t *)(arena.data() + pad);
 
-    image_t sheet(pixels, w, h, RGBA8888, true, 8);
+    image_t sheet(pixels, w, h, PAL8, 8);
     for(int i = 0; i < w * h; i++) pixels[i] = (uint8_t)(i % 8);
     sheet.palette(3, rgb_color_t(10, 20, 30, 255)._p);
 
@@ -686,7 +686,7 @@ void test_palette() {
 
   printf("palette: an indexed image blits its colours, not its indices\n");
   {
-    image_t src(8, 8, RGBA8888, true, 4);
+    image_t src(8, 8, PAL8, 4);
     src.palette(0, 0xff0000ffu);
     src.palette(1, 0xff00ff00u);
     for(int y = 0; y < 8; y++)

@@ -88,9 +88,9 @@ namespace picovector {
 #endif
 
   void image_t::blit(image_t *target, const vec2_t p) {
-    // An indexed image is one byte a pixel and every blit writes four; it can be
-    // the source of one but never the destination. See brush.cpp.
-    if(target->has_palette()) return;
+    // An indexed image can be the source of a blit but never the destination.
+    // See brush.cpp.
+    if(!target->drawable()) return;
     rect_t sr = _bounds;
     sr = sr.floor();
 
@@ -105,21 +105,27 @@ namespace picovector {
       return;
     }
 
+    if(!target->native() || !(native() || has_palette())) {
+      blit_converted(target, (fx16_t)((int)sr.x << 16), 65536, (fx16_t)((int)sr.y << 16), 65536,
+                     (int)tr.x, (int)tr.y, (int)tr.w, (int)tr.h, NEAREST);
+      return;
+    }
+
     blend_func_t bf = target->_blend_func;
 
 #if PV_DUAL_CORE
     // large enough to amortise the inter-core handshake: split rows across cores
     if((int)tr.w * (int)tr.h >= PV_DUAL_CORE_BLIT_MIN_PX) {
       pv_blit_ctx ctx{ this, target, bf, (int)sr.x, (int)sr.y, (int)tr.x, (int)tr.y, (int)tr.w,
-                       _has_palette, _palette };
+                       has_palette(), _palette };
       pv_parallel_rows(pv_blit_rows, &ctx, 0, (int)tr.h);
       return;
     }
 #endif
 
-    // _has_palette is fixed for the whole blit, so pick the span variant once
+    // the format is fixed for the whole blit, so pick the span variant once
     // rather than re-testing it every scanline.
-    if(_has_palette) {
+    if(has_palette()) {
       for(int y = 0; y < tr.h; y++) {
         span_blit(this, target, bf, sr.x, sr.y + y, tr.x, tr.y + y, tr.w, _palette);
       }
@@ -133,9 +139,9 @@ namespace picovector {
 
   // blit from source rectangle into target rectangle
   void image_t::blit(image_t *target, rect_t sr, rect_t tr, filter_t filter) {
-    // An indexed image is one byte a pixel and every blit writes four; it can be
-    // the source of one but never the destination. See brush.cpp.
-    if(target->has_palette()) return;
+    // An indexed image can be the source of a blit but never the destination.
+    // See brush.cpp.
+    if(!target->drawable()) return;
     bool flip_h = tr.w < 0;
     bool flip_v = tr.h < 0;
 
@@ -178,6 +184,11 @@ namespace picovector {
       srcy = ((_bounds.h - sr.y) * 65536.0f) + srcstepy;
     }
 
+    if(!target->native() || !(native() || has_palette())) {
+      blit_converted(target, srcx, srcstepx, srcy, srcstepy, (int)tr.x, (int)tr.y, (int)tr.w, (int)tr.h, filter);
+      return;
+    }
+
 #if PV_DUAL_CORE
     // scaled/filtered blits are the biggest dual-core win (arithmetic-bound, so
     // closer to a true 2x than a bandwidth-bound copy). Split rows once large.
@@ -202,6 +213,28 @@ namespace picovector {
     blit(target, _bounds, tr, filter);
   }
 
+  void image_t::blit_converted(image_t *target, fx16_t srcx, fx16_t srcstepx, fx16_t srcy, fx16_t srcstepy,
+                               int tx, int ty, int tw, int th, filter_t filter) {
+    static const int CHUNK = 256;
+    uint32_t row[CHUNK];
+    uint32_t alpha = target->_alpha;
+    for(int y = 0; y < th; y++) {
+      fx16_t sx = srcx;
+      for(int off = 0; off < tw; off += CHUNK) {
+        int w = tw - off < CHUNK ? tw - off : CHUNK;
+        target->expand_row(tx + off, ty + y, w, row);
+        for(int i = 0; i < w; i++) {
+          uint32_t c = sample(sx, srcy, filter);
+          if(alpha != 255u) c = _premul_mul_alpha(c, alpha);
+          row[i] = blend_over_premul(row[i], c);
+          sx += srcstepx;
+        }
+        target->pack_row(tx + off, ty + y, w, row);
+      }
+      srcy += srcstepy;
+    }
+  }
+
   /*
     blits a span of pixels onto the target image using interpolated samples from
     the source image along a line starting at uv0 and ending at uv1. `vertical`
@@ -209,9 +242,9 @@ namespace picovector {
     vertical (stepping one row down a column). Shared by blit_hspan/blit_vspan.
   */
   void image_t::blit_span(image_t *target, vec2_t p, float len, vec2_t uv0, vec2_t uv1, filter_t filter, bool vertical) {
-    // An indexed image is one byte a pixel and every blit writes four; it can be
-    // the source of one but never the destination. See brush.cpp.
-    if(target->has_palette()) return;
+    // An indexed image can be the source of a blit but never the destination.
+    // See brush.cpp.
+    if(!target->drawable()) return;
     if(len <= 0.0f) return; // degenerate span (also guards the /len below)
     rect_t b = target->_clip;
 
@@ -272,13 +305,32 @@ namespace picovector {
     uint32_t tw = int(this->_bounds.w - 1);
     uint32_t th = int(this->_bounds.h - 1);
 
+    if(!target->native()) {
+      // a pixel at a time through the target's format
+      int x = (int)p.x, y = (int)p.y;
+      bool nearest = filter == NEAREST || has_palette();
+      uint32_t ga = this->_alpha;
+      for(int i = 0; i < n; i++) {
+        u += ud; v += vd;
+        uint32_t col;
+        if(nearest) {
+          col = this->get_unsafe((int)(((uint64_t)(uint32_t)u * tw) >> 32), (int)(((uint64_t)(uint32_t)v * th) >> 32));
+        } else {
+          col = this->sample((fx16_t)(((uint64_t)(uint32_t)u * tw) >> 16), (fx16_t)(((uint64_t)(uint32_t)v * th) >> 16), filter);
+        }
+        if(ga != 255u) col = _premul_mul_alpha(col, ga);
+        target->blend_pixel(vertical ? x : x + i, vertical ? y + i : y, col);
+      }
+      return;
+    }
+
     // one pixel across a row, or one row (stride) down a column
     int dst_step = vertical ? (target->_row_stride >> 2) : 1;
 
     uint32_t *dst = (uint32_t *)target->ptr(p.x, p.y);
 
     // Palette images always resolve NEAREST (indices can't be interpolated).
-    if(filter == NEAREST || this->_has_palette) {
+    if(filter == NEAREST || has_palette()) {
       // NEAREST fast path: fetch the nearest texel inline via get_unsafe,
       // skipping the per-pixel out-of-line sample() call (its filter dispatch,
       // bounds reload and clamps). ix/iy are already in range by construction -
@@ -349,13 +401,14 @@ namespace picovector {
     int iy = sy >> 16;
 
     // palette indices can't be interpolated, so always sample nearest for them
-    if(filter == NEAREST || this->_has_palette) {
+    if(filter == NEAREST || has_palette()) {
       if(ix < 0) ix = 0; else if(ix >= w) ix = w - 1;
       if(iy < 0) iy = 0; else if(iy >= h) iy = h - 1;
       return get_unsafe(ix, iy);
     }
 
-    if(filter == BILINEAR) {
+    // BICUBIC reads RGBA8888 words; the converted formats filter BILINEAR
+    if(filter == BILINEAR || !native()) {
       uint32_t fx = (sx >> 8) & 0xffu;  // sub-texel fraction 0..255
       uint32_t fy = (sy >> 8) & 0xffu;
       int x0 = ix, x1 = ix + 1;

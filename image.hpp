@@ -104,10 +104,60 @@ namespace picovector {
     NON_ZERO = 1  // inside where the accumulated winding number is non-zero
   } fill_rule_t;
 
+  // How an image stores a pixel. Everything draws in premultiplied RGBA8888,
+  // the native format; the others convert on the way in and out (see
+  // brush.cpp), trading speed for memory.
   typedef enum pixel_format_t {
-    RGBA8888 = 1,
-    RGBA4444 = 2,
+    RGBA8888 = 1, // four bytes: the native format
+    RGBA4444 = 2, // two bytes: four bits a channel, r in the low nibble
+    PAL8     = 3, // one byte: an index into the image's palette. A blit source only.
+    LUM8     = 4, // one byte: luminance, opaque
+    MASK8    = 5, // one byte: alpha (reads as white at that alpha)
   } pixel_format_t;
+
+  static inline size_t pv_bytes_per_pixel(pixel_format_t f) {
+    return f == RGBA8888 ? 4 : f == RGBA4444 ? 2 : 1;
+  }
+
+  // One stored pixel of a converted format (not RGBA8888 or PAL8) to a
+  // premultiplied RGBA8888 pixel, and back.
+  static inline __attribute__((always_inline))
+  uint32_t pv_expand_pixel(pixel_format_t f, const uint8_t *p) {
+    switch(f) {
+      case LUM8:  return 0xff000000u | (p[0] * 0x010101u);
+      case MASK8: return p[0] * 0x01010101u;
+      case RGBA4444: {
+        uint32_t v = p[0] | ((uint32_t)p[1] << 8);
+        return ((v & 0xfu) | ((v & 0xf0u) << 4) | ((v & 0xf00u) << 8) | ((v & 0xf000u) << 12)) * 17u;
+      }
+      default: return 0;
+    }
+  }
+
+  // LUM8 has no alpha: a pixel left part transparent packs as it would look
+  // over black.
+  static inline __attribute__((always_inline))
+  void pv_pack_pixel(pixel_format_t f, uint8_t *p, uint32_t c) {
+    switch(f) {
+      case LUM8:
+        p[0] = (uint8_t)((77u * (c & 0xffu) + 150u * ((c >> 8) & 0xffu) + 29u * ((c >> 16) & 0xffu)) >> 8);
+        break;
+      case MASK8:
+        p[0] = (uint8_t)(c >> 24);
+        break;
+      case RGBA4444: {
+        // each channel to the nearest of 16 levels
+        uint32_t r = ((c & 0xffu) * 15u + 135u) >> 8;
+        uint32_t g = (((c >> 8) & 0xffu) * 15u + 135u) >> 8;
+        uint32_t b = (((c >> 16) & 0xffu) * 15u + 135u) >> 8;
+        uint32_t a = ((c >> 24) * 15u + 135u) >> 8;
+        p[0] = (uint8_t)(r | (g << 4));
+        p[1] = (uint8_t)(b | (a << 4));
+        break;
+      }
+      default: break;
+    }
+  }
 
   // Error correction level for image_t::qr(), ascending redundancy. More
   // correction survives more damage but needs a larger code for the same text.
@@ -163,7 +213,6 @@ namespace picovector {
       antialias_t        _antialias = OFF;
       fill_rule_t        _fill_rule = EVEN_ODD;
       pixel_format_t     _pixel_format = RGBA8888;
-      bool               _has_palette = false;
       // Sized to what the source actually needs (a 4-bit PNG has 16 entries, not
       // 256) and shared with sub-views rather than copied: a spritesheet exists
       // to be sliced, and a view already depends on its parent outliving it for
@@ -182,10 +231,11 @@ namespace picovector {
 
       image_t();
       image_t(image_t *source, rect_t r);
-      image_t(int w, int h, pixel_format_t pixel_format=RGBA8888, bool has_palette=false, int palette_entries=256);
-      image_t(int w, int h, int rows, int cols, pixel_format_t pixel_format=RGBA8888, bool has_palette=false, int palette_entries=256);
-      image_t(void *buffer, int w, int h, pixel_format_t pixel_format=RGBA8888, bool has_palette=false, int palette_entries=256);
-      image_t(void *buffer, int w, int h, int rows, int cols, pixel_format_t pixel_format=RGBA8888, bool has_palette=false, int palette_entries=256);
+      // palette_entries sizes a PAL8 image's palette; other formats have none.
+      image_t(int w, int h, pixel_format_t pixel_format=RGBA8888, int palette_entries=256);
+      image_t(int w, int h, int rows, int cols, pixel_format_t pixel_format=RGBA8888, int palette_entries=256);
+      image_t(void *buffer, int w, int h, pixel_format_t pixel_format=RGBA8888, int palette_entries=256);
+      image_t(void *buffer, int w, int h, int rows, int cols, pixel_format_t pixel_format=RGBA8888, int palette_entries=256);
       ~image_t();
 
       // A QR code encoding `text`: one pixel per module, plus a `border` module
@@ -228,7 +278,26 @@ namespace picovector {
         return x1 > x0 && y1 > y0;
       }
 
+      // True for PAL8.
       bool has_palette();
+      // False for PAL8: drawing into one is a no-op.
+      inline bool drawable() const { return _pixel_format != PAL8; }
+      // True for RGBA8888, the format brushes and blits write directly.
+      inline bool native() const { return _pixel_format == RGBA8888; }
+
+      // A run of this image's pixels as premultiplied RGBA8888, and back. Any
+      // format out; any drawable format in. No clipping.
+      void expand_row(int x, int y, int w, uint32_t *out) const;
+      void pack_row(int x, int y, int w, const uint32_t *in);
+      void fill_row(int x, int y, int w, uint32_t c);
+      // Composite one premultiplied pixel over (x, y), whatever the format.
+      void blend_pixel(int x, int y, uint32_t c);
+      // An RGBA8888 stand-in for this image whose every row is the one row of
+      // pixels row_proxy_at() points it at, with `row[0]` at column x: what a
+      // brush draws into when the image itself isn't RGBA8888. It keeps the
+      // bounds, clip and alpha, so brushes see the coordinates they expect.
+      image_t row_proxy() const;
+      inline void row_proxy_at(uint32_t *row, int x) { _buffer = (uint8_t *)row - x * (int)sizeof(uint32_t); }
       // void delete_palette();
       void palette(uint8_t i, uint32_t c);
       uint32_t palette(uint8_t i);
@@ -258,7 +327,6 @@ namespace picovector {
       void cols(uint32_t cols);
 
       pixel_format_t pixel_format();
-      void pixel_format(pixel_format_t pixel_format);
 
       brush_t *brush();
       void brush(brush_t *brush);
@@ -303,13 +371,15 @@ namespace picovector {
       // hot texel fetch (brush/sample inner loops): inline so callers avoid the
       // per-pixel call; ptr() and _palette[] are already inline.
       inline uint32_t get_unsafe(int x, int y) const {
-        if(this->_has_palette) return this->_palette[*((uint8_t *)ptr(x, y))];
-        return *((uint32_t *)ptr(x, y));
+        if(this->_pixel_format == RGBA8888) return *((uint32_t *)ptr(x, y));
+        if(this->_pixel_format == PAL8) return this->_palette[*((uint8_t *)ptr(x, y))];
+        return pv_expand_pixel(this->_pixel_format, (const uint8_t *)ptr(x, y));
       }
 
       // sample a (premultiplied) texel at fixed-point 16.16 source coordinates
       // using the requested filter; edge-clamped. Palette images always sample
-      // NEAREST (indices can't be interpolated).
+      // NEAREST (indices can't be interpolated); the other non-native formats
+      // sample BILINEAR when asked for BICUBIC.
       uint32_t sample(fx16_t sx, fx16_t sy, filter_t filter);
 
       // filters
@@ -353,11 +423,30 @@ namespace picovector {
       // source along uv0->uv1. `vertical` selects the travel axis (y for vspan,
       // x for hspan), which drives both the clip and the destination step.
       void blit_span(image_t *target, vec2_t p, float len, vec2_t uv0, vec2_t uv1, filter_t filter, bool vertical);
+      // The rows of a blit where the target isn't RGBA8888 or the source is
+      // neither that nor PAL8: sampled and converted a pixel at a time.
+      void blit_converted(image_t *target, fx16_t srcx, fx16_t srcstepx, fx16_t srcy, fx16_t srcstepy,
+                          int tx, int ty, int tw, int th, filter_t filter);
       // Clip one horizontal run to _clip and, if any remains, add it to the
       // shared span buffer (no blend). Shared by span() and circle().
       void _span(int x, int y, int w);
       // allocate this image's own palette (owner only)
       void alloc_palette(int entries);
+  };
+
+  // Stores premultiplied RGBA8888 pixels along a row of a drawable image, in
+  // its format: what a decoder writes through. No clipping.
+  struct pixel_writer_t {
+    uint8_t *p;
+    pixel_format_t format;
+    size_t step;
+    pixel_writer_t(image_t *target, int x, int y)
+      : p((uint8_t *)target->ptr(x, y)), format(target->pixel_format()), step(target->bytes_per_pixel()) {}
+    inline __attribute__((always_inline)) void put(uint32_t c) {
+      if(format == RGBA8888) *(uint32_t *)p = c;
+      else pv_pack_pixel(format, p, c);
+      p += step;
+    }
   };
 
   // Allocate a w x h scratch image to work in: it wraps the shared working

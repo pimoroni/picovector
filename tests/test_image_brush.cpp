@@ -59,7 +59,7 @@ namespace {
 void test_image_brush() {
   printf("image brush: NEAREST keeps its hard texel edges\n");
   {
-    image_t tex(2, 2, RGBA8888, false, 0);
+    image_t tex(2, 2, RGBA8888, 0);
     two_column(tex);
     mat3_t t; t.scale((float)MAG);
     image_brush_t ib(&tex, &t, NEAREST);
@@ -72,7 +72,7 @@ void test_image_brush() {
 
   printf("image brush: BILINEAR ramps across the tile wrap, not just inside it\n");
   {
-    image_t tex(2, 2, RGBA8888, false, 0);
+    image_t tex(2, 2, RGBA8888, 0);
     two_column(tex);
     mat3_t t; t.scale((float)MAG);
     image_brush_t ib(&tex, &t, BILINEAR);
@@ -97,7 +97,7 @@ void test_image_brush() {
 
   printf("image brush: BICUBIC wraps too\n");
   {
-    image_t tex(2, 2, RGBA8888, false, 0);
+    image_t tex(2, 2, RGBA8888, 0);
     two_column(tex);
     mat3_t t; t.scale((float)MAG);
     image_brush_t ib(&tex, &t, BICUBIC);
@@ -110,7 +110,7 @@ void test_image_brush() {
 
   printf("image brush: tiling stays periodic under every filter\n");
   {
-    image_t tex(2, 2, RGBA8888, false, 0);
+    image_t tex(2, 2, RGBA8888, 0);
     two_column(tex);
     filter_t filters[3] = {NEAREST, BILINEAR, BICUBIC};
     for(filter_t f : filters) {
@@ -126,7 +126,7 @@ void test_image_brush() {
 
   printf("image brush: a palette source interpolates its colours, not its indices\n");
   {
-    image_t tex(2, 2, RGBA8888, true, 2);
+    image_t tex(2, 2, PAL8, 2);
     tex.palette(0, BLACK);
     tex.palette(1, WHITE);
     for(int y = 0; y < 2; y++) {

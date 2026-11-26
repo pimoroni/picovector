@@ -160,7 +160,7 @@ void test_blit() {
     CHECK(sheet_c.img.buffer_extent() == sheet_c.img.buffer_size());
     image_t owned(32, 32);
     CHECK(owned.buffer_extent() == owned.buffer_size());
-    image_t indexed(64, 64, RGBA8888, true, 16);
+    image_t indexed(64, 64, PAL8, 16);
     CHECK(indexed.buffer_extent() == indexed.buffer_size());
 
     // An indexed view strides by a byte a pixel, not four.
@@ -176,7 +176,7 @@ void test_blit() {
   //
   // A 16x16 source of four colours, left half index 1 and right half index 2,
   // so a flip is visible and a scale has an edge to land on.
-  image_t pal_src(16, 16, RGBA8888, true, 4);
+  image_t pal_src(16, 16, PAL8, 4);
   const uint32_t PAL_RED = rgb_color_t(255, 0, 0, 255)._p;
   const uint32_t PAL_BLUE = rgb_color_t(0, 0, 255, 255)._p;
   pal_src.palette(0, 0);
@@ -253,7 +253,7 @@ void test_blit() {
     // One byte a pixel against a blit that writes four: this would run four
     // times past the end of every row. The bindings keep it unreachable by
     // giving a palettised buffer a type with no blit, but the core refuses too.
-    image_t pal_dst(16, 16, RGBA8888, true, 4);
+    image_t pal_dst(16, 16, PAL8, 4);
     for(int i = 0; i < 16 * 16; i++) ((uint8_t *)pal_dst.ptr(0, 0))[i] = 0;
     src->blit(&pal_dst, vec2_t(0, 0));
     src->blit(&pal_dst, rect_t(0, 0, 16, 16), rect_t(0, 0, 16, 16));

@@ -109,7 +109,7 @@ void test_alpha() {
 
   printf("alpha: a texture brush is weighted, and the texture's own alpha is not\n");
   {
-    image_t tex(8, 8, RGBA8888, false, 0);
+    image_t tex(8, 8, RGBA8888, 0);
     for(int y = 0; y < 8; y++)
       for(int x = 0; x < 8; x++) ((uint32_t *)tex.ptr(0, y))[x] = WHITE;
 

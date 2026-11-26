@@ -47,30 +47,29 @@ namespace picovector {
     _cols = 1;
   }
 
-  image_t::image_t(int w, int h, pixel_format_t pixel_format, bool has_palette, int palette_entries)
-    : image_t(w, h, 1, 1, pixel_format, has_palette, palette_entries) {}
+  image_t::image_t(int w, int h, pixel_format_t pixel_format, int palette_entries)
+    : image_t(w, h, 1, 1, pixel_format, palette_entries) {}
 
-  image_t::image_t(int w, int h, int rows, int cols, pixel_format_t pixel_format, bool has_palette, int palette_entries) {
+  image_t::image_t(int w, int h, int rows, int cols, pixel_format_t pixel_format, int palette_entries) {
     _bounds = rect_t(0, 0, w, h);
     _clip = rect_t(0, 0, w, h);
     _brush = nullptr;
     _rows = rows;
     _cols = cols;
     _pixel_format = pixel_format;
-    _has_palette = has_palette;
     _managed_buffer = true;
-    _bytes_per_pixel = this->_has_palette ? sizeof(uint8_t) : sizeof(uint32_t);
+    _bytes_per_pixel = pv_bytes_per_pixel(pixel_format);
     _row_stride = w * _bytes_per_pixel;
     _buffer = PV_MALLOC_NO_SCAN(this->buffer_size());
     alloc_palette(palette_entries);
   }
 
-  image_t::image_t(void *buffer, int w, int h, pixel_format_t pixel_format, bool has_palette, int palette_entries)
-    : image_t(buffer, w, h, 1, 1, pixel_format, has_palette, palette_entries) {}
+  image_t::image_t(void *buffer, int w, int h, pixel_format_t pixel_format, int palette_entries)
+    : image_t(buffer, w, h, 1, 1, pixel_format, palette_entries) {}
 
   // Owned palette storage. Entries are clamped to what a byte index can reach.
   void image_t::alloc_palette(int entries) {
-    if(!_has_palette) return;
+    if(_pixel_format != PAL8) return;
     if(entries < 1) entries = 1;
     if(entries > 256) entries = 256;
     _palette = (uint32_t *)PV_MALLOC_NO_SCAN(sizeof(uint32_t) * entries);
@@ -79,17 +78,16 @@ namespace picovector {
     for(int i = 0; i < _palette_size; i++) _palette[i] = 0;
   }
 
-  image_t::image_t(void *buffer, int w, int h, int rows, int cols, pixel_format_t pixel_format, bool has_palette, int palette_entries) {
+  image_t::image_t(void *buffer, int w, int h, int rows, int cols, pixel_format_t pixel_format, int palette_entries) {
     _bounds = rect_t(0, 0, w, h);
     _clip = rect_t(0, 0, w, h);
     _brush = nullptr;
     _rows = rows;
     _cols = cols;
     _pixel_format = pixel_format;
-    _has_palette = has_palette;
     _buffer = buffer;
     _managed_buffer = false;
-    _bytes_per_pixel = this->_has_palette ? sizeof(uint8_t) : sizeof(uint32_t);
+    _bytes_per_pixel = pv_bytes_per_pixel(pixel_format);
     _row_stride = w * _bytes_per_pixel;
     alloc_palette(palette_entries);
   }
@@ -137,7 +135,7 @@ namespace picovector {
       int dimension = modules + border * 2;
       void *mem = PV_MALLOC(sizeof(image_t));
       if(mem) {
-        result = new (mem) image_t(dimension, dimension, RGBA8888, true, 2);
+        result = new (mem) image_t(dimension, dimension, PAL8, 2);
         if(result->_buffer) {
           result->palette(0, rgb_color_t(255, 255, 255, 255)._p);
           result->palette(1, rgb_color_t(0, 0, 0, 255)._p);
@@ -209,7 +207,66 @@ namespace picovector {
   }
 
   bool image_t::has_palette() {
-    return this->_has_palette;
+    return this->_pixel_format == PAL8;
+  }
+
+  void image_t::expand_row(int x, int y, int w, uint32_t *out) const {
+    const uint8_t *p = (const uint8_t *)ptr(x, y);
+    switch(_pixel_format) {
+      case RGBA8888: memcpy(out, p, (size_t)w * sizeof(uint32_t)); break;
+      case PAL8:     for(int i = 0; i < w; i++) out[i] = _palette[p[i]]; break;
+      case LUM8:     for(int i = 0; i < w; i++) out[i] = pv_expand_pixel(LUM8, p + i); break;
+      case MASK8:    for(int i = 0; i < w; i++) out[i] = pv_expand_pixel(MASK8, p + i); break;
+      case RGBA4444: for(int i = 0; i < w; i++) out[i] = pv_expand_pixel(RGBA4444, p + 2 * i); break;
+    }
+  }
+
+  void image_t::pack_row(int x, int y, int w, const uint32_t *in) {
+    uint8_t *p = (uint8_t *)ptr(x, y);
+    switch(_pixel_format) {
+      case RGBA8888: memcpy(p, in, (size_t)w * sizeof(uint32_t)); break;
+      case PAL8:     break;
+      case LUM8:     for(int i = 0; i < w; i++) pv_pack_pixel(LUM8, p + i, in[i]); break;
+      case MASK8:    for(int i = 0; i < w; i++) pv_pack_pixel(MASK8, p + i, in[i]); break;
+      case RGBA4444: for(int i = 0; i < w; i++) pv_pack_pixel(RGBA4444, p + 2 * i, in[i]); break;
+    }
+  }
+
+  void image_t::fill_row(int x, int y, int w, uint32_t c) {
+    uint8_t *p = (uint8_t *)ptr(x, y);
+    uint8_t packed[4] = {0, 0, 0, 0};
+    switch(_pixel_format) {
+      case RGBA8888: { uint32_t *d = (uint32_t *)p; while(w--) *d++ = c; } break;
+      case PAL8:     break;
+      case LUM8:
+      case MASK8:    pv_pack_pixel(_pixel_format, packed, c); memset(p, packed[0], (size_t)w); break;
+      case RGBA4444:
+        pv_pack_pixel(RGBA4444, packed, c);
+        for(int i = 0; i < w; i++) { p[2 * i] = packed[0]; p[2 * i + 1] = packed[1]; }
+        break;
+    }
+  }
+
+  void image_t::blend_pixel(int x, int y, uint32_t c) {
+    if(_pixel_format == RGBA8888) {
+      uint32_t *d = (uint32_t *)ptr(x, y);
+      *d = blend_over_premul(*d, c);
+    } else if(_pixel_format != PAL8) {
+      uint8_t *p = (uint8_t *)ptr(x, y);
+      pv_pack_pixel(_pixel_format, p, blend_over_premul(pv_expand_pixel(_pixel_format, p), c));
+    }
+  }
+
+  image_t image_t::row_proxy() const {
+    image_t proxy = *this;
+    proxy._managed_buffer = false;
+    proxy._owns_palette = false;
+    proxy._palette = nullptr;
+    proxy._palette_size = 0;
+    proxy._pixel_format = RGBA8888;
+    proxy._bytes_per_pixel = sizeof(uint32_t);
+    proxy._row_stride = 0;
+    return proxy;
   }
 
   // TODO: why?
@@ -271,10 +328,6 @@ namespace picovector {
 
   pixel_format_t image_t::pixel_format() {
     return this->_pixel_format;
-  }
-
-  void image_t::pixel_format(pixel_format_t pixel_format) {
-    this->_pixel_format = pixel_format;
   }
 
   brush_t* image_t::brush() {

@@ -186,7 +186,7 @@ namespace {
       scratch().restore = restore.data();
       scratch().restore_size = restore.size();
       new (&image) image_t((int)info.width * info.frame_count, (int)info.height,
-                           1, (int)info.frame_count, RGBA8888, true, info.palette_size);
+                           1, (int)info.frame_count, PAL8, info.palette_size);
       status = gif_decode(b.out.data(), b.out.size(), &scratch(), &info, &image);
     }
 
@@ -686,7 +686,7 @@ void test_gif() {
     scratch().restore = nullptr;
     scratch().restore_size = 0;
     image_t sheet(&arena[1024], (int)info.width * info.frame_count, (int)info.height,
-                  1, (int)info.frame_count, RGBA8888, true, info.palette_size);
+                  1, (int)info.frame_count, PAL8, info.palette_size);
     CHECK(gif_decode(b.out.data(), b.out.size(), &scratch(), &info, &sheet) == GIF_OK);
 
     bool guards_intact = true;
@@ -723,13 +723,13 @@ void test_gif() {
     scratch().restore = nullptr;
     scratch().restore_size = 0;
 
-    image_t wrong_size(8, 8, RGBA8888, true, info.palette_size);
+    image_t wrong_size(8, 8, PAL8, info.palette_size);
     CHECK(gif_decode(b.out.data(), b.out.size(), &scratch(), &info, &wrong_size) == GIF_NO_BUFFER);
 
     image_t not_indexed((int)info.width, (int)info.height);
     CHECK(gif_decode(b.out.data(), b.out.size(), &scratch(), &info, &not_indexed) == GIF_NO_BUFFER);
 
-    image_t small_palette((int)info.width, (int)info.height, RGBA8888, true, 2);
+    image_t small_palette((int)info.width, (int)info.height, PAL8, 2);
     CHECK(gif_decode(b.out.data(), b.out.size(), &scratch(), &info, &small_palette) == GIF_NO_BUFFER);
 
     // A dispose-to-previous frame needs somewhere to put the rect it saves.
@@ -742,7 +742,7 @@ void test_gif() {
     CHECK(survey(restores, &info) == GIF_OK);
     CHECK(info.restore_bytes == 8);
     image_t sheet((int)info.width * info.frame_count, (int)info.height,
-                  1, (int)info.frame_count, RGBA8888, true, info.palette_size);
+                  1, (int)info.frame_count, PAL8, info.palette_size);
     CHECK(gif_decode(restores.out.data(), restores.out.size(), &scratch(), &info, &sheet) == GIF_NO_BUFFER);
   }
 
@@ -761,7 +761,7 @@ void test_gif() {
       part.out.assign(b.out.begin(), b.out.begin() + cut);
       scratch().restore = nullptr;
       scratch().restore_size = 0;
-      image_t sheet((int)info.width, (int)info.height, RGBA8888, true, info.palette_size);
+      image_t sheet((int)info.width, (int)info.height, PAL8, info.palette_size);
       gif_status_t status = gif_decode(part.out.data(), part.out.size(), &scratch(), &info, &sheet);
       CHECK_MSG(status != GIF_OK, "truncated decode");
     }
@@ -779,7 +779,7 @@ void test_gif() {
 
     scratch().restore = nullptr;
     scratch().restore_size = 0;
-    image_t sheet((int)info.width, (int)info.height, RGBA8888, true, info.palette_size);
+    image_t sheet((int)info.width, (int)info.height, PAL8, info.palette_size);
     CHECK(gif_decode(b.out.data(), b.out.size(), &scratch(), &info, &sheet) == GIF_UNSUPPORTED);
   }
 
@@ -804,7 +804,7 @@ void test_gif() {
     scratch().restore = restore.data();
     scratch().restore_size = restore.size();
     image_t sheet((int)info.width * info.frame_count, (int)info.height,
-                  1, (int)info.frame_count, RGBA8888, true, info.palette_size);
+                  1, (int)info.frame_count, PAL8, info.palette_size);
     CHECK(gif_decode(fixture_gif, sizeof(fixture_gif), &scratch(), &info, &sheet) == GIF_OK);
 
     bool matched = true;
@@ -875,7 +875,7 @@ void test_gif() {
     scratch().restore = restore.data();
     scratch().restore_size = restore.size();
     image_t sheet((int)info.width * info.frame_count, (int)info.height,
-                  1, (int)info.frame_count, RGBA8888, true, info.palette_size);
+                  1, (int)info.frame_count, PAL8, info.palette_size);
 
     // Handed the same reader, sitting at the end of the file.
     CHECK(gif_decode(reader, &scratch(), &info, &sheet) == GIF_OK);
@@ -918,7 +918,7 @@ void test_gif() {
     };
 
     image_t sheet((int)info.width * info.frame_count, (int)info.height,
-                  1, (int)info.frame_count, RGBA8888, true, info.palette_size);
+                  1, (int)info.frame_count, PAL8, info.palette_size);
     CHECK(gif_decode(stubborn, &scratch(), &info, &sheet) == GIF_NO_BUFFER);
   }
 
@@ -967,7 +967,7 @@ void test_gif() {
       scratch().restore = restore.data();
       scratch().restore_size = restore.size();
       image_t sheet((int)info.width * info.frame_count, (int)info.height,
-                    1, (int)info.frame_count, RGBA8888, true, info.palette_size);
+                    1, (int)info.frame_count, PAL8, info.palette_size);
       if(gif_decode(m.data(), m.size(), &scratch(), &info, &sheet) != GIF_OK) continue;
 
       decoded++;

@@ -31,18 +31,73 @@ namespace picovector {
   }
 #endif
 
+  // A target that isn't RGBA8888. Brushes only write RGBA8888, so each span is
+  // expanded into a scratch row, drawn there by the brush through a stand-in
+  // image (image_t::row_proxy), and packed back, PV_CONVERT_CHUNK pixels at a
+  // time. The span buffer entry is narrowed to the chunk for the brush's call
+  // and put back after. Single core: the scratch row is on this stack.
+  static const int PV_CONVERT_CHUNK = 256;
+
+  static void _blend_spans_converted(image_t *target, brush_t *brush, int n) {
+    if(brush->reads_neighbours()) return;
+    pv_span *spans = (pv_span *)_span_buf;
+    if(color_brush_t *cb = brush->as_color()) {
+      // an opaque colour needs nothing read back: the fill, clear and text path
+      pixel_t src = fold_target_alpha(target, cb->c);
+      if(_a(src) == 255) {
+        for(int i = 0; i < n; i++) target->fill_row(spans[i].x, spans[i].y, spans[i].w, src);
+        return;
+      }
+    }
+    uint32_t row[PV_CONVERT_CHUNK];
+    image_t proxy = target->row_proxy();
+    for(int i = 0; i < n; i++) {
+      const pv_span s = spans[i];
+      for(int off = 0; off < s.w; off += PV_CONVERT_CHUNK) {
+        int w = s.w - off < PV_CONVERT_CHUNK ? s.w - off : PV_CONVERT_CHUNK;
+        int x = s.x + off;
+        target->expand_row(x, s.y, w, row);
+        spans[i] = { (int16_t)x, s.y, (uint16_t)w };
+        proxy.row_proxy_at(row, x);
+        brush->blend_spans(&proxy, i, i + 1, 1);
+        target->pack_row(x, s.y, w, row);
+      }
+      spans[i] = s;
+    }
+  }
+
+  static void _blend_masked_spans_converted(image_t *target, brush_t *brush, int n) {
+    if(brush->reads_neighbours()) return;
+    pv_masked_span *spans = (pv_masked_span *)_span_buf;
+    uint32_t row[PV_CONVERT_CHUNK];
+    image_t proxy = target->row_proxy();
+    for(int i = 0; i < n; i++) {
+      const pv_masked_span s = spans[i];
+      for(int off = 0; off < s.w; off += PV_CONVERT_CHUNK) {
+        int w = s.w - off < PV_CONVERT_CHUNK ? s.w - off : PV_CONVERT_CHUNK;
+        int x = s.x + off;
+        target->expand_row(x, s.y, w, row);
+        spans[i] = { (int16_t)x, s.y, (uint16_t)w, s.mask + off };
+        proxy.row_proxy_at(row, x);
+        brush->blend_masked_spans(&proxy, i, i + 1, 1);
+        target->pack_row(x, s.y, w, row);
+      }
+      spans[i] = s;
+    }
+  }
+
   // Blend the shared span buffer with `brush` in one call - dispatches to the
   // brush's batch func. Draw methods call this after filling the buffer. When
   // core1 is available and the batch is large enough, the span list is split
   // across both cores (parity by span index -> disjoint framebuffer rows).
   void _blend_spans(image_t *target, brush_t *brush) {
-    // Nothing can write to an indexed image: every brush and filter stores a
-    // four-byte pixel, which would run four times past the end of each row of
-    // a one-byte-per-pixel buffer. It is a source, not a target.
-    if(target->has_palette()) return;
+    // Nothing can write to an indexed image: its bytes are palette indices,
+    // not colours. It is a source, not a target.
+    if(!target->drawable()) return;
     if(!brush) return;
     int n = _num_spans();
     if(n <= 0) return;
+    if(!target->native()) { _blend_spans_converted(target, brush, n); return; }
 #if PV_DUAL_CORE
     if(n >= 2 && _solid_span_pixels(n) >= PV_DUAL_CORE_BLEND_MIN_PX) {
       _blend_ctx c = { target, brush, false };
@@ -54,13 +109,11 @@ namespace picovector {
   }
 
   void _blend_masked_spans(image_t *target, brush_t *brush) {
-    // Nothing can write to an indexed image: every brush and filter stores a
-    // four-byte pixel, which would run four times past the end of each row of
-    // a one-byte-per-pixel buffer. It is a source, not a target.
-    if(target->has_palette()) return;
+    if(!target->drawable()) return;   // see _blend_spans
     if(!brush) return;
     int n = _num_spans();
     if(n <= 0) return;
+    if(!target->native()) { _blend_masked_spans_converted(target, brush, n); return; }
 #if PV_DUAL_CORE
     if(n >= 2 && _masked_span_pixels(n) >= PV_DUAL_CORE_BLEND_MIN_PX) {
       _blend_ctx c = { target, brush, true };

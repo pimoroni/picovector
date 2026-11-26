@@ -156,7 +156,7 @@ namespace picovector {
 
   void image_t::blur(float radius, float strength) {
     // An indexed image is one byte a pixel; this writes four. See brush.cpp.
-    if(_has_palette) return;
+    if(!native()) return;
     radius *= strength;
     if (radius <= 0) return;
     const uint32_t k = blur_k_from_radius_q16(radius);

@@ -22,6 +22,7 @@ void test_stroke();
 void test_combine();
 void test_spritesheet();
 void test_qr();
+void test_formats();
 
 int main() {
   test_geometry();
@@ -44,5 +45,6 @@ int main() {
   test_combine();
   test_spritesheet();
   test_qr();
+  test_formats();
   return pvtest::summary();
 }
